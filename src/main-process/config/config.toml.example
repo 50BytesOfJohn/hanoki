@@ -1,0 +1,19 @@
+# Hanoki — global application config
+# This file lives at: <AppData>/com.hanoki.app/<data|data-dev>/config.toml
+# Missing keys fall back to built-in defaults.
+
+[app]
+# UI colour scheme. Currently only "dark" is supported.
+theme = "dark"
+
+[chat.message]
+# Base font size (px) for chat messages.
+fontSize = 14
+
+[chat.prompt]
+# Keep the prompt composer pinned to the bottom while scrolling.
+stickyPosition = true
+
+[chat.form]
+# Enter submits immediately. Use "mod-enter" to require Cmd/Ctrl + Enter.
+submitBehavior = "enter"

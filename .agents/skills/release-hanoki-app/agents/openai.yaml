@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Hanoki"
+  short_description: "Commit changes, bump patch, tag, and push release"
+  default_prompt: "Use $release-hanoki-app to commit my work, bump the patch version, create the release tag, and push it."
