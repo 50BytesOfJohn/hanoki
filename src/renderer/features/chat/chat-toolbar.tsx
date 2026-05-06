@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { Button as HeroButton, Dropdown, Separator, type Key } from "@heroui/react";
 import {
   Add01Icon,
@@ -12,10 +12,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { Button } from "@/components/ui/button";
-import { useSidebar } from "@/components/ui/sidebar";
 import { getChatQueryOptions } from "@/queries/chats";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
+import { useChatSidebar } from "./chat-sidebar";
 import { useWorkspaceStore } from "../workspace/store";
 import type { Tab } from "../workspace/store/types";
 
@@ -26,20 +25,21 @@ export function ChatToolbar() {
   const { data: workspaces = [] } = useQuery(listWorkspacesQueryOptions);
   const workspace = useWorkspaceStore((s) => s.workspace);
   const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
-  const { isMobile, open, openMobile, toggleSidebar } = useSidebar();
+  const { isMobile, open, openMobile, toggleSidebar } = useChatSidebar();
   const isSidebarOpen = isMobile ? openMobile : open;
 
   return (
     <div className="flex w-full items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2 w-full">
-        <Button
-          size="icon-sm"
+        <HeroButton
+          isIconOnly
+          size="sm"
           variant="ghost"
           aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          onClick={toggleSidebar}
+          onPress={toggleSidebar}
         >
           <HugeiconsIcon icon={isSidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon} />
-        </Button>
+        </HeroButton>
 
         <Dropdown>
           <HeroButton
@@ -95,9 +95,17 @@ export function ChatToolbar() {
         <ChatTabsBar />
       </div>
 
-      <Button size="icon-sm" variant="ghost" render={<Link to="/settings" aria-label="Settings" />}>
+      <HeroButton
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        aria-label="Settings"
+        onPress={() => {
+          void navigate({ to: "/settings" });
+        }}
+      >
         <HugeiconsIcon icon={Setting07Icon} />
-      </Button>
+      </HeroButton>
     </div>
   );
 }
@@ -127,7 +135,7 @@ function ChatTabButton({ tab }: { tab: Tab }) {
   }, [tab, activeId]);
 
   return (
-    <Button
+    <HeroButton
       size="sm"
       variant={isActive ? "secondary" : "ghost"}
       className="group/tab relative z-0 w-full max-w-64 shrink px-4 justify-start text-left"
@@ -148,6 +156,6 @@ function ChatTabButton({ tab }: { tab: Tab }) {
           <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
         </div>
       </button>
-    </Button>
+    </HeroButton>
   );
 }

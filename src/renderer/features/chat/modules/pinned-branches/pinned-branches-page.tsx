@@ -23,6 +23,9 @@ import { useWorkspaceStore } from "@/features/workspace/store";
 import { useChatStore } from "@/stores/chat-store";
 
 export function PinnedBranchesPage() {
+  const activeTab = useWorkspaceStore((s) => s.activeTab());
+  const chatId = activeTab?.type === "chat" ? activeTab.chatId : null;
+
   const { data: pinned = [], isLoading, error } = useQuery(getPinnedBranchesQueryOptions());
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
 
@@ -33,6 +36,25 @@ export function PinnedBranchesPage() {
     }
     return map;
   }, [enabledModels]);
+
+  const filteredPinned = React.useMemo(() => {
+    if (!chatId) return [];
+    return pinned.filter((summary) => summary.chatId === chatId);
+  }, [pinned, chatId]);
+
+  if (!chatId) {
+    return (
+      <Empty className="h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <HugeiconsIcon icon={PinIcon} />
+          </EmptyMedia>
+          <EmptyTitle>No chat selected</EmptyTitle>
+          <EmptyDescription>Open a chat to view its pinned branches.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
 
   if (isLoading) {
     return <PinnedBranchesLoadingState />;
@@ -46,7 +68,7 @@ export function PinnedBranchesPage() {
     );
   }
 
-  if (pinned.length === 0) {
+  if (filteredPinned.length === 0) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
@@ -55,7 +77,7 @@ export function PinnedBranchesPage() {
           </EmptyMedia>
           <EmptyTitle>No pinned branches yet</EmptyTitle>
           <EmptyDescription>
-            Pin a message in any chat to bookmark that branch for quick access.
+            Pin a message in this chat to bookmark that branch for quick access.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -64,7 +86,7 @@ export function PinnedBranchesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4">
-      {pinned.map((summary) => (
+      {filteredPinned.map((summary) => (
         <PinnedBranchRow
           key={summary.messageId}
           summary={summary}

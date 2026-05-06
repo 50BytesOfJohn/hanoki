@@ -3,6 +3,22 @@ import type { ProviderInfo } from "@shared/ipc";
 import { providerApi } from "../api/providers";
 import { queryKeys } from "../queries/keys";
 
+export function useUpdateProviderSecrets() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ providerId, config }: { providerId: string; config: Record<string, unknown> }) =>
+      providerApi.updateSecrets({ providerId, config }),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.providers.list(), exact: true });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.providers.models(variables.providerId),
+        exact: true,
+      });
+    },
+  });
+}
+
 export function useDeleteProvider() {
   const queryClient = useQueryClient();
 

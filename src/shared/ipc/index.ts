@@ -57,6 +57,7 @@ export const IPC_CHANNELS = {
     listModels: "providers:listModels",
     testCredentials: "providers:testCredentials",
     save: "providers:save",
+    updateSecrets: "providers:updateSecrets",
     delete: "providers:delete",
   },
   models: {
@@ -233,6 +234,11 @@ export interface SaveProviderResult {
   catalogId: ProviderId;
 }
 
+export interface UpdateProviderSecretsInput {
+  providerId: string;
+  config: Record<string, unknown>;
+}
+
 export interface UpdateModelInput {
   isEnabled?: boolean;
   displayName?: string | null;
@@ -325,6 +331,7 @@ export interface IpcApi {
     input: ProviderCredentialTestInput,
   ) => Promise<ProviderCredentialTestResult>;
   saveProvider: (input: SaveProviderInput) => Promise<SaveProviderResult>;
+  updateProviderSecrets: (input: UpdateProviderSecretsInput) => Promise<ProviderInfo>;
   deleteProvider: (providerId: string) => Promise<void>;
   listEnabledModels: () => Promise<ProviderModelInfo[]>;
   updateModel: (modelId: string, input: UpdateModelInput) => Promise<UpdateModelResult>;

@@ -6,6 +6,7 @@ import {
   type ProviderModelInfo,
   type SaveProviderInput,
   type SaveProviderResult,
+  type UpdateProviderSecretsInput,
 } from "@shared/ipc";
 import { getSupportedProviderById, type ProviderId } from "@shared/providers/catalog";
 import type { IpcHandlerContext } from "../core/context";
@@ -80,6 +81,32 @@ function parseSaveProviderInput(args: unknown[]): [SaveProviderInput] {
   ];
 }
 
+function parseUpdateProviderSecretsInput(args: unknown[]): [UpdateProviderSecretsInput] {
+  expectArgCount(args, 1);
+
+  const rawInput = args[0];
+  if (!rawInput || typeof rawInput !== "object") {
+    throw AppError.badRequest("Update provider secrets input must be an object.");
+  }
+
+  const providerId = (rawInput as { providerId?: unknown }).providerId;
+  if (typeof providerId !== "string" || !providerId.trim()) {
+    throw AppError.badRequest("providerId must be a non-empty string.");
+  }
+
+  const config = (rawInput as { config?: unknown }).config;
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw AppError.badRequest("config must be an object.");
+  }
+
+  return [
+    {
+      providerId,
+      config: config as Record<string, unknown>,
+    },
+  ];
+}
+
 function parseProviderRecordIdArg(args: unknown[]): [string] {
   expectArgCount(args, 1);
 
@@ -125,6 +152,12 @@ export function registerProvidersIpcModule(
     channel: IPC_CHANNELS.providers.save,
     parseArgs: parseSaveProviderInput,
     handler: ({ services }, _event, input) => services.providers.saveProvider(input),
+  });
+
+  registerInvokeHandler<[UpdateProviderSecretsInput], ProviderInfo>(context, registeredChannels, {
+    channel: IPC_CHANNELS.providers.updateSecrets,
+    parseArgs: parseUpdateProviderSecretsInput,
+    handler: ({ services }, _event, input) => services.providers.updateProviderSecrets(input),
   });
 
   registerInvokeHandler<[string], void>(context, registeredChannels, {

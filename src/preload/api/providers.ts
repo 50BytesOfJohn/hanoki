@@ -7,6 +7,7 @@ type ProvidersApi = Pick<
   | "listProviderModels"
   | "testProviderCredentials"
   | "saveProvider"
+  | "updateProviderSecrets"
   | "deleteProvider"
 >;
 
@@ -16,6 +17,7 @@ export function createProvidersApi(): ProvidersApi {
     listProviderModels: (providerId) => invokeIpc(IPC_CHANNELS.providers.listModels, providerId),
     testProviderCredentials: (input) => invokeIpc(IPC_CHANNELS.providers.testCredentials, input),
     saveProvider: (input) => invokeIpc(IPC_CHANNELS.providers.save, input),
+    updateProviderSecrets: (input) => invokeIpc(IPC_CHANNELS.providers.updateSecrets, input),
     deleteProvider: (providerId) => invokeIpc(IPC_CHANNELS.providers.delete, providerId),
   };
 }

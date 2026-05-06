@@ -1,19 +1,19 @@
-import Database from "better-sqlite3";
-import type { Database as BetterSqliteDatabase } from "better-sqlite3";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import type { SQLiteSyncDialect } from "drizzle-orm/sqlite-core/dialect";
 
 import { getUserDataDirectory } from "../system/paths";
+import { drizzle, type NodeSQLiteDatabase } from "./node-sqlite-drizzle";
 import * as schema from "./schema";
 
-export type AppDatabase = BetterSQLite3Database<typeof schema>;
+export type AppDatabase = NodeSQLiteDatabase<typeof schema>;
 
 const _require = createRequire(__filename);
 const APP_DATABASE_FILENAME = "app.sqlite";
-let connection: { sqlite: BetterSqliteDatabase; db: AppDatabase } | null = null;
+let connection: { sqlite: DatabaseSync; db: AppDatabase } | null = null;
 
 function resolveMigrationsFolder(): string {
   if (process.versions.electron) {
@@ -33,14 +33,16 @@ function resolveMigrationsFolder(): string {
   return join(process.cwd(), "src", "main-process", "db", "migrations");
 }
 
-function openDatabase(dbPath: string): { sqlite: BetterSqliteDatabase; db: AppDatabase } {
+function openDatabase(dbPath: string): { sqlite: DatabaseSync; db: AppDatabase } {
   mkdirSync(dirname(dbPath), { recursive: true });
 
-  const sqlite = new Database(dbPath) as BetterSqliteDatabase;
+  const sqlite = new DatabaseSync(dbPath, {
+    enableForeignKeyConstraints: true,
+    timeout: 5000,
+  });
   sqlite.exec("PRAGMA foreign_keys = ON;");
   sqlite.exec("PRAGMA journal_mode = WAL;");
   sqlite.exec("PRAGMA synchronous = NORMAL;"); // Safe with WAL, much faster than FULL
-  sqlite.exec("PRAGMA busy_timeout = 5000;"); // Wait up to 5s before SQLITE_BUSY error
   sqlite.exec("PRAGMA cache_size = -20000;"); // 20 MB page cache
   sqlite.exec("PRAGMA temp_store = MEMORY;"); // Temp tables and indices in memory
 
@@ -56,7 +58,14 @@ export function migrateAppDatabase(): void {
   const { sqlite, db } = openDatabase(getAppDatabasePath());
 
   try {
-    migrate(db, { migrationsFolder: resolveMigrationsFolder() });
+    const migrationsFolder = resolveMigrationsFolder();
+    const migrations = readMigrationFiles({ migrationsFolder });
+    const migrationDb = db as unknown as {
+      dialect: SQLiteSyncDialect;
+      session: Parameters<SQLiteSyncDialect["migrate"]>[1];
+    };
+
+    migrationDb.dialect.migrate(migrations, migrationDb.session, { migrationsFolder });
   } finally {
     sqlite.close();
   }

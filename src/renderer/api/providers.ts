@@ -1,5 +1,10 @@
 import "../lib/electron-api";
-import type { ProviderCredentialTestInput, SaveProviderInput, UpdateModelInput } from "@shared/ipc";
+import type {
+  ProviderCredentialTestInput,
+  SaveProviderInput,
+  UpdateModelInput,
+  UpdateProviderSecretsInput,
+} from "@shared/ipc";
 
 export const providerApi = {
   list() {
@@ -13,6 +18,9 @@ export const providerApi = {
   },
   saveProvider(input: SaveProviderInput) {
     return window.electronAPI.saveProvider(input);
+  },
+  updateSecrets(input: UpdateProviderSecretsInput) {
+    return window.electronAPI.updateProviderSecrets(input);
   },
   delete(providerId: string) {
     return window.electronAPI.deleteProvider(providerId);

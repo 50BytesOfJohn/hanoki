@@ -3,7 +3,6 @@ import { defineConfig } from "vite";
 import path from "node:path";
 
 const external = [
-  "better-sqlite3",
   "electron",
   ...builtinModules,
   ...builtinModules.map((moduleName) => `node:${moduleName}`),
@@ -19,8 +18,5 @@ export default defineConfig({
     rollupOptions: {
       external,
     },
-  },
-  optimizeDeps: {
-    exclude: ["better-sqlite3"],
   },
 });

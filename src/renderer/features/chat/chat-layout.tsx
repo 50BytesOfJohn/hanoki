@@ -2,7 +2,7 @@ import { Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { Button, ButtonGroup, Surface } from "@heroui/react";
 
 import { WindowChrome } from "@/components/app/window-chrome";
-import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
+import { ChatSidebarProvider, useChatSidebar } from "@/features/chat/chat-sidebar";
 import { ChatSidebarTree } from "@/features/chat/chat-sidebar-tree";
 import {
   ChatScrollActionsProvider,
@@ -24,16 +24,16 @@ import {
 
 export function ChatLayout() {
   return (
-    <SidebarProvider className="h-full min-h-0 w-full">
+    <ChatSidebarProvider className="h-full min-h-0 w-full">
       <WindowChrome contentClassName="overflow-hidden" toolbar={<ChatToolbar />}>
         <ChatLayoutFrame />
       </WindowChrome>
-    </SidebarProvider>
+    </ChatSidebarProvider>
   );
 }
 
 function ChatLayoutFrame() {
-  const { isMobile, open } = useSidebar();
+  const { isMobile, open } = useChatSidebar();
   const isDesktopSidebarVisible = !isMobile && open;
 
   return (

@@ -53,6 +53,26 @@ export function createProvider(input: CreateProviderInput): ProviderTableRow {
   return created;
 }
 
+export function updateProviderConfig(
+  id: string,
+  config: Record<string, unknown>,
+): ProviderTableRow {
+  getAppDatabase()
+    .update(providers)
+    .set({
+      config,
+      updatedAt: Date.now(),
+    })
+    .where(eq(providers.id, id))
+    .run();
+
+  const updated = getProviderById(id);
+  if (!updated) {
+    throw new Error(`Failed to update provider "${id}".`);
+  }
+  return updated;
+}
+
 export function deleteProvider(id: string): void {
   getAppDatabase().delete(providers).where(eq(providers.id, id)).run();
 }

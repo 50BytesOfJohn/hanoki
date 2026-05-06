@@ -15,32 +15,10 @@ import {
   ArrowRight01Icon,
   Chat01Icon,
   FolderAddIcon,
-  Folder01Icon,
-  Folder02Icon,
-  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { AlertDialog, Button, Input, SearchField } from "@heroui/react";
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
-import {
-  Tree,
-  TreeDragLine,
-  TreeItem,
-  TreeItemIcon,
-  TreeItemLabel,
-  TreeItemRenameInput,
-} from "@/components/ui/tree";
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
@@ -55,6 +33,13 @@ import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 
 import type { ChatInfo, ChatTreeFolderListItem, ChatTreeItemRef } from "@shared/ipc";
+import {
+  ChatSidebar,
+  ChatSidebarBlock,
+  ChatSidebarBlockContent,
+  ChatSidebarBlockHeader,
+  ChatSidebarPanel,
+} from "./chat-sidebar";
 import { useWorkspaceStore } from "../workspace/store";
 
 type ChatTreeNodeData =
@@ -73,13 +58,10 @@ export function ChatSidebarTree() {
   const workspaceId = workspace?.id;
 
   return (
-    <Sidebar
-      collapsible="offcanvas"
-      className="top-(--window-toolbar-height) h-[calc(100svh-var(--window-toolbar-height))] border-r-0"
-    >
-      <SidebarContent>
+    <ChatSidebar>
+      <ChatSidebarPanel>
         {!workspaceId ? (
-          <p className="px-2 py-2 text-sidebar-foreground/70 text-xs">Select a workspace.</p>
+          <p className="px-3 py-3 text-xs text-muted">Select a workspace.</p>
         ) : workspaceState === "loading" ? null : (
           <ChatSidebarTreeInner
             key={workspaceId}
@@ -87,8 +69,8 @@ export function ChatSidebarTree() {
             initialExpandedFolderIds={expandedTreeNodes}
           />
         )}
-      </SidebarContent>
-    </Sidebar>
+      </ChatSidebarPanel>
+    </ChatSidebar>
   );
 }
 
@@ -120,6 +102,7 @@ function ChatSidebarTreeInner({
   const [pendingDeleteItems, setPendingDeleteItems] = React.useState<ChatTreeItemRef[] | null>(
     null,
   );
+  const [searchQuery, setSearchQuery] = React.useState("");
   const selectedItemIdSet = React.useMemo(() => new Set(selectedItems), [selectedItems]);
 
   const setRenamingItem = React.useCallback(
@@ -262,6 +245,16 @@ function ChatSidebarTreeInner({
 
   const items = tree.getItems();
   const visibleItems = items.filter((item) => item.getId() !== ROOT_ITEM_ID);
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredItems = React.useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return visibleItems;
+    }
+
+    return visibleItems.filter((item) =>
+      item.getItemName().toLocaleLowerCase().includes(normalizedSearchQuery),
+    );
+  }, [normalizedSearchQuery, visibleItems]);
 
   const invalidateTree = React.useCallback(() => {
     void tree.getRootItem().invalidateChildrenIds();
@@ -364,168 +357,190 @@ function ChatSidebarTreeInner({
 
   return (
     <>
-      <div className="flex items-center gap-1 px-2">
-        <InputGroup className="w-full">
-          <InputGroupInput name="search" placeholder="Search tree..." type="text" />
+      <ChatSidebarBlock>
+        <ChatSidebarBlockHeader>
+          <div className="flex items-center gap-1.5">
+            <SearchField
+              aria-label="Search chats"
+              className="min-w-0 flex-1"
+              fullWidth
+              name="search"
+              value={searchQuery}
+              variant="secondary"
+              onChange={setSearchQuery}
+            >
+              <SearchField.Group>
+                <SearchField.SearchIcon />
+                <SearchField.Input placeholder="Search chats..." />
+                <SearchField.ClearButton />
+              </SearchField.Group>
+            </SearchField>
 
-          <InputGroupAddon>
-            <HugeiconsIcon icon={Search01Icon} className="size-3" />
-          </InputGroupAddon>
-        </InputGroup>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label="Add chat to root"
+              onPress={() => {
+                void createChat(null);
+              }}
+            >
+              <HugeiconsIcon icon={Add01Icon} />
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="ghost"
+              aria-label="Add folder to root"
+              onPress={() => {
+                void createFolder(null);
+              }}
+            >
+              <HugeiconsIcon icon={FolderAddIcon} />
+            </Button>
+          </div>
+        </ChatSidebarBlockHeader>
 
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Add chat to root"
-          onClick={() => {
-            createChat(null);
-          }}
-        >
-          <HugeiconsIcon icon={Add01Icon} />
-        </Button>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Add folder to root"
-          onClick={() => {
-            createFolder(null);
-          }}
-        >
-          <HugeiconsIcon icon={FolderAddIcon} />
-        </Button>
-      </div>
+        {visibleItems.length === 0 ? (
+          <p className="px-3 py-3 text-xs text-muted">No chats or folders yet.</p>
+        ) : filteredItems.length === 0 ? (
+          <p className="px-3 py-3 text-xs text-muted">No matching chats or folders.</p>
+        ) : (
+          <ChatSidebarBlockContent className="px-1 py-1">
+            <ChatTreeView
+              className="relative gap-0.5 pb-8"
+              {...mergeProps<"div">(tree.getContainerProps("Chat tree"), {
+                onKeyDown: handleTreeKeyDown,
+              })}
+            >
+              <ChatTreeDragLine style={tree.getDragLineStyle()} />
+              {filteredItems.map((item) => {
+                const data = item.getItemData();
+                const depth = getItemDepth(item);
 
-      {visibleItems.length === 0 ? (
-        <p className="px-2 py-2 text-sidebar-foreground/70 text-xs">No chats or folders yet.</p>
-      ) : (
-        <Tree
-          className="relative min-h-0 flex-1 gap-0.5 pb-8 px-1"
-          {...mergeProps<"div">(tree.getContainerProps("Chat tree"), {
-            onKeyDown: handleTreeKeyDown,
-          })}
-        >
-          <TreeDragLine style={tree.getDragLineStyle()} />
-          {visibleItems.map((item) => {
-            const data = item.getItemData();
-            const depth = getItemDepth(item);
+                if (data.kind === "loading" || !item.hasLoadedData()) {
+                  return null;
+                }
 
-            if (data.kind === "loading" || !item.hasLoadedData()) {
-              return null;
-            }
+                const handleContextMenu = (e: React.MouseEvent) => {
+                  e.preventDefault();
+                  const itemKind = data.kind === "folder" ? "folder" : "chat";
+                  void chatTreeApi.showContextMenu(item.getId(), itemKind).then((action) => {
+                    const ensureFolderExpanded = () => {
+                      const folderItemId = item.getId();
+                      setExpandedItems((prev) =>
+                        prev.includes(folderItemId) ? prev : [...prev, folderItemId],
+                      );
+                    };
 
-            const handleContextMenu = (e: React.MouseEvent) => {
-              e.preventDefault();
-              const itemKind = data.kind === "folder" ? "folder" : "chat";
-              void chatTreeApi.showContextMenu(item.getId(), itemKind).then((action) => {
-                const ensureFolderExpanded = () => {
-                  const folderItemId = item.getId();
-                  setExpandedItems((prev) =>
-                    prev.includes(folderItemId) ? prev : [...prev, folderItemId],
-                  );
+                    if (action === "add-folder" && itemKind === "folder") {
+                      ensureFolderExpanded();
+                      void createFolder(item.getId().slice("folder:".length));
+                    } else if (action === "add-chat" && itemKind === "folder") {
+                      ensureFolderExpanded();
+                      void createChat(item.getId().slice("folder:".length));
+                    } else if (action === "open-in-new-tab" && data.kind === "chat") {
+                      openChat(data.chat.id, "new-tab");
+                    } else if (action === "clone" && data.kind === "chat") {
+                      void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
+                        invalidateTree();
+                      });
+                    } else if (action === "rename") {
+                      item.startRenaming();
+                    } else if (action === "delete") {
+                      openDeleteDialog(
+                        selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
+                          ? selectedItems
+                          : [item.getId()],
+                      );
+                    }
+                  });
                 };
 
-                if (action === "add-folder" && itemKind === "folder") {
-                  ensureFolderExpanded();
-                  void createFolder(item.getId().slice("folder:".length));
-                } else if (action === "add-chat" && itemKind === "folder") {
-                  ensureFolderExpanded();
-                  void createChat(item.getId().slice("folder:".length));
-                } else if (action === "open-in-new-tab" && data.kind === "chat") {
-                  openChat(data.chat.id, "new-tab");
-                } else if (action === "clone" && data.kind === "chat") {
-                  void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
-                    invalidateTree();
-                  });
-                } else if (action === "rename") {
-                  item.startRenaming();
-                } else if (action === "delete") {
-                  openDeleteDialog(
-                    selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
-                      ? selectedItems
-                      : [item.getId()],
+                if (item.isRenaming()) {
+                  return (
+                    <ChatTreeItemRow key={item.getKey()} level={depth} {...item.getProps()}>
+                      {data.kind === "chat" ? (
+                        <ChatTreeItemIcon chatId={data.chat.id} />
+                      ) : data.kind === "folder" ? (
+                        <ChatTreeItemIconFrame className="text-muted opacity-50">
+                          <HugeiconsIcon icon={ArrowRight01Icon} />
+                        </ChatTreeItemIconFrame>
+                      ) : null}
+                      <Input
+                        variant="secondary"
+                        className="h-7 min-w-0 flex-1 px-2 text-sm"
+                        {...item.getRenameInputProps()}
+                      />
+                    </ChatTreeItemRow>
                   );
                 }
-              });
-            };
 
-            if (item.isRenaming()) {
-              return (
-                <TreeItem key={item.getKey()} level={depth} {...item.getProps()}>
-                  {data.kind === "chat" ? (
-                    <ChatTreeItemIcon chatId={data.chat.id} />
-                  ) : data.kind === "folder" ? (
-                    <>
-                      <TreeItemIcon className="text-muted-foreground opacity-50">
-                        <HugeiconsIcon icon={ArrowRight01Icon} />
-                      </TreeItemIcon>
-                      <TreeItemIcon className="text-muted-foreground">
-                        <HugeiconsIcon icon={Folder01Icon} />
-                      </TreeItemIcon>
-                    </>
-                  ) : null}
-                  <TreeItemRenameInput {...item.getRenameInputProps()} />
-                </TreeItem>
-              );
-            }
+                if (data.kind === "chat") {
+                  const chatItemProps = mergeProps<"div">(item.getProps(), {
+                    onClick: (event) => {
+                      if (event.defaultPrevented || isSelectionModifierEvent(event)) {
+                        return;
+                      }
 
-            if (data.kind === "chat") {
-              const chatItemProps = mergeProps<"div">(item.getProps(), {
-                onClick: (event) => {
-                  if (event.defaultPrevented || isSelectionModifierEvent(event)) {
-                    return;
-                  }
+                      openChat(data.chat.id, "auto");
+                    },
+                    onContextMenu: handleContextMenu,
+                  });
 
-                  openChat(data.chat.id, "auto");
-                },
-                onContextMenu: handleContextMenu,
-              });
+                  return (
+                    <ChatTreeItemRow
+                      key={item.getKey()}
+                      level={depth}
+                      {...chatItemProps}
+                      data-selected={item.isSelected() || undefined}
+                      data-drop-target={item.isDragTarget() || undefined}
+                    >
+                      <ChatTreeItemIcon chatId={data.chat.id} />
+                      <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
+                    </ChatTreeItemRow>
+                  );
+                }
 
-              return (
-                <TreeItem
-                  key={item.getKey()}
-                  level={depth}
-                  {...chatItemProps}
-                  data-selected={item.isSelected() || undefined}
-                  data-drop-target={item.isDragTarget() || undefined}
-                >
-                  <ChatTreeItemIcon chatId={data.chat.id} />
-                  <TreeItemLabel>{data.chat.title}</TreeItemLabel>
-                </TreeItem>
-              );
-            }
+                if (data.kind === "folder") {
+                  const isExpanded = item.isExpanded();
+                  const hasChildren = data.folder.childFolderCount + data.folder.childChatCount > 0;
+                  const folderItemProps = mergeProps<"div">(item.getProps(), {
+                    onContextMenu: handleContextMenu,
+                  });
 
-            if (data.kind === "folder") {
-              const isExpanded = item.isExpanded();
-              const hasChildren = data.folder.childFolderCount + data.folder.childChatCount > 0;
-              const folderItemProps = mergeProps<"div">(item.getProps(), {
-                onContextMenu: handleContextMenu,
-              });
+                  return (
+                    <ChatTreeItemRow
+                      key={item.getKey()}
+                      level={depth}
+                      {...folderItemProps}
+                      data-selected={item.isSelected() || undefined}
+                      data-drop-target={item.isDragTarget() || undefined}
+                    >
+                      <ChatTreeDisclosureButton
+                        hasChildren={hasChildren}
+                        isExpanded={isExpanded}
+                        onToggle={() => {
+                          if (isExpanded) {
+                            item.collapse();
+                          } else {
+                            item.expand();
+                          }
+                        }}
+                      />
+                      <ChatTreeItemLabel className="font-medium">
+                        {data.folder.name}
+                      </ChatTreeItemLabel>
+                    </ChatTreeItemRow>
+                  );
+                }
 
-              return (
-                <TreeItem
-                  key={item.getKey()}
-                  level={depth}
-                  {...folderItemProps}
-                  data-selected={item.isSelected() || undefined}
-                  data-drop-target={item.isDragTarget() || undefined}
-                >
-                  <TreeItemIcon
-                    className={cn("text-muted-foreground", !hasChildren && "opacity-50")}
-                  >
-                    <HugeiconsIcon icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon} />
-                  </TreeItemIcon>
-                  <TreeItemIcon className="text-muted-foreground">
-                    <HugeiconsIcon icon={isExpanded ? Folder02Icon : Folder01Icon} />
-                  </TreeItemIcon>
-                  <TreeItemLabel>{data.folder.name}</TreeItemLabel>
-                </TreeItem>
-              );
-            }
-
-            return null;
-          })}
-        </Tree>
-      )}
+                return null;
+              })}
+            </ChatTreeView>
+          </ChatSidebarBlockContent>
+        )}
+      </ChatSidebarBlock>
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}
         isPending={deleteItemsMutation.isPending}
@@ -545,7 +560,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
   const isActive = status === "streaming" || status === "submitted";
 
   return (
-    <TreeItemIcon className="text-muted-foreground">
+    <ChatTreeItemIconFrame className="text-muted">
       {isActive ? (
         <span className="flex size-4 items-center justify-center">
           <span className="size-2 animate-pulse rounded-full bg-primary" />
@@ -553,7 +568,99 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
       ) : (
         <HugeiconsIcon icon={Chat01Icon} />
       )}
-    </TreeItemIcon>
+    </ChatTreeItemIconFrame>
+  );
+}
+
+function ChatTreeView({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div className={cn("flex flex-col [--tree-indent:12px]", className)} role="tree" {...props} />
+  );
+}
+
+function ChatTreeItemRow({
+  className,
+  level = 0,
+  style,
+  ...props
+}: React.ComponentProps<"div"> & {
+  level?: number;
+}) {
+  return (
+    <div
+      className={cn(
+        "group/tree-item relative flex h-8 items-center gap-1.5 rounded-md px-2 text-sm outline-hidden select-none transition-colors duration-150",
+        "data-[selected=true]:bg-surface-tertiary data-[selected=true]:text-foreground",
+        "data-[focused=true]:ring-2 data-[focused=true]:ring-focus",
+        "data-[drop-target=true]:bg-default/70 data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted/30 data-[drop-target=true]:ring-dashed",
+        "hover:bg-default/70",
+        className,
+      )}
+      role="treeitem"
+      style={
+        {
+          ...style,
+          "--tree-level": level,
+          paddingInlineStart: `calc(var(--tree-indent) * ${level} + 0.5rem)`,
+        } as React.CSSProperties
+      }
+      {...props}
+    />
+  );
+}
+
+function ChatTreeDisclosureButton({
+  hasChildren,
+  isExpanded,
+  onToggle,
+}: {
+  hasChildren: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  if (!hasChildren) {
+    return <span className="size-5 shrink-0" aria-hidden />;
+  }
+
+  return (
+    <Button
+      isIconOnly
+      size="sm"
+      variant="ghost"
+      className="size-5 min-w-0 shrink-0 text-muted"
+      aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onPress={onToggle}
+    >
+      <HugeiconsIcon icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon} />
+    </Button>
+  );
+}
+
+function ChatTreeItemIconFrame({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function ChatTreeItemLabel({ className, ...props }: React.ComponentProps<"span">) {
+  return <span className={cn("min-w-0 flex-1 truncate text-sm", className)} {...props} />;
+}
+
+function ChatTreeDragLine({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("pointer-events-none absolute right-0 left-0 h-0.5 bg-primary", className)}
+      {...props}
+    />
   );
 }
 
@@ -606,27 +713,36 @@ function DeleteTreeItemsDialog({
   const hasFolders = items?.some((item) => item.kind === "folder") ?? false;
 
   return (
-    <AlertDialog open={itemCount > 0} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete Selected Items</AlertDialogTitle>
-          <AlertDialogDescription>
-            {`This will permanently delete ${itemCount} selected ${itemCount === 1 ? "item" : "items"}.`}
-            {hasFolders
-              ? " Selected folders will also delete all nested chats and subfolders."
-              : ""}
-            {" This action cannot be undone."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel variant="secondary" disabled={isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <Button variant="destructive" onClick={onConfirm} disabled={isPending}>
-            Delete
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
+    <AlertDialog isOpen={itemCount > 0} onOpenChange={(open) => !open && onClose()}>
+      <AlertDialog.Backdrop>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog className="sm:max-w-[360px]">
+            <AlertDialog.Header>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Heading>Delete Selected Items</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              <p>
+                {`This will permanently delete ${itemCount} selected ${
+                  itemCount === 1 ? "item" : "items"
+                }.`}
+                {hasFolders
+                  ? " Selected folders will also delete all nested chats and subfolders."
+                  : ""}
+                {" This action cannot be undone."}
+              </p>
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button isDisabled={isPending} slot="close" variant="secondary">
+                Cancel
+              </Button>
+              <Button isDisabled={isPending} variant="danger" onPress={onConfirm}>
+                Delete
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </AlertDialog>
   );
 }

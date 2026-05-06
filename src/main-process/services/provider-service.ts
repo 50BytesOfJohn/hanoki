@@ -11,6 +11,7 @@ import type {
   ProviderModelInfo,
   SaveProviderInput,
   SaveProviderResult,
+  UpdateProviderSecretsInput,
 } from "@shared/ipc";
 import type {
   ProviderModelSyncStatus,
@@ -35,6 +36,7 @@ import {
   deleteProvider as deleteStoredProvider,
   getProviderById,
   listProviders as listStoredProviders,
+  updateProviderConfig,
   updateProviderMetadataModelSync,
   updateProviderModelsSyncStatus,
   type ProviderTableRow,
@@ -55,6 +57,7 @@ export interface ProviderService {
   listProviderModels(providerId: string): ProviderModelInfo[];
   testCredentials(input: ProviderCredentialTestInput): Promise<ProviderCredentialTestResult>;
   saveProvider(input: SaveProviderInput): SaveProviderResult;
+  updateProviderSecrets(input: UpdateProviderSecretsInput): ProviderInfo;
   deleteProvider(providerId: string): void;
   syncProvidersOnStartup(): Promise<void>;
 }
@@ -159,6 +162,36 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         id: row.id,
         displayName: row.displayName,
         catalogId: row.catalogId as ProviderId,
+      };
+    },
+
+    updateProviderSecrets(input) {
+      const existing = getProviderById(input.providerId);
+      if (!existing) {
+        throw AppError.notFound(`Provider "${input.providerId}" not found.`);
+      }
+
+      const catalogEntry = getSupportedProviderById(existing.catalogId);
+      if (!catalogEntry || !catalogEntry.isAvailable) {
+        throw AppError.notFound(`Provider "${existing.catalogId}" is not available.`);
+      }
+
+      if (!isEncryptionAvailable()) {
+        throw AppError.internal("Encryption is not available. Cannot securely store credentials.");
+      }
+
+      const config = parseProviderSecretDraftConfig(catalogEntry, input.config);
+      const updated = updateProviderConfig(existing.id, {
+        ...parseStoredProviderConfigObject(existing.config),
+        ...buildStoredProviderConfig(catalogEntry, config),
+      });
+
+      void syncProviderModelsInBackground(updated.id, "provider-added");
+
+      return {
+        id: updated.id,
+        displayName: updated.displayName,
+        catalogId: updated.catalogId as ProviderId,
       };
     },
 
@@ -285,6 +318,57 @@ function parseProviderDraftConfig(
   return draft;
 }
 
+function parseProviderSecretDraftConfig(
+  provider: SupportedProviderDefinition,
+  rawConfig: Record<string, unknown>,
+): ProviderDraftConfig {
+  const secretFields = Object.entries(provider.configFields).filter(
+    ([, field]) => field.type === "secret",
+  );
+
+  if (secretFields.length === 0) {
+    throw AppError.badRequest(`Provider "${provider.id}" does not have secret config fields.`);
+  }
+
+  const allowedKeys = new Set(secretFields.map(([key]) => key));
+  for (const key of Object.keys(rawConfig)) {
+    if (!allowedKeys.has(key)) {
+      throw AppError.badRequest(
+        `Unsupported secret config field "${key}" for provider "${provider.id}".`,
+      );
+    }
+  }
+
+  const draft: ProviderDraftConfig = {};
+
+  for (const [key, field] of secretFields) {
+    const rawValue = rawConfig[key];
+
+    if (rawValue == null || rawValue === "") {
+      if (field.required) {
+        throw AppError.badRequest(`${field.label} is required.`);
+      }
+      continue;
+    }
+
+    if (typeof rawValue !== "string") {
+      throw AppError.badRequest(`${field.label} must be a string.`);
+    }
+
+    const value = rawValue.trim();
+    if (!value) {
+      if (field.required) {
+        throw AppError.badRequest(`${field.label} is required.`);
+      }
+      continue;
+    }
+
+    draft[key] = value;
+  }
+
+  return draft;
+}
+
 function buildStoredProviderConfig(
   provider: SupportedProviderDefinition,
   draftConfig: ProviderDraftConfig,
@@ -321,6 +405,14 @@ function buildStoredProviderConfig(
   }
 
   return storedConfig;
+}
+
+function parseStoredProviderConfigObject(rawConfig: unknown): Record<string, unknown> {
+  if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
+    throw AppError.internal("Stored provider config has invalid format.");
+  }
+
+  return rawConfig as Record<string, unknown>;
 }
 
 function parseDraftHostPortConfigValue(

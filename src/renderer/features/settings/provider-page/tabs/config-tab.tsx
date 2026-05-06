@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -13,7 +13,7 @@ import {
   TextField,
 } from "@heroui/react";
 import { getSupportedProviderById } from "@shared/providers/catalog";
-import { useDeleteProvider } from "@/mutations/providers";
+import { useDeleteProvider, useUpdateProviderSecrets } from "@/mutations/providers";
 import { listProvidersQueryOptions } from "@/queries/providers";
 
 interface ProviderConfigModalProps {
@@ -25,9 +25,63 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
   const navigate = useNavigate();
   const providersQuery = useQuery(listProvidersQueryOptions);
   const deleteProvider = useDeleteProvider();
+  const updateProviderSecrets = useUpdateProviderSecrets();
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
+  const [didUpdateSecrets, setDidUpdateSecrets] = useState(false);
   const provider = providersQuery.data?.find((item) => item.id === providerId);
   const catalogProvider = provider ? getSupportedProviderById(provider.catalogId) : null;
+  const secretFields = catalogProvider
+    ? Object.entries(catalogProvider.configFields).filter(([, field]) => field.type === "secret")
+    : [];
+  const canUpdateSecrets =
+    Boolean(provider) &&
+    secretFields.length > 0 &&
+    secretFields.every(([key, field]) => !field.required || Boolean(secretValues[key]?.trim())) &&
+    !updateProviderSecrets.isPending;
+
+  useEffect(() => {
+    if (!isConfigOpen) {
+      return;
+    }
+
+    setSecretValues({});
+    setDidUpdateSecrets(false);
+    updateProviderSecrets.reset();
+  }, [isConfigOpen, providerId]);
+
+  function handleSecretChange(key: string, value: string): void {
+    setSecretValues((current) => ({
+      ...current,
+      [key]: value,
+    }));
+    setDidUpdateSecrets(false);
+    updateProviderSecrets.reset();
+  }
+
+  function handleUpdateSecrets(): void {
+    if (!provider || !catalogProvider || !canUpdateSecrets) {
+      return;
+    }
+
+    const config: Record<string, unknown> = {};
+    for (const [key] of secretFields) {
+      config[key] = secretValues[key] ?? "";
+    }
+
+    updateProviderSecrets.mutate(
+      {
+        providerId: provider.id,
+        config,
+      },
+      {
+        onSuccess: () => {
+          setSecretValues({});
+          setDidUpdateSecrets(true);
+        },
+      },
+    );
+  }
 
   function handleDeleteConfirm(): void {
     if (!provider) {
@@ -52,7 +106,7 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
             <Modal.Header>
               <Modal.Heading>Provider Config</Modal.Heading>
             </Modal.Header>
-            <Modal.Body>
+            <Modal.Body className="gap-6">
               {providersQuery.isPending ? (
                 <Alert>
                   <Alert.Indicator />
@@ -76,9 +130,9 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
                   </Alert.Content>
                 </Alert>
               ) : (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <TextField fullWidth isReadOnly value={provider.displayName}>
+                <div className="space-y-6">
+                  <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+                    <TextField fullWidth isReadOnly className="gap-2" value={provider.displayName}>
                       <Label>Display Name</Label>
                       <Input fullWidth variant="secondary" />
                     </TextField>
@@ -86,6 +140,7 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
                     <TextField
                       fullWidth
                       isReadOnly
+                      className="gap-2"
                       value={catalogProvider?.name ?? provider.catalogId}
                     >
                       <Label>Provider</Label>
@@ -93,38 +148,89 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
                     </TextField>
                   </div>
 
-                  <TextField fullWidth isReadOnly value={provider.id}>
+                  <TextField fullWidth isReadOnly className="gap-2" value={provider.id}>
                     <Label>Provider Record ID</Label>
                     <Input fullWidth variant="secondary" />
                   </TextField>
 
                   {catalogProvider ? (
-                    <div className="space-y-4">
-                      {Object.entries(catalogProvider.configFields).map(([key, field]) => (
-                        <TextField
-                          key={key}
-                          fullWidth
-                          isReadOnly
-                          type={field.type === "secret" ? "password" : "text"}
-                          value=""
-                        >
-                          <Label>{field.label}</Label>
-                          <Input
+                    <div className="space-y-6">
+                      {Object.entries(catalogProvider.configFields).map(([key, field]) =>
+                        field.type === "secret" ? (
+                          <TextField
+                            key={key}
                             fullWidth
-                            id={`${provider.id}-${key}-summary`}
-                            placeholder={
-                              field.type === "secret" ? "Stored securely (hidden)" : "Configured"
-                            }
+                            className="gap-2"
+                            type="password"
+                            value={secretValues[key] ?? ""}
+                            onChange={(value) => {
+                              handleSecretChange(key, value);
+                            }}
+                          >
+                            <Label>{field.label}</Label>
+                            <Input
+                              fullWidth
+                              id={`${provider.id}-${key}-secret`}
+                              placeholder={field.placeholder ?? "Enter replacement secret"}
+                              variant="secondary"
+                            />
+                            <Description>
+                              {field.description}
+                              {
+                                " Enter a new value only when you want to overwrite the stored secret."
+                              }
+                            </Description>
+                          </TextField>
+                        ) : (
+                          <TextField key={key} fullWidth isReadOnly className="gap-2" value="">
+                            <Label>{field.label}</Label>
+                            <Input
+                              fullWidth
+                              id={`${provider.id}-${key}-summary`}
+                              placeholder="Configured"
+                              variant="secondary"
+                            />
+                            <Description>{field.description}</Description>
+                          </TextField>
+                        ),
+                      )}
+
+                      {updateProviderSecrets.isError ? (
+                        <Alert status="danger">
+                          <Alert.Indicator />
+                          <Alert.Content>
+                            <Alert.Title>Failed to update secrets</Alert.Title>
+                            <Alert.Description>
+                              {getErrorMessage(updateProviderSecrets.error)}
+                            </Alert.Description>
+                          </Alert.Content>
+                        </Alert>
+                      ) : null}
+
+                      {didUpdateSecrets ? (
+                        <Alert status="success">
+                          <Alert.Indicator />
+                          <Alert.Content>
+                            <Alert.Title>Provider secrets updated</Alert.Title>
+                            <Alert.Description>
+                              The provider will refresh its model list in the background.
+                            </Alert.Description>
+                          </Alert.Content>
+                        </Alert>
+                      ) : null}
+
+                      {secretFields.length > 0 ? (
+                        <div className="flex justify-end">
+                          <Button
                             variant="secondary"
-                          />
-                          <Description>
-                            {field.description}
-                            {field.type === "secret"
-                              ? " Secret values are stored securely on this device and are hidden."
-                              : null}
-                          </Description>
-                        </TextField>
-                      ))}
+                            isDisabled={!canUpdateSecrets}
+                            isPending={updateProviderSecrets.isPending}
+                            onPress={handleUpdateSecrets}
+                          >
+                            Update Secrets
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <Alert>
@@ -138,17 +244,6 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
                       </Alert.Content>
                     </Alert>
                   )}
-
-                  <Alert>
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>Editing config here is not available yet</Alert.Title>
-                      <Alert.Description>
-                        Use the provider setup flow to create a new provider profile when you need
-                        different credentials.
-                      </Alert.Description>
-                    </Alert.Content>
-                  </Alert>
 
                   {deleteProvider.isError ? (
                     <Alert status="danger">
@@ -210,7 +305,7 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
                       </AlertDialog.Backdrop>
                     </AlertDialog>
                   </Alert>
-                </>
+                </div>
               )}
             </Modal.Body>
             <Modal.Footer>
