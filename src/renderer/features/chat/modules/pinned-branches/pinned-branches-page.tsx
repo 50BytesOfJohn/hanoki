@@ -3,12 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { PinIcon, PinOffIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { Button, Card, Chip, Skeleton } from "@heroui/react";
 
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
 import { messagesApi } from "@/api/messages";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Empty,
   EmptyDescription,
@@ -62,8 +60,15 @@ export function PinnedBranchesPage() {
 
   if (error) {
     return (
-      <div className="p-6 text-sm text-destructive">
-        Failed to load pinned branches: {error instanceof Error ? error.message : "Unknown error"}
+      <div className="p-4">
+        <Card variant="secondary">
+          <Card.Content>
+            <p className="text-sm text-danger">
+              Failed to load pinned branches:{" "}
+              {error instanceof Error ? error.message : "Unknown error"}
+            </p>
+          </Card.Content>
+        </Card>
       </div>
     );
   }
@@ -115,12 +120,10 @@ function PinnedBranchRow({ summary, modelDisplayName }: PinnedBranchRowProps) {
       return messages;
     },
     onSuccess: (messages) => {
-      // Update the AI SDK Chat instance so the conversation view re-renders immediately
       const chatSession = useChatStore.getState().chatEntries.get(summary.chatId);
       if (chatSession) {
         chatSession.messages = messages;
       }
-      // Keep TanStack Query cache in sync
       queryClient.setQueryData(
         queryKeys.chats.messages(summary.chatId, CURRENT_BRANCH_QUERY_KEY),
         messages,
@@ -145,40 +148,45 @@ function PinnedBranchRow({ summary, modelDisplayName }: PinnedBranchRowProps) {
   };
 
   return (
-    <div
-      className="group/row flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:bg-muted/50"
-      onClick={handleRowClick}
+    <Card
+      className="group/row cursor-pointer"
       role="button"
       tabIndex={0}
+      onClick={handleRowClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           handleRowClick();
         }
       }}
     >
-      <div className="min-w-0 flex-1">
-        <p className="mb-1 text-xs font-medium text-muted-foreground">{summary.chatTitle}</p>
-        <p className="line-clamp-3 text-sm leading-relaxed">{summary.textPreview}</p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2">
-        {modelDisplayName && (
-          <Badge variant="secondary" className="text-[10px]">
-            {modelDisplayName}
-          </Badge>
-        )}
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation();
-            unpinMutation.mutate();
-          }}
+      <Card.Header className="flex-row items-start justify-between gap-3">
+        <p className="text-muted min-w-0 truncate text-xs">{summary.chatTitle}</p>
+        <div
+          className="flex shrink-0 items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
-          <HugeiconsIcon icon={PinOffIcon} />
-        </Button>
-      </div>
-    </div>
+          {modelDisplayName && (
+            <Chip size="sm" variant="secondary">
+              {modelDisplayName}
+            </Chip>
+          )}
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            isPending={unpinMutation.isPending}
+            aria-label="Unpin branch"
+            onPress={() => unpinMutation.mutate()}
+          >
+            <HugeiconsIcon icon={PinOffIcon} size={16} />
+          </Button>
+        </div>
+      </Card.Header>
+      <Card.Content className="pt-0">
+        <p className="line-clamp-3 text-sm leading-relaxed">{summary.textPreview}</p>
+      </Card.Content>
+    </Card>
   );
 }
 
@@ -186,7 +194,18 @@ function PinnedBranchesLoadingState() {
   return (
     <div className="flex flex-col gap-2 p-4">
       {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-20 rounded-xl" />
+        <Card key={i}>
+          <Card.Header>
+            <Skeleton className="h-3 w-28 rounded" />
+          </Card.Header>
+          <Card.Content className="pt-0 pb-1">
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-4 w-full rounded" />
+              <Skeleton className="h-4 w-4/5 rounded" />
+              <Skeleton className="h-4 w-3/5 rounded" />
+            </div>
+          </Card.Content>
+        </Card>
       ))}
     </div>
   );
