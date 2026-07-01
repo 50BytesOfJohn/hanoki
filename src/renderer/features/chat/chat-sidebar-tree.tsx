@@ -1,6 +1,7 @@
 import * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useTree } from "@headless-tree/react";
+import { useQuery } from "@tanstack/react-query";
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -11,8 +12,10 @@ import {
 import type { ItemInstance } from "@headless-tree/core";
 import {
   Add01Icon,
+  AddSquareIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
+  Cancel01Icon,
   Chat01Icon,
   FolderAddIcon,
 } from "@hugeicons/core-free-icons";
@@ -22,6 +25,7 @@ import { AlertDialog, Button, Input, SearchField } from "@heroui/react";
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
+import { getChatQueryOptions } from "@/queries/chats";
 import {
   useDeleteChatTreeItems,
   useMoveChat,
@@ -33,6 +37,7 @@ import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 
 import type { ChatInfo, ChatTreeFolderListItem, ChatTreeItemRef } from "@shared/ipc";
+import type { Tab } from "../workspace/store/types";
 import {
   ChatSidebar,
   ChatSidebarBlock,
@@ -49,6 +54,8 @@ type ChatTreeNodeData =
   | { kind: "loading" };
 
 const ROOT_ITEM_ID = "root";
+const SIDEBAR_ICON_BUTTON_CLASS =
+  "size-6 min-w-0 shrink-0 p-0 [&_svg:not([class*='size-'])]:size-3.5";
 
 export function ChatSidebarTree() {
   const workspaceState = useWorkspaceStore((s) => s.state);
@@ -92,6 +99,8 @@ function ChatSidebarTreeInner({
   const createFolderMutation = useCreateFolder();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
+  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
   const [expandedItems, setExpandedItems] = React.useState<string[]>(() =>
     initialExpandedFolderIds.map((id) => `folder:${id}`),
@@ -302,17 +311,18 @@ function ChatSidebarTreeInner({
     [createFolderMutation, invalidateTree, setRenamingItem, setRenamingValue, workspaceId],
   );
 
-  const openChat = React.useCallback(
-    (chatId: string, mode: "auto" | "new-tab") => {
-      openTab(
-        {
-          type: "chat",
-          chatId,
-        },
-        { mode },
-      );
+  const openChatInTab = React.useCallback(
+    (chatId: string) => {
+      openTab({ type: "chat", chatId });
     },
     [openTab],
+  );
+
+  const navigateToChat = React.useCallback(
+    (chatId: string) => {
+      setCurrentChat(chatId);
+    },
+    [setCurrentChat],
   );
 
   const handleDeleteConfirm = React.useCallback(() => {
@@ -357,49 +367,53 @@ function ChatSidebarTreeInner({
 
   return (
     <>
-      <ChatSidebarBlock>
-        <ChatSidebarBlockHeader>
-          <div className="flex items-center gap-1.5">
-            <SearchField
-              aria-label="Search chats"
-              className="min-w-0 flex-1"
-              fullWidth
-              name="search"
-              value={searchQuery}
-              variant="secondary"
-              onChange={setSearchQuery}
-            >
-              <SearchField.Group>
-                <SearchField.SearchIcon />
-                <SearchField.Input placeholder="Search chats..." />
-                <SearchField.ClearButton />
-              </SearchField.Group>
-            </SearchField>
-
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              aria-label="Add chat to root"
-              onPress={() => {
-                void createChat(null);
-              }}
-            >
-              <HugeiconsIcon icon={Add01Icon} />
-            </Button>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              aria-label="Add folder to root"
-              onPress={() => {
-                void createFolder(null);
-              }}
-            >
-              <HugeiconsIcon icon={FolderAddIcon} />
-            </Button>
-          </div>
+      <ChatSidebarBlock className="gap-2">
+        <ChatSidebarBlockHeader className="space-y-2">
+          <SearchField
+            aria-label="Search tabs and file tree"
+            className="min-w-0"
+            fullWidth
+            name="search"
+            value={searchQuery}
+            variant="secondary"
+            onChange={setSearchQuery}
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="Search tabs and file tree..." />
+              <SearchField.ClearButton />
+            </SearchField.Group>
+          </SearchField>
         </ChatSidebarBlockHeader>
+
+        <ChatTabsSection normalizedSearchQuery={normalizedSearchQuery} />
+
+        <ChatSidebarSectionHeader title="File Tree">
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add chat to root"
+            onPress={() => {
+              void createChat(null);
+            }}
+          >
+            <HugeiconsIcon icon={Add01Icon} />
+          </Button>
+          <Button
+            isIconOnly
+            size="sm"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add folder to root"
+            onPress={() => {
+              void createFolder(null);
+            }}
+          >
+            <HugeiconsIcon icon={FolderAddIcon} />
+          </Button>
+        </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
           <p className="px-3 py-3 text-xs text-muted">No chats or folders yet.</p>
@@ -440,7 +454,7 @@ function ChatSidebarTreeInner({
                       ensureFolderExpanded();
                       void createChat(item.getId().slice("folder:".length));
                     } else if (action === "open-in-new-tab" && data.kind === "chat") {
-                      openChat(data.chat.id, "new-tab");
+                      openChatInTab(data.chat.id);
                     } else if (action === "clone" && data.kind === "chat") {
                       void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
                         invalidateTree();
@@ -477,13 +491,14 @@ function ChatSidebarTreeInner({
                 }
 
                 if (data.kind === "chat") {
+                  const isActiveChat = data.chat.id === currentChatId;
                   const chatItemProps = mergeProps<"div">(item.getProps(), {
                     onClick: (event) => {
                       if (event.defaultPrevented || isSelectionModifierEvent(event)) {
                         return;
                       }
 
-                      openChat(data.chat.id, "auto");
+                      navigateToChat(data.chat.id);
                     },
                     onContextMenu: handleContextMenu,
                   });
@@ -493,11 +508,30 @@ function ChatSidebarTreeInner({
                       key={item.getKey()}
                       level={depth}
                       {...chatItemProps}
-                      data-selected={item.isSelected() || undefined}
+                      data-active={isActiveChat || undefined}
                       data-drop-target={item.isDragTarget() || undefined}
                     >
                       <ChatTreeItemIcon chatId={data.chat.id} />
                       <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="ghost"
+                        className={cn(
+                          SIDEBAR_ICON_BUTTON_CLASS,
+                          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 data-[focus-visible=true]:opacity-100",
+                        )}
+                        aria-label={`Open ${data.chat.title} in new tab`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onPress={() => {
+                          openChatInTab(data.chat.id);
+                        }}
+                      >
+                        <HugeiconsIcon icon={AddSquareIcon} />
+                      </Button>
                     </ChatTreeItemRow>
                   );
                 }
@@ -572,6 +606,114 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
   );
 }
 
+function ChatTabsSection({ normalizedSearchQuery }: { normalizedSearchQuery: string }) {
+  const tabs = useWorkspaceStore((s) => s.tabs);
+  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
+  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const closeTab = useWorkspaceStore((s) => s.closeTab);
+
+  if (tabs.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="shrink-0">
+      <ChatSidebarSectionHeader title="Tabs" />
+
+      <div className="flex flex-col gap-0.5 px-1">
+        {tabs.map((tab) => (
+          <ChatTabListItem
+            key={tab.id}
+            tab={tab}
+            isActive={currentChatId === tab.chatId}
+            normalizedSearchQuery={normalizedSearchQuery}
+            onSelect={() => setCurrentChat(tab.chatId)}
+            onClose={() => closeTab(tab.id)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ChatTabListItem({
+  tab,
+  isActive,
+  normalizedSearchQuery,
+  onSelect,
+  onClose,
+}: {
+  tab: Tab;
+  isActive: boolean;
+  normalizedSearchQuery: string;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const chatQuery = useQuery(getChatQueryOptions(tab.chatId));
+  const title = chatQuery.data?.title ?? "Loading…";
+
+  if (normalizedSearchQuery && !title.toLocaleLowerCase().includes(normalizedSearchQuery)) {
+    return null;
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={isActive}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "group/tab relative flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm outline-hidden select-none transition-colors duration-150",
+        "hover:bg-default/70",
+        isActive ? "bg-surface-tertiary font-medium text-foreground" : "text-foreground/70",
+      )}
+    >
+      <span className="flex shrink-0 items-center justify-center text-muted [&_svg:not([class*='size-'])]:size-4">
+        <HugeiconsIcon icon={Chat01Icon} />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <Button
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        className={cn(
+          SIDEBAR_ICON_BUTTON_CLASS,
+          "opacity-0 transition-opacity group-hover/tab:opacity-100",
+          isActive && "opacity-50 group-hover/tab:opacity-100",
+        )}
+        aria-label={`Close ${title} tab`}
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+        onPress={onClose}
+      >
+        <HugeiconsIcon icon={Cancel01Icon} />
+      </Button>
+    </div>
+  );
+}
+
+function ChatSidebarSectionHeader({
+  title,
+  children,
+}: {
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-8 shrink-0 items-center justify-between gap-2 px-3">
+      <h2 className="truncate text-xs font-medium uppercase tracking-wide text-muted">{title}</h2>
+      {children ? <div className="flex shrink-0 items-center gap-1">{children}</div> : null}
+    </div>
+  );
+}
+
 function ChatTreeView({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div className={cn("flex flex-col [--tree-indent:12px]", className)} role="tree" {...props} />
@@ -590,7 +732,7 @@ function ChatTreeItemRow({
     <div
       className={cn(
         "group/tree-item relative flex h-8 items-center gap-1.5 rounded-md px-2 text-sm outline-hidden select-none transition-colors duration-150",
-        "data-[selected=true]:bg-surface-tertiary data-[selected=true]:text-foreground",
+        "text-foreground/70 data-[active=true]:bg-surface-tertiary data-[active=true]:font-medium data-[active=true]:text-foreground",
         "data-[focused=true]:ring-2 data-[focused=true]:ring-focus",
         "data-[drop-target=true]:bg-default/70 data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted/30 data-[drop-target=true]:ring-dashed",
         "hover:bg-default/70",
@@ -619,7 +761,7 @@ function ChatTreeDisclosureButton({
   onToggle: () => void;
 }) {
   if (!hasChildren) {
-    return <span className="size-5 shrink-0" aria-hidden />;
+    return <span className="size-6 shrink-0" aria-hidden />;
   }
 
   return (
@@ -627,7 +769,7 @@ function ChatTreeDisclosureButton({
       isIconOnly
       size="sm"
       variant="ghost"
-      className="size-5 min-w-0 shrink-0 text-muted"
+      className={cn(SIDEBAR_ICON_BUTTON_CLASS, "text-muted")}
       aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
       onClick={(event) => {
         event.stopPropagation();

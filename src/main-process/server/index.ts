@@ -21,7 +21,6 @@ export async function createAiServer(): Promise<{
       },
       (info) => {
         const port = info.port;
-        console.log(`[ai-server] Listening on 127.0.0.1:${port}`);
         resolve({
           port,
           close: () => {

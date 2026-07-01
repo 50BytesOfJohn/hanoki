@@ -3,8 +3,6 @@ import { spawn } from "node:child_process";
 
 migrateAppDatabase();
 const appDbPath = getAppDatabasePath();
-console.log("Launching Drizzle Studio for app database");
-console.log(`SQLite DB path: ${appDbPath}`);
 
 const env: Record<string, string> = {};
 for (const [key, value] of Object.entries(process.env)) {

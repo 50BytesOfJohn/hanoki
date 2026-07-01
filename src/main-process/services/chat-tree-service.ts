@@ -43,7 +43,7 @@ import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/rep
 
 const CHAT_TREE_EXPANDED_FOLDER_IDS_SETTINGS_KEY = "chatTreeExpandedFolderIds";
 const TABS_SETTINGS_KEY = "tabs";
-const ACTIVE_TAB_ID_SETTINGS_KEY = "activeTabId";
+const CURRENT_CHAT_ID_SETTINGS_KEY = "currentChatId";
 const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
 
@@ -204,13 +204,8 @@ function normalizeTabs(value: unknown): TabStateItem[] {
   return normalizedTabs;
 }
 
-function normalizeActiveTabId(value: unknown, tabs: readonly TabStateItem[]): string | null {
-  const normalizedId = normalizeTabId(value);
-  if (!normalizedId) {
-    return null;
-  }
-
-  return tabs.some((tab) => tab.id === normalizedId) ? normalizedId : null;
+function normalizeCurrentChatId(value: unknown): string | null {
+  return normalizeTabId(value);
 }
 
 function pruneExpandedFolderIdsForWorkspace(workspaceId: string, ids: readonly string[]): string[] {
@@ -288,7 +283,7 @@ export function createChatTreeService(): ChatTreeService {
 
     return {
       tabs: prunedTabs,
-      activeTabId: normalizeActiveTabId(workspaceSettings[ACTIVE_TAB_ID_SETTINGS_KEY], prunedTabs),
+      currentChatId: normalizeCurrentChatId(workspaceSettings[CURRENT_CHAT_ID_SETTINGS_KEY]),
     };
   }
 
@@ -296,19 +291,16 @@ export function createChatTreeService(): ChatTreeService {
     const workspaceSettings = getWorkspaceSettings(workspaceId);
     const normalizedTabs = normalizeTabs(tabs);
     const prunedTabs = pruneTabsForWorkspace(workspaceId, normalizedTabs);
-    const activeTabId = normalizeActiveTabId(
-      workspaceSettings[ACTIVE_TAB_ID_SETTINGS_KEY],
-      prunedTabs,
-    );
+    const currentChatId = normalizeCurrentChatId(workspaceSettings[CURRENT_CHAT_ID_SETTINGS_KEY]);
 
     updateWorkspaceSettings(workspaceId, {
       [TABS_SETTINGS_KEY]: prunedTabs,
-      [ACTIVE_TAB_ID_SETTINGS_KEY]: activeTabId,
+      [CURRENT_CHAT_ID_SETTINGS_KEY]: currentChatId,
     });
 
     return {
       tabs: prunedTabs,
-      activeTabId,
+      currentChatId,
     };
   }
 

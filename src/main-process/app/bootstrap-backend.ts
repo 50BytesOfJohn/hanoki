@@ -1,5 +1,4 @@
-import { getConfig, getConfigPath } from "../config";
-import { DEFAULT_WORKSPACE_ID, bootstrapStorage, type StorageBootstrapResult } from "../db";
+import { bootstrapStorage, type StorageBootstrapResult } from "../db";
 import { type IpcHandlerContext } from "../ipc/core/context";
 import { createTrustedSenderRegistry, type TrustedSenderRegistry } from "../ipc/trusted-senders";
 import { createAppServices, type AppServices } from "../services";
@@ -26,16 +25,7 @@ interface BackendBootstrapOptions {
 }
 
 export function bootstrapBackend(options?: BackendBootstrapOptions): BackendBootstrapResult {
-  const config = getConfig();
-  console.log(`Config loaded from: ${getConfigPath()} - theme: ${config.app.theme}`);
-
   const storageBootstrap = bootstrapStorage();
-  const defaultWorkspaceLog = storageBootstrap.createdDefaultWorkspace
-    ? ` Created default workspace "${DEFAULT_WORKSPACE_ID}".`
-    : "";
-  console.log(
-    `Storage bootstrap complete. App DB: ${storageBootstrap.dbPath}. Workspace assets root: ${storageBootstrap.workspacesRootDir}. Workspaces: ${storageBootstrap.workspaceIds.length}.${defaultWorkspaceLog}`,
-  );
 
   const services = createAppServices({
     onProviderModelsSyncCompleted: options?.onProviderModelsSyncCompleted,

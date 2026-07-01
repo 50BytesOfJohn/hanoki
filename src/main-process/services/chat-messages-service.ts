@@ -30,6 +30,8 @@ function toChatMessage(message: MessageRow, fallbackParentId: string | null): Ha
     parts: message.parts as HanokiUiMessage["parts"],
     metadata: {
       ...base,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
       ...(message.siblings !== undefined
         ? { siblings: message.siblings, siblingIndex: message.siblingIndex }
         : {}),
@@ -161,6 +163,7 @@ export function createChatMessagesService(): ChatMessagesService {
           textPreview,
           model,
           provider,
+          createdAt: row.createdAt,
           pinnedAt: row.updatedAt,
         });
       }

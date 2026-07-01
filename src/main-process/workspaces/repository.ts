@@ -44,7 +44,7 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   const allowedKeys = new Set<keyof WorkspaceSettings>([
     "chatTreeExpandedFolderIds",
     "tabs",
-    "activeTabId",
+    "currentChatId",
   ]);
 
   for (const key of Object.keys(record)) {
@@ -90,9 +90,9 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   }
 
   if (
-    record.activeTabId !== undefined &&
-    record.activeTabId !== null &&
-    typeof record.activeTabId !== "string"
+    record.currentChatId !== undefined &&
+    record.currentChatId !== null &&
+    typeof record.currentChatId !== "string"
   ) {
     return false;
   }

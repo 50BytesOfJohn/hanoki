@@ -713,7 +713,7 @@ export function useChatSubmitEditedMessage() {
   return useChatContext((state) => state.submitEditedMessage);
 }
 
-function resolveModelId(enabledModelIds: readonly string[], currentModelId: string | null) {
+export function resolveModelId(enabledModelIds: readonly string[], currentModelId: string | null) {
   if (currentModelId && enabledModelIds.includes(currentModelId)) {
     return currentModelId;
   }

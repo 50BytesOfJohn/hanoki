@@ -32,8 +32,7 @@ const LazyChatGraphCanvas = React.lazy(() =>
 export function ChatGraphPage() {
   const search = useSearch({ from: "/chat" });
   const { graphMessageId } = search;
-  const activeTab = useWorkspaceStore((state) => state.activeTab());
-  const activeChatId = activeTab?.type === "chat" ? activeTab.chatId : null;
+  const activeChatId = useWorkspaceStore((state) => state.currentChatId);
 
   const {
     data: allMessages = [],

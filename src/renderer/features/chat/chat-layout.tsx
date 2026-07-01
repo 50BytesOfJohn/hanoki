@@ -8,7 +8,6 @@ import {
   ChatScrollActionsProvider,
   useChatScrollActions,
 } from "@/features/chat/chat-scroll-actions-context";
-import { ChatTabHotkeys } from "@/features/chat/chat-tab-hotkeys";
 import { ChatToolbar } from "@/features/chat/chat-toolbar";
 import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
 import { cn } from "@/lib/utils";
@@ -39,7 +38,6 @@ function ChatLayoutFrame() {
   return (
     <ChatScrollActionsProvider>
       <div className="flex h-full w-full">
-        <ChatTabHotkeys />
         <ChatViewHotkeys />
         <ChatSidebarTree />
         <div className="w-full h-full p-2 pt-0">

@@ -117,11 +117,6 @@ export function createChatRoute() {
       });
     }
 
-    if (mode === "continue-message" && lastRequestMessage?.role === "assistant") {
-      console.log("[chat:continue] last assistant message content");
-      console.log(getMessageText(lastRequestMessage));
-    }
-
     const startTime = Date.now();
     let capturedResponseMetadata: Omit<ChatMessageMetadata, "parentId"> | undefined;
     const modelInputMessages = prependSystemPrompt(
@@ -147,18 +142,11 @@ export function createChatRoute() {
       model: languageModel,
       experimental_transform: smoothStream({ chunking: "line" }),
       messages: await convertToModelMessages(modelInputMessages),
-      onFinish: ({ usage }) => {
-        capturedResponseMetadata = buildResponseMetadata(
-          usage,
-          provider.catalogId as ProviderId,
-          model.id,
-          Date.now() - startTime,
-        );
-      },
     });
 
     return result.toUIMessageStreamResponse({
       consumeSseStream: consumeStream,
+      originalMessages: messages,
 
       generateMessageId:
         mode === "continue-message" && continuationTargetMessage
@@ -169,6 +157,13 @@ export function createChatRoute() {
           return { parentId: responseParentId };
         }
         if (part.type === "finish") {
+          capturedResponseMetadata = buildResponseMetadata(
+            part.totalUsage,
+            provider.catalogId as ProviderId,
+            model,
+            Date.now() - startTime,
+            part.finishReason,
+          );
           return { parentId: responseParentId, ...capturedResponseMetadata };
         }
         return undefined;
@@ -180,11 +175,6 @@ export function createChatRoute() {
 
         if (responseMessage.parts.length === 0) {
           return;
-        }
-
-        if (mode === "continue-message") {
-          console.log("[chat:continue] model response content");
-          console.log(getMessageText(responseMessage));
         }
 
         if (mode === "continue-message" && continuationTargetMessage) {
@@ -238,16 +228,6 @@ export function createChatRoute() {
   });
 
   return app;
-}
-
-function getMessageText(message: { parts: HanokiUiMessage["parts"] }) {
-  return message.parts
-    .filter(
-      (part): part is Extract<HanokiUiMessage["parts"][number], { type: "text" }> =>
-        part.type === "text",
-    )
-    .map((part) => part.text)
-    .join("\n");
 }
 
 function prependSystemPrompt(

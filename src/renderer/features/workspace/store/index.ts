@@ -26,7 +26,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
               state: state.state,
               workspace: state.workspace,
 
-              activeTabId: state.activeTabId,
+              currentChatId: state.currentChatId,
               tabs: state.tabs,
 
               expandedTreeNodes: state.expandedTreeNodes,

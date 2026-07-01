@@ -8,14 +8,12 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
     if (!state.workspace) return;
 
     await workspaceApi.updateSettings(state.workspace.id, {
-      activeTabId: state.activeTabId,
-      tabs: state.tabs
-        .filter((t) => t.chatId)
-        .map((t) => ({
-          chatId: t.chatId!,
-          id: t.id,
-          type: "chat",
-        })),
+      currentChatId: state.currentChatId,
+      tabs: state.tabs.map((t) => ({
+        chatId: t.chatId,
+        id: t.id,
+        type: "chat",
+      })),
 
       chatTreeExpandedFolderIds: state.expandedTreeNodes,
     });
@@ -23,9 +21,7 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
   {
     wait: 5_000,
 
-    onSuccess: () => {
-      console.info("[workspace-store] Settings Sync Completed");
-    },
+    onSuccess: () => {},
 
     onError: (error) => {
       console.error("[workspace-store] Sync Settings Error", error);
@@ -35,7 +31,6 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
 
 export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
   getItem: async (_name: string) => {
-    console.info("[workspace-store] Storage Get Item");
     /**
      * Runs on store creation, so we get the active workspace, then the state of workspace and "create" a store. Yuhu!
      */
@@ -47,8 +42,6 @@ export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
         includeSettings: true,
       });
 
-      console.info("[workspace-store] Storage Active Workspace", workspace, settings);
-
       /**
        * No active workspace should never happen
        */
@@ -59,15 +52,13 @@ export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
           state: "idle",
           workspace,
 
-          // TABS
-          activeTabId: settings?.activeTabId ?? settings?.tabs?.[0]?.id ?? null,
+          // CURRENT CHAT + TABS
+          currentChatId: settings?.currentChatId ?? null,
           tabs:
             settings?.tabs?.map((t) => ({
               id: t.id,
               type: "chat",
               chatId: t.chatId,
-              title: t.id,
-              isDirty: true,
             })) ?? [],
 
           expandedTreeNodes: settings?.chatTreeExpandedFolderIds ?? [],

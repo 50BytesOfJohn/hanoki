@@ -7,5 +7,6 @@ export interface PinnedBranchSummary {
   textPreview: string;
   model: string | null;
   provider: string | null;
+  createdAt: number;
   pinnedAt: number;
 }

@@ -183,13 +183,13 @@ export interface TabStateItem {
 
 export interface TabsUiState {
   tabs: TabStateItem[];
-  activeTabId: string | null;
+  currentChatId: string | null;
 }
 
 export interface WorkspaceSettings {
   chatTreeExpandedFolderIds?: string[];
   tabs?: TabStateItem[];
-  activeTabId?: string | null;
+  currentChatId?: string | null;
 }
 
 export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;

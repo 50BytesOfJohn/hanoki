@@ -6,7 +6,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Key } from "@heroui/react";
 import { Button, InputGroup, ListBox, Select, TextField, Tooltip } from "@heroui/react";
 
-import { chatsApi } from "@/api/chats";
 import {
   useChatCanStop,
   ChatContextProvider,
@@ -18,7 +17,9 @@ import {
   useChatSendMessage,
   useChatStop,
   useSetChatModelId,
+  resolveModelId,
 } from "@/features/chat/chat-context";
+import { getChatQueryOptions } from "@/queries/chats";
 import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context";
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
@@ -34,12 +35,14 @@ import { Conversation } from "./conversation";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
+const MESSAGE_NAVIGATION_TOP_OFFSET = 24;
+const MESSAGE_NAVIGATION_VISIBILITY_PADDING = 8;
 
 export function ChatPage() {
-  const activeTab = useWorkspaceStore((s) => s.activeTab());
+  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
-  if (activeTab?.type === "chat" && activeTab.chatId) {
-    return <ActiveChatView chatId={activeTab.chatId} />;
+  if (currentChatId) {
+    return <ActiveChatView chatId={currentChatId} />;
   }
 
   return (
@@ -54,9 +57,6 @@ function ActiveChatView({ chatId }: { chatId: string }) {
   const serverError = useSystemStore((s) => s.aiServer.error);
   const port = useSystemStore(selectAiServerPort);
   const isReady = useSystemStore(selectAiServerReady);
-  const [initialModelId, setInitialModelId] = React.useState<string | null>(null);
-  const [isChatLoaded, setIsChatLoaded] = React.useState(false);
-  const [chatError, setChatError] = React.useState<string | null>(null);
 
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
   const enabledModelIds = React.useMemo(
@@ -65,39 +65,13 @@ function ActiveChatView({ chatId }: { chatId: string }) {
   );
   const apiUrl = port ? `http://127.0.0.1:${port}/api/chat` : "";
 
-  React.useEffect(() => {
-    let isDisposed = false;
-
-    setInitialModelId(null);
-    setIsChatLoaded(false);
-    setChatError(null);
-
-    void chatsApi
-      .get(chatId)
-      .then((chat) => {
-        if (isDisposed) {
-          return;
-        }
-
-        setInitialModelId(chat.settings.modelId ?? null);
-        setIsChatLoaded(true);
-      })
-      .catch((loadError) => {
-        if (isDisposed) {
-          return;
-        }
-
-        setChatError(
-          loadError instanceof Error && loadError.message.trim()
-            ? loadError.message
-            : "Failed to load chat.",
-        );
-      });
-
-    return () => {
-      isDisposed = true;
-    };
-  }, [chatId]);
+  const { data: chat, error: chatError } = useQuery(getChatQueryOptions(chatId));
+  const initialModelId = React.useMemo(
+    () => resolveModelId(enabledModelIds, chat?.settings.modelId ?? null),
+    [chat?.settings.modelId, enabledModelIds],
+  );
+  const chatErrorMessage =
+    chatError instanceof Error && chatError.message.trim() ? chatError.message : null;
 
   if (serverStatus === "starting" || serverStatus === "idle") {
     return (
@@ -125,18 +99,10 @@ function ActiveChatView({ chatId }: { chatId: string }) {
     );
   }
 
-  if (chatError) {
+  if (chatErrorMessage) {
     return (
       <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col gap-4 px-6 py-6">
-        <p className="text-sm text-destructive">{chatError}</p>
-      </div>
-    );
-  }
-
-  if (!isChatLoaded) {
-    return (
-      <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col gap-4 px-6 py-6">
-        <p className="text-sm text-muted-foreground">Loading chat…</p>
+        <p className="text-sm text-destructive">{chatErrorMessage}</p>
       </div>
     );
   }
@@ -165,6 +131,71 @@ function ActiveChatContent() {
   const isInteractionLocked = useChatIsInteractionLocked();
   const isStreaming = useChatIsStreaming();
   const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(isStreaming);
+  const jumpToMessage = React.useCallback(
+    (direction: "next" | "previous") => {
+      const container = containerRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      const messageElements = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-chat-message-id]"),
+      );
+
+      if (messageElements.length === 0) {
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const composer = container.querySelector<HTMLElement>("[data-chat-composer-shell='true']");
+      const composerRect = composer?.getBoundingClientRect();
+      const viewportTop = containerRect.top + MESSAGE_NAVIGATION_VISIBILITY_PADDING;
+      const viewportBottom =
+        composerRect &&
+        composerRect.top < containerRect.bottom &&
+        composerRect.bottom > containerRect.top
+          ? Math.min(containerRect.bottom, composerRect.top) - MESSAGE_NAVIGATION_VISIBILITY_PADDING
+          : containerRect.bottom - MESSAGE_NAVIGATION_VISIBILITY_PADDING;
+
+      const visibleMessageIndexes: number[] = [];
+      let lastMessageBeforeViewportIndex = -1;
+      let firstMessageAfterViewportIndex = messageElements.length;
+
+      for (let index = 0; index < messageElements.length; index += 1) {
+        const rect = messageElements[index].getBoundingClientRect();
+
+        if (rect.bottom > viewportTop && rect.top < viewportBottom) {
+          visibleMessageIndexes.push(index);
+        } else if (rect.bottom <= viewportTop) {
+          lastMessageBeforeViewportIndex = index;
+        } else if (
+          firstMessageAfterViewportIndex === messageElements.length &&
+          rect.top >= viewportBottom
+        ) {
+          firstMessageAfterViewportIndex = index;
+        }
+      }
+
+      const currentIndex =
+        direction === "next"
+          ? (visibleMessageIndexes.at(-1) ?? lastMessageBeforeViewportIndex)
+          : (visibleMessageIndexes.at(0) ?? firstMessageAfterViewportIndex);
+      const targetIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+      const target = messageElements[targetIndex];
+
+      if (!target) {
+        return;
+      }
+
+      const targetRect = target.getBoundingClientRect();
+      const top =
+        container.scrollTop + targetRect.top - containerRect.top - MESSAGE_NAVIGATION_TOP_OFFSET;
+
+      container.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    },
+    [containerRef],
+  );
   const scrollToTop = React.useCallback(() => {
     containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [containerRef]);
@@ -271,6 +302,34 @@ function ActiveChatContent() {
     },
   );
 
+  useHotkey(
+    "Alt+ArrowUp",
+    (event) => {
+      event.preventDefault();
+      jumpToMessage("previous");
+    },
+    {
+      ignoreInputs: true,
+      preventDefault: false,
+      stopPropagation: false,
+      requireReset: true,
+    },
+  );
+
+  useHotkey(
+    "Alt+ArrowDown",
+    (event) => {
+      event.preventDefault();
+      jumpToMessage("next");
+    },
+    {
+      ignoreInputs: true,
+      preventDefault: false,
+      stopPropagation: false,
+      requireReset: true,
+    },
+  );
+
   return (
     <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
       <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
@@ -280,6 +339,7 @@ function ActiveChatContent() {
           <Conversation />
 
           <div
+            data-chat-composer-shell="true"
             className={cn(
               "mt-24 mx-auto w-4xl max-w-[calc(100%-4rem)] mb-4",
               promptStickyPosition ? "sticky bottom-4" : null,
@@ -317,7 +377,7 @@ function ActiveChatContent() {
                     data-chat-composer-input="true"
                     placeholder="Ask, Search or Chat…"
                     rows={1}
-                    className="resize-none w-full px-3.5 py-1 max-h-[8rem] overflow-y-auto [field-sizing:content]"
+                    className="resize-none w-full px-3.5 py-1 max-h-[24rem] overflow-y-auto [field-sizing:content]"
                   />
                   <InputGroup.Suffix className="flex w-full items-center gap-1.5 px-2 py-0">
                     <ModelSelector />

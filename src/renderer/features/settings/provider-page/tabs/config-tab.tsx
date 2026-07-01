@@ -26,6 +26,7 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
   const providersQuery = useQuery(listProvidersQueryOptions);
   const deleteProvider = useDeleteProvider();
   const updateProviderSecrets = useUpdateProviderSecrets();
+  const resetProviderSecretsMutation = updateProviderSecrets.reset;
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [didUpdateSecrets, setDidUpdateSecrets] = useState(false);
@@ -47,8 +48,8 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
 
     setSecretValues({});
     setDidUpdateSecrets(false);
-    updateProviderSecrets.reset();
-  }, [isConfigOpen, providerId]);
+    resetProviderSecretsMutation();
+  }, [isConfigOpen, providerId, resetProviderSecretsMutation]);
 
   function handleSecretChange(key: string, value: string): void {
     setSecretValues((current) => ({

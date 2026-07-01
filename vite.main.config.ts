@@ -15,6 +15,10 @@ export default defineConfig({
     },
   },
   build: {
+    ssr: true,
+    rolldownOptions: {
+      external,
+    },
     rollupOptions: {
       external,
     },

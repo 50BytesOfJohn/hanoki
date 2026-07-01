@@ -5,6 +5,13 @@ import { workspaceApi } from "@/api/workspaces";
 export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set) => ({
   state: "idle",
   workspace: null,
+  currentChatId: null,
+
+  setCurrentChat: (chatId) => {
+    set((state) => {
+      state.currentChatId = chatId;
+    });
+  },
 
   switchWorkspace: async (newWorkspaceId: string) => {
     // This is okey as it will still trigger debounce with old workspace ID
@@ -30,14 +37,12 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
 
       state.workspace = newWorkspace;
 
-      state.activeTabId = newSettings.activeTabId ?? newSettings.tabs?.[0]?.id ?? null;
+      state.currentChatId = newSettings.currentChatId ?? null;
       state.tabs =
         newSettings.tabs?.map((t) => ({
           id: t.id,
           type: "chat",
           chatId: t.chatId,
-          title: t.chatId,
-          isDirty: true,
         })) ?? [];
 
       state.expandedTreeNodes = newSettings.chatTreeExpandedFolderIds ?? [];

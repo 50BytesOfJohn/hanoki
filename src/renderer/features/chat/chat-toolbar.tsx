@@ -1,10 +1,9 @@
-import * as React from "react";
+import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Button as HeroButton, Dropdown, Separator, type Key } from "@heroui/react";
 import {
   Add01Icon,
-  Cancel01Icon,
   CircleIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -12,11 +11,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { getChatQueryOptions } from "@/queries/chats";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
 import { useChatSidebar } from "./chat-sidebar";
 import { useWorkspaceStore } from "../workspace/store";
-import type { Tab } from "../workspace/store/types";
 
 const CREATE_WORKSPACE_ACTION_ID = "create-workspace";
 
@@ -45,11 +42,7 @@ export function ChatToolbar() {
           <HeroButton
             variant="ghost"
             size="sm"
-            style={
-              {
-                "--from-color": workspace?.color ?? "transparent",
-              } as React.CSSProperties
-            }
+            style={{ "--from-color": workspace?.color ?? "transparent" } as CSSProperties}
             className="bg-linear-to-tr from-(--from-color) via-transparent to-transparent"
           >
             {workspace?.name ?? "…"}
@@ -91,8 +84,6 @@ export function ChatToolbar() {
             </Dropdown.Menu>
           </Dropdown.Popover>
         </Dropdown>
-
-        <ChatTabsBar />
       </div>
 
       <HeroButton
@@ -107,55 +98,5 @@ export function ChatToolbar() {
         <HugeiconsIcon icon={Setting07Icon} />
       </HeroButton>
     </div>
-  );
-}
-
-function ChatTabsBar() {
-  const tabs = useWorkspaceStore((s) => s.tabs);
-  if (tabs.length === 0) return null;
-
-  return (
-    <div className="flex min-w-0 items-center gap-1 overflow-x-auto w-full">
-      {tabs.map((tab) => (
-        <ChatTabButton key={tab.id} tab={tab} />
-      ))}
-    </div>
-  );
-}
-
-function ChatTabButton({ tab }: { tab: Tab }) {
-  const chatQuery = useQuery(getChatQueryOptions(tab.type === "chat" ? tab.chatId : null));
-  const title = chatQuery.data?.title ?? "New Tab";
-  const setActiveTab = useWorkspaceStore((s) => s.setActiveTab);
-  const activeId = useWorkspaceStore((s) => s.activeTabId);
-  const closeTab = useWorkspaceStore((s) => s.closeTab);
-
-  const isActive = React.useMemo(() => {
-    return tab.id === activeId;
-  }, [tab, activeId]);
-
-  return (
-    <HeroButton
-      size="sm"
-      variant={isActive ? "secondary" : "ghost"}
-      className="group/tab relative z-0 w-full max-w-64 shrink px-4 justify-start text-left"
-      onClick={() => {
-        setActiveTab(tab.id);
-      }}
-    >
-      {title}
-
-      <button
-        className="absolute right-0 z-10 flex aspect-square h-full cursor-pointer items-center justify-center overflow-hidden opacity-0 group-hover/tab:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          closeTab(tab.id);
-        }}
-      >
-        <div className="flex size-5 items-center justify-center rounded-sm bg-black/70 backdrop-blur-lg">
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-        </div>
-      </button>
-    </HeroButton>
   );
 }
