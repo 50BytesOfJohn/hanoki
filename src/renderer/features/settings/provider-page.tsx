@@ -16,14 +16,14 @@ export function ProviderPage({ providerId }: ProviderPageProps) {
   const catalogProvider = provider ? getSupportedProviderById(provider.catalogId) : null;
 
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto px-8 py-10">
+    <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
       <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-6">
         <div className="flex items-start justify-between gap-4 pb-2 pt-4">
           <div className="space-y-3">
             <Chip size="sm" variant="soft">
               {catalogProvider?.name ?? provider?.catalogId ?? "Provider"}
             </Chip>
-            <h1 className="text-3xl font-bold tracking-tight">
+            <h1 className="font-heading text-xl font-semibold tracking-tight">
               {provider?.displayName ?? "Provider"}
             </h1>
           </div>

@@ -1,100 +1,277 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/outfit";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/outfit";
 @import "@heroui/styles";
 @plugin "@tailwindcss/typography";
 @source "../../node_modules/streamdown/dist/*.js";
 
 /*
- * HeroUI Theme Customization
- * Add this to your global.css after importing @heroui/styles
- * Only includes base variables from variables.css
- * @see https://heroui.com/docs/react/getting-started/theming
+ * ─────────────────────────────────────────────────────────────
+ *  Hanoki Design System — "Sumi & Hinoki"
+ *
+ *  Dark-only. Ink-black neutrals with a faint warm-green cast
+ *  (hue 140) and a single hinoki-moss accent. Compact, calm,
+ *  tool-like — density like Zed, restraint like Linear.
+ *
+ *  Layering ladder (darkest → lightest):
+ *    background        window shell, title bar, sidebar
+ *    surface           content panel, cards
+ *    surface-secondary inputs, user bubbles, inset fields
+ *    surface-tertiary  active/selected rows
+ *    overlay           popovers, menus, dialogs
+ *
+ *  One accent. Everything else earns hierarchy through
+ *  lightness steps, not color. See DESIGN.md.
+ * ─────────────────────────────────────────────────────────────
  */
 
 :root,
 .light,
 .default,
-[data-theme="light"],
-[data-theme="default"] {
-  /* Theme Colors (Light Mode) */
-  --accent: oklch(90.56% 0.0356 151.4);
-  --accent-foreground: oklch(15% 0.0071 151.4);
-  --background: oklch(97.02% 0.0007 151.4);
-  --border: oklch(90% 0.0007 151.4);
-  --danger: oklch(65.32% 0.2331 13.45);
-  --danger-foreground: oklch(99.11% 0 0);
-  --default: oklch(94% 0.0007 151.4);
-  --default-foreground: oklch(21.03% 0.0059 151.4);
-  --field-background: oklch(100% 0.0003 151.4);
-  --field-foreground: oklch(21.03% 0.0007 151.4);
-  --field-placeholder: oklch(55.17% 0.0014 151.4);
-  --focus: oklch(90.56% 0.0356 151.4);
-  --foreground: oklch(21.03% 0.0007 151.4);
-  --muted: oklch(55.17% 0.0014 151.4);
-  --overlay: oklch(100% 0.0002 151.4);
-  --overlay-foreground: oklch(21.03% 0.0007 151.4);
-  --scrollbar: oklch(87.1% 0.0007 151.4);
-  --segment: oklch(100% 0.0007 151.4);
-  --segment-foreground: oklch(21.03% 0.0007 151.4);
-  --separator: oklch(92% 0.0007 151.4);
-  --success: oklch(73.29% 0.1938 138.52);
-  --success-foreground: oklch(21.03% 0.0059 138.52);
-  --surface: oklch(100% 0.0003 151.4);
-  --surface-foreground: oklch(21.03% 0.0007 151.4);
-  --surface-secondary: oklch(95.24% 0.0006 151.4);
-  --surface-secondary-foreground: oklch(21.03% 0.0007 151.4);
-  --surface-tertiary: oklch(93.73% 0.0006 151.4);
-  --surface-tertiary-foreground: oklch(21.03% 0.0007 151.4);
-  --warning: oklch(78.19% 0.1587 60.04);
-  --warning-foreground: oklch(21.03% 0.0059 60.04);
+.dark,
+[data-theme] {
+  color-scheme: dark;
 
-  /* Border Radius */
-  --radius: 0.5rem;
-  --field-radius: 1rem;
+  /* ── Neutrals ── */
+  --background: oklch(17% 0.004 140);
+  --background-secondary: oklch(15% 0.004 140);
+  --background-tertiary: oklch(13.5% 0.004 140);
+  --foreground: oklch(92% 0.005 140);
+  --muted: oklch(64% 0.01 140);
 
-  /* Font Family */
-  /* Make sure to load IBM Plex Sans font in your app */
-  --font-sans: "IBM Plex Sans", sans-serif;
+  --surface: oklch(20% 0.0045 140);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(23% 0.005 140);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(26.5% 0.006 140);
+  --surface-tertiary-foreground: var(--foreground);
+
+  --overlay: oklch(22% 0.005 140);
+  --overlay-foreground: var(--foreground);
+
+  --default: oklch(26.5% 0.006 140);
+  --default-foreground: var(--foreground);
+
+  --segment: oklch(30% 0.006 140);
+  --segment-foreground: var(--foreground);
+
+  --border: oklch(27.5% 0.006 140);
+  --separator: oklch(24% 0.005 140);
+  --scrollbar: oklch(45% 0.008 140);
+
+  /* Subtle interaction fill — hover rows, ghost buttons */
+  --hover: oklch(26% 0.006 140);
+
+  /* ── Accent: hinoki moss ── */
+  --accent: oklch(74% 0.1 150);
+  --accent-foreground: oklch(16% 0.02 150);
+  --accent-soft: oklch(74% 0.1 150 / 14%);
+  --accent-soft-foreground: oklch(80% 0.09 150);
+  --accent-soft-hover: oklch(74% 0.1 150 / 20%);
+  --focus: oklch(70% 0.09 150);
+  --link: oklch(76% 0.08 150);
+
+  /* ── Status ── */
+  --danger: oklch(62% 0.19 20);
+  --danger-foreground: oklch(97% 0.01 20);
+  --success: oklch(70% 0.15 148);
+  --success-foreground: oklch(16% 0.03 148);
+  --warning: oklch(78% 0.13 75);
+  --warning-foreground: oklch(20% 0.05 75);
+
+  /* ── Fields ── */
+  --field-background: oklch(15% 0.004 140);
+  --field-foreground: var(--foreground);
+  --field-placeholder: oklch(52% 0.008 140);
+  --field-border: var(--border);
+
+  /* ── Shape: compact ── */
+  --radius: 0.375rem;
+  --field-radius: 0.5rem;
+
+  /* ── Type ── */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --font-heading: "Outfit Variable", var(--font-sans);
+
+  /* ── Motion: fast, unobtrusive ── */
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --motion-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-.dark,
-[data-theme="dark"] {
-  color-scheme: dark;
-  /* Theme Colors (Dark Mode) */
-  --accent: oklch(90.56% 0.0356 151.4);
-  --accent-foreground: oklch(15% 0.0071 151.4);
-  --background: oklch(12% 0.0007 151.4);
-  --border: oklch(28% 0.0007 151.4);
-  --danger: oklch(59.4% 0.197 12.34);
-  --danger-foreground: oklch(99.11% 0 0);
-  --default: oklch(27.4% 0.0007 151.4);
-  --default-foreground: oklch(99.11% 0 0);
-  --field-background: oklch(21.03% 0.0014 151.4);
-  --field-foreground: oklch(99.11% 0.0007 151.4);
-  --field-placeholder: oklch(70.5% 0.0014 151.4);
-  --focus: oklch(90.56% 0.0356 151.4);
-  --foreground: oklch(99.11% 0.0007 151.4);
-  --muted: oklch(70.5% 0.0014 151.4);
-  --overlay: oklch(21.03% 0.0014 151.4);
-  --overlay-foreground: oklch(99.11% 0.0007 151.4);
-  --scrollbar: oklch(70.5% 0.0007 151.4);
-  --segment: oklch(39.64% 0.0007 151.4);
-  --segment-foreground: oklch(99.11% 0.0007 151.4);
-  --separator: oklch(25% 0.0007 151.4);
-  --success: oklch(73.29% 0.1938 138.52);
-  --success-foreground: oklch(21.03% 0.0059 138.52);
-  --surface: oklch(21.03% 0.0014 151.4);
-  --surface-foreground: oklch(99.11% 0.0007 151.4);
-  --surface-secondary: oklch(25.7% 0.001 151.4);
-  --surface-secondary-foreground: oklch(99.11% 0.0007 151.4);
-  --surface-tertiary: oklch(27.21% 0.001 151.4);
-  --surface-tertiary-foreground: oklch(99.11% 0.0007 151.4);
-  --warning: oklch(82.03% 0.139 64.05);
-  --warning-foreground: oklch(21.03% 0.0059 64.05);
+/*
+ * Bridge for shadcn-style utilities (bg-card, text-muted-foreground,
+ * bg-sidebar, …). Placed after @heroui/styles so overrides win.
+ * Note: for shadcn utilities `accent` means hover-fill, `primary`
+ * carries the brand — HeroUI components keep reading raw --accent.
+ */
+@theme inline {
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--overlay);
+  --color-popover-foreground: var(--foreground);
+
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-secondary: var(--default);
+  --color-secondary-foreground: var(--foreground);
+
+  /* NB: --color-muted keeps HeroUI's meaning (a *foreground* gray).
+     shadcn components in components/ui use bg-hover for fills instead. */
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--hover);
+  --color-accent-foreground: var(--foreground);
+  --color-hover: var(--hover);
+
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--danger-foreground);
+
+  --color-input: var(--field-background);
+  --color-ring: var(--focus);
+
+  --color-sidebar: var(--background);
+  --color-sidebar-foreground: var(--foreground);
+  --color-sidebar-accent: var(--hover);
+  --color-sidebar-accent-foreground: var(--foreground);
+  --color-sidebar-border: var(--separator);
+  --color-sidebar-ring: var(--focus);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: var(--accent-foreground);
+
+  --font-heading: var(--font-heading);
+}
+
+/*
+ * ── Hanoki tuning for HeroUI buttons ──
+ * HeroUI ships tall rounded-3xl pills; Hanoki buttons are compact,
+ * squared to --radius, and subtle — the accent appears as a soft
+ * translucent fill, never a loud solid. Selectors mirror
+ * @heroui/styles/dist/components/button(-group).css and live in the
+ * same `components` layer, later in source order — so they win over
+ * HeroUI while per-instance Tailwind utilities still win over them.
+ */
+@layer components {
+  .button {
+    border-radius: calc(var(--radius) + 1px);
+    height: 1.75rem;
+    padding-inline: 0.625rem;
+    font-size: 0.8125rem;
+    gap: 0.375rem;
+  }
+
+  .button svg:not([data-slot="spinner"] svg, [data-slot="link-icon"] svg) {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .button--sm {
+    height: 1.5rem;
+    padding-inline: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .button--lg {
+    height: 2rem;
+    font-size: 0.8125rem;
+  }
+
+  .button--icon-only {
+    width: 1.75rem;
+    padding: 0;
+  }
+
+  .button--icon-only.button--sm {
+    width: 1.5rem;
+  }
+
+  .button--icon-only.button--lg {
+    width: 2rem;
+  }
+
+  /* Primary: soft moss fill instead of a solid block */
+  .button--primary {
+    --button-bg: var(--accent-soft);
+    --button-bg-hover: var(--accent-soft-hover);
+    --button-bg-pressed: var(--accent-soft-hover);
+    --button-fg: var(--accent-soft-foreground);
+  }
+
+  /* Tertiary (message toolbars): quiet until hovered */
+  .button--tertiary {
+    --button-bg: transparent;
+    --button-bg-hover: var(--hover);
+    --button-bg-pressed: var(--hover);
+    --button-fg: var(--muted);
+  }
+
+  .button--ghost {
+    --button-bg-hover: var(--hover);
+    --button-bg-pressed: var(--hover);
+  }
+
+  /* Pressed scale reads as lag in a daily tool */
+  .button:active,
+  .button[data-pressed="true"] {
+    transform: none;
+  }
+
+  .button-group .button {
+    border-radius: 0;
+  }
+
+  .button-group--horizontal .button:first-child {
+    border-start-start-radius: calc(var(--radius) + 1px);
+    border-end-start-radius: calc(var(--radius) + 1px);
+  }
+
+  .button-group--horizontal .button:last-child {
+    border-start-end-radius: calc(var(--radius) + 1px);
+    border-end-end-radius: calc(var(--radius) + 1px);
+  }
+
+  .button-group--vertical .button:first-child {
+    border-start-start-radius: calc(var(--radius) + 1px);
+    border-start-end-radius: calc(var(--radius) + 1px);
+  }
+
+  .button-group--vertical .button:last-child {
+    border-end-start-radius: calc(var(--radius) + 1px);
+    border-end-end-radius: calc(var(--radius) + 1px);
+  }
+
+  .button-group--horizontal .button:first-child:last-child,
+  .button-group--vertical .button:first-child:last-child {
+    border-radius: calc(var(--radius) + 1px);
+  }
+
+  /* Overlays: HeroUI defaults to 24–32px corners; Hanoki menus are 8px */
+  .popover,
+  .dropdown__popover,
+  .select__popover,
+  .autocomplete__popover,
+  .combobox__popover {
+    border-radius: 0.5rem;
+  }
+
+  .tooltip {
+    border-radius: calc(var(--radius) + 1px);
+  }
+
+  .modal__dialog {
+    border-radius: 0.75rem;
+  }
+
+  .chip {
+    border-radius: var(--radius);
+  }
+
+  .card {
+    border-radius: 0.75rem;
+  }
 }
 
 @layer base {
@@ -103,11 +280,23 @@
   #root {
     height: 100%;
   }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--accent-soft-hover);
+  }
 }
 
 @layer utilities {
   .scrollbar {
-    scrollbar-color: color-mix(in oklch, var(--scrollbar) 65%, transparent) transparent;
+    scrollbar-color: color-mix(in oklch, var(--scrollbar) 55%, transparent) transparent;
     scrollbar-width: thin;
   }
 
@@ -121,18 +310,28 @@
   }
 
   .scrollbar::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--scrollbar) 55%, transparent);
+    background: color-mix(in oklch, var(--scrollbar) 45%, transparent);
     background-clip: content-box;
     border: 3px solid transparent;
     border-radius: 999px;
   }
 
   .scrollbar::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--scrollbar) 85%, transparent);
+    background: color-mix(in oklch, var(--scrollbar) 75%, transparent);
     background-clip: content-box;
   }
 
   .scrollbar::-webkit-scrollbar-corner {
     background: transparent;
+  }
+}
+
+/* Daily-use tool: motion must never make the user wait. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

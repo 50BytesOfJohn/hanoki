@@ -99,8 +99,8 @@ interface PinnedBranchesShellProps {
 
 function PinnedBranchesShell({ children }: PinnedBranchesShellProps) {
   return (
-    <main className="h-full min-h-0 overflow-y-auto px-6 py-16">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">{children}</div>
+    <main className="h-full min-h-0 overflow-y-auto scrollbar px-6 py-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">{children}</div>
     </main>
   );
 }
@@ -113,7 +113,7 @@ interface PinnedBranchesEmptyStateProps {
 function PinnedBranchesEmptyState({ title, description }: PinnedBranchesEmptyStateProps) {
   return (
     <Card className="items-center border border-border/60 py-10 text-center" variant="transparent">
-      <div className="flex size-10 items-center justify-center rounded-xl bg-surface-secondary text-muted">
+      <div className="flex size-10 items-center justify-center rounded-lg bg-surface-secondary text-muted-foreground">
         <HugeiconsIcon icon={PinIcon} size={22} />
       </div>
       <Card.Header className="items-center">

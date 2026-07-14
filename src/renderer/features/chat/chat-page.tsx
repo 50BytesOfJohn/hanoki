@@ -48,7 +48,9 @@ export function ChatPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-6">
-      <p className="text-muted-foreground">No chat selected. Open a chat from the sidebar.</p>
+      <p className="text-sm text-muted-foreground">
+        No chat selected. Open a chat from the sidebar.
+      </p>
     </div>
   );
 }
@@ -343,8 +345,8 @@ function ActiveChatContent() {
           <div
             data-chat-composer-shell="true"
             className={cn(
-              "mt-24 mx-auto w-4xl max-w-[calc(100%-4rem)] mb-4",
-              promptStickyPosition ? "sticky bottom-4" : null,
+              "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
+              promptStickyPosition ? "sticky bottom-3" : null,
             )}
           >
             {lastUserMessageId && !canStop ? (
@@ -373,13 +375,13 @@ function ActiveChatContent() {
                 <InputGroup
                   variant="secondary"
                   fullWidth
-                  className="flex flex-col gap-2 rounded-3xl py-2"
+                  className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 focus-within:border-focus/50"
                 >
                   <InputGroup.TextArea
                     data-chat-composer-input="true"
-                    placeholder="Ask, Search or Chat…"
+                    placeholder="Ask anything…"
                     rows={1}
-                    className="resize-none w-full px-3.5 py-1 max-h-[24rem] overflow-y-auto [field-sizing:content]"
+                    className="resize-none w-full px-3 py-1 max-h-[24rem] overflow-y-auto text-[0.9375rem] [field-sizing:content]"
                   />
                   <InputGroup.Suffix className="flex w-full items-center gap-1.5 px-2 py-0">
                     <ModelSelector />
@@ -450,7 +452,7 @@ function ModelSelector() {
       onChange={(value: Key | Key[] | null) => setModelId((value as string) || null)}
       isDisabled={isInteractionLocked}
     >
-      <Select.Trigger>
+      <Select.Trigger className="h-7 min-h-0 rounded-md border-transparent bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none transition-colors duration-100 hover:bg-hover hover:text-foreground data-[hovered=true]:bg-hover">
         <Select.Value>
           {({ isPlaceholder, state }) => {
             if (isPlaceholder || state.selectedItems.length === 0) {

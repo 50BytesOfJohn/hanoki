@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "chat_sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "17.5rem";
+const SIDEBAR_WIDTH = "15.5rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type ChatSidebarContextValue = {
@@ -144,11 +144,11 @@ export function ChatSidebar({ children }: { children: React.ReactNode }) {
     <aside
       aria-label="Chat sidebar"
       className={cn(
-        "h-full min-h-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-out",
+        "h-full min-h-0 shrink-0 overflow-hidden transition-[width] duration-150 ease-out",
         open ? "w-(--chat-sidebar-width)" : "w-0",
       )}
     >
-      <div className="h-full w-(--chat-sidebar-width) p-2 pr-0">{children}</div>
+      <div className="h-full w-(--chat-sidebar-width) pb-1.5">{children}</div>
     </aside>
   );
 }
@@ -184,7 +184,7 @@ export function ChatSidebarBlockHeader({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={cn("shrink-0 p-2", className)}>{children}</div>;
+  return <div className={cn("shrink-0 p-1.5", className)}>{children}</div>;
 }
 
 export function ChatSidebarBlockContent({

@@ -185,12 +185,12 @@ function ChatGraphLoadingState() {
 
 function ChatGraphCanvasFallback() {
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 gap-10 bg-background p-10 lg:grid-cols-3">
-      <Skeleton className="h-72 rounded-2xl" />
-      <Skeleton className="h-72 rounded-2xl" />
-      <Skeleton className="hidden h-72 rounded-2xl lg:block" />
-      <Skeleton className="h-72 rounded-2xl" />
-      <Skeleton className="h-72 rounded-2xl" />
+    <div className="grid h-full min-h-0 grid-cols-2 gap-6 p-6 lg:grid-cols-3">
+      <Skeleton className="h-72 rounded-lg" />
+      <Skeleton className="h-72 rounded-lg" />
+      <Skeleton className="hidden h-72 rounded-lg lg:block" />
+      <Skeleton className="h-72 rounded-lg" />
+      <Skeleton className="h-72 rounded-lg" />
     </div>
   );
 }

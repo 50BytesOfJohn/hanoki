@@ -30,7 +30,7 @@ export function ChatGraphNodeView({ data }: NodeProps<ChatGraphNode>) {
         </CardHeader>
 
         <CardContent className="px-5 py-5">
-          <p className="line-clamp-6 text-base leading-8 text-muted-foreground">{data.preview}</p>
+          <p className="line-clamp-6 text-sm leading-6 text-muted-foreground">{data.preview}</p>
         </CardContent>
 
         <CardFooter className="justify-between border-t border-border px-5 py-4 text-xs text-muted-foreground">

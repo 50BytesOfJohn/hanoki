@@ -1,17 +1,7 @@
 import { Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { Button, ButtonGroup, Surface } from "@heroui/react";
-
-import { WindowChrome } from "@/components/app/window-chrome";
-import { ChatSidebarProvider, useChatSidebar } from "@/features/chat/chat-sidebar";
-import { ChatSidebarTree } from "@/features/chat/chat-sidebar-tree";
-import {
-  ChatScrollActionsProvider,
-  useChatScrollActions,
-} from "@/features/chat/chat-scroll-actions-context";
-import { ChatToolbar } from "@/features/chat/chat-toolbar";
-import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
-import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { IconSvgElement } from "@hugeicons/react";
 import {
   ArrowDown03Icon,
   ArrowUp03Icon,
@@ -20,6 +10,22 @@ import {
   Setting07Icon,
   WorkflowSquare03Icon,
 } from "@hugeicons/core-free-icons";
+
+import { WindowChrome } from "@/components/app/window-chrome";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChatSidebarProvider } from "@/features/chat/chat-sidebar";
+import { ChatSidebarTree } from "@/features/chat/chat-sidebar-tree";
+import {
+  ChatScrollActionsProvider,
+  useChatScrollActions,
+} from "@/features/chat/chat-scroll-actions-context";
+import { ChatToolbar } from "@/features/chat/chat-toolbar";
+import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
+import { getChatQueryOptions } from "@/queries/chats";
+import { useWorkspaceStore } from "@/features/workspace/store";
+import { cn } from "@/lib/utils";
 
 export function ChatLayout() {
   return (
@@ -32,110 +38,112 @@ export function ChatLayout() {
 }
 
 function ChatLayoutFrame() {
-  const { isMobile, open } = useChatSidebar();
-  const isDesktopSidebarVisible = !isMobile && open;
-
   return (
     <ChatScrollActionsProvider>
       <div className="flex h-full w-full">
         <ChatViewHotkeys />
         <ChatSidebarTree />
-        <div className="w-full h-full p-2 pt-0">
-          <Surface
-            className={cn(
-              "w-full relative flex h-full flex-col overflow-hidden",
-              isDesktopSidebarVisible ? "rounded-3xl" : "rounded-3xl",
-            )}
-          >
-            {/* <div
-          className={cn(
-            "relative flex h-full w-full flex-col overflow-hidden bg-card",
-            isDesktopSidebarVisible ? "rounded-l-2xl" : "rounded-2xl",
-            )}
-            > */}
+        <div className="min-w-0 flex-1 p-1.5 pt-0">
+          <div className="relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-surface">
+            <ChatPanelHeader />
             <Outlet />
-
-            <ChatContentNavigation />
-          </Surface>
+          </div>
         </div>
-        {/* </div> */}
       </div>
     </ChatScrollActionsProvider>
   );
 }
 
-function ChatContentNavigation() {
+const CHAT_VIEWS = [
+  { to: "/chat", label: "Conversation", icon: Chatting01Icon, exact: true },
+  { to: "/chat/graph", label: "Graph", icon: WorkflowSquare03Icon },
+  { to: "/chat/pinned-branches", label: "Pinned branches", icon: PinIcon },
+  { to: "/chat/settings", label: "Chat settings", icon: Setting07Icon },
+] as const;
+
+function ChatPanelHeader() {
   const matchRoute = useMatchRoute();
   const navigate = useNavigate();
   const { scrollActions } = useChatScrollActions();
+  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
+  const { data: chat } = useQuery(
+    getChatQueryOptions(currentChatId, { enabled: currentChatId !== null }),
+  );
   const isChatView = !!matchRoute({ to: "/chat" });
 
   return (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2">
-      <ButtonGroup size="sm" variant="ghost">
-        <Button
-          isIconOnly
-          variant={matchRoute({ to: "/chat" }) ? "tertiary" : undefined}
-          onPress={() => {
-            void navigate({ to: "/chat" });
-          }}
-        >
-          <HugeiconsIcon icon={Chatting01Icon} />
-        </Button>
-        <Button
-          isIconOnly
-          variant={matchRoute({ to: "/chat/graph" }) ? "tertiary" : undefined}
-          onPress={() => {
-            void navigate({ to: "/chat/graph" });
-          }}
-        >
-          <ButtonGroup.Separator />
-          <HugeiconsIcon icon={WorkflowSquare03Icon} />
-        </Button>
-        <Button
-          isIconOnly
-          variant={matchRoute({ to: "/chat/pinned-branches" }) ? "tertiary" : undefined}
-          onPress={() => {
-            void navigate({ to: "/chat/pinned-branches" });
-          }}
-        >
-          <ButtonGroup.Separator />
-          <HugeiconsIcon icon={PinIcon} />
-        </Button>
-        <Button
-          isIconOnly
-          variant={matchRoute({ to: "/chat/settings" }) ? "tertiary" : undefined}
-          onPress={() => {
-            void navigate({ to: "/chat/settings" });
-          }}
-        >
-          <ButtonGroup.Separator />
-          <HugeiconsIcon icon={Setting07Icon} />
-        </Button>
+    <header className="flex h-9 shrink-0 items-center gap-1 border-b border-separator px-2">
+      <span className="min-w-0 flex-1 truncate px-1 text-[13px] font-medium text-foreground/90">
+        {chat?.title ?? ""}
+      </span>
 
-        {isChatView && scrollActions
-          ? [
-              <Button
-                key="scroll-top"
-                isIconOnly
-                onPress={scrollActions.scrollToTop}
-                aria-label="Scroll to top"
-              >
-                <ButtonGroup.Separator />
-                <HugeiconsIcon icon={ArrowUp03Icon} />
-              </Button>,
-              <Button
-                key="scroll-bottom"
-                isIconOnly
-                onPress={scrollActions.scrollToBottom}
-                aria-label="Scroll to bottom"
-              >
-                <ButtonGroup.Separator />
-                <HugeiconsIcon icon={ArrowDown03Icon} />
-              </Button>,
-            ]
-          : null}
-      </ButtonGroup>
-    </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {isChatView && scrollActions ? (
+          <>
+            <HeaderIconButton
+              label="Scroll to top"
+              icon={ArrowUp03Icon}
+              onClick={scrollActions.scrollToTop}
+            />
+            <HeaderIconButton
+              label="Scroll to bottom"
+              icon={ArrowDown03Icon}
+              onClick={scrollActions.scrollToBottom}
+            />
+            <Separator orientation="vertical" className="mx-1 h-4!" />
+          </>
+        ) : null}
+
+        {CHAT_VIEWS.map((view) => {
+          const isActive = !!matchRoute({ to: view.to, fuzzy: !("exact" in view) });
+          return (
+            <HeaderIconButton
+              key={view.to}
+              label={view.label}
+              icon={view.icon}
+              isActive={isActive}
+              onClick={() => {
+                void navigate({ to: view.to });
+              }}
+            />
+          );
+        })}
+      </div>
+    </header>
+  );
+}
+
+function HeaderIconButton({
+  label,
+  icon,
+  isActive = false,
+  onClick,
+}: {
+  label: string;
+  icon: IconSvgElement;
+  isActive?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={label}
+            aria-pressed={isActive}
+            className={cn(
+              "text-muted-foreground",
+              isActive && "bg-surface-tertiary text-foreground",
+            )}
+            onClick={onClick}
+          >
+            <HugeiconsIcon icon={icon} className="size-3.5!" />
+          </Button>
+        }
+      />
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

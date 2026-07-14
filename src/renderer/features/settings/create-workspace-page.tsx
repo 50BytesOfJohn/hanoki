@@ -41,10 +41,10 @@ export function CreateWorkspacePage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
       <div className="space-y-2">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight">Create Workspace</h1>
-        <p className="text-muted-foreground">
+        <h1 className="font-heading text-xl font-semibold tracking-tight">Create Workspace</h1>
+        <p className="text-sm text-muted-foreground">
           Create a new workspace with its own assets folder and settings.
         </p>
       </div>

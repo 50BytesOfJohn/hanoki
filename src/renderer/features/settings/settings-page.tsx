@@ -44,8 +44,8 @@ export function SettingsPage({ workspaceId }: SettingsPageProps) {
 
   if (workspaceId && !workspace) {
     return (
-      <main className="min-w-0 flex-1 overflow-y-auto px-8 py-10">
-        <div className="mx-auto w-full max-w-4xl text-sm opacity-50">
+      <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto w-full max-w-2xl text-sm opacity-50">
           Loading workspace settings...
         </div>
       </main>
@@ -53,8 +53,8 @@ export function SettingsPage({ workspaceId }: SettingsPageProps) {
   }
 
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto px-8 py-10">
-      <div className="mx-auto w-full max-w-4xl space-y-6">
+    <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
+      <div className="mx-auto w-full max-w-2xl space-y-6">
         {!workspaceId ? <GlobalChatSettingsCard /> : null}
         {workspace ? (
           <>
@@ -97,7 +97,9 @@ function WorkspacePageHeader({ workspaceName, color }: WorkspacePageHeaderProps)
         className="relative mb-3 h-px w-10 rounded-full"
         style={{ background: accentColor, opacity: 0.7 }}
       />
-      <h1 className="relative text-3xl font-bold tracking-tight">{workspaceName}</h1>
+      <h1 className="relative font-heading text-xl font-semibold tracking-tight">
+        {workspaceName}
+      </h1>
     </div>
   );
 }
@@ -125,7 +127,7 @@ function GlobalChatSettingsCard() {
   }
 
   return (
-    <Card>
+    <Card variant="secondary">
       <Card.Header>
         <Card.Title>Chat</Card.Title>
         <Card.Description>Global behavior for the chat composer.</Card.Description>
@@ -214,7 +216,7 @@ function WorkspaceNameForm({ workspaceId, workspaceName }: WorkspaceNameFormProp
   });
 
   return (
-    <Card>
+    <Card variant="secondary">
       <Card.Header>
         <Card.Title>Workspace Name</Card.Title>
         <Card.Description>Update how this workspace appears in settings and chat.</Card.Description>
@@ -326,7 +328,7 @@ function WorkspaceColorPicker({ workspaceId, currentColor }: WorkspaceColorPicke
   }
 
   return (
-    <Card>
+    <Card variant="secondary">
       <Card.Header>
         <Card.Title>Workspace Color</Card.Title>
         <Card.Description>

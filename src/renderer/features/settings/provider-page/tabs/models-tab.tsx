@@ -46,7 +46,7 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
   ];
 
   return (
-    <Card className="flex min-h-0 flex-1 flex-col">
+    <Card variant="secondary" className="flex min-h-0 flex-1 flex-col">
       <Card.Content className="flex min-h-0 flex-1 flex-col">
         {modelsQuery.isPending ? (
           <Alert>

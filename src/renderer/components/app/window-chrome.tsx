@@ -53,7 +53,7 @@ export function WindowChrome({
         data-slot="window-chrome-toolbar"
       >
         <div className="absolute inset-0 [-webkit-app-region:drag]" />
-        <div className="pointer-events-none relative z-10 flex h-full items-center px-3 w-full">
+        <div className="pointer-events-none relative z-10 flex h-full items-center px-2 w-full">
           <div
             aria-hidden
             className="shrink-0"

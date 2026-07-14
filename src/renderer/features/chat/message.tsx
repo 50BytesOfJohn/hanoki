@@ -38,8 +38,8 @@ import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 
 const STREAMDOWN_PLUGINS = { code };
-const USER_MESSAGE_CARD_CLASS_NAME = "max-w-[min(calc(100%_-_48px),720px)]";
-const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "max-w-[min(calc(100%_-_48px),860px)]";
+const USER_MESSAGE_CARD_CLASS_NAME = "max-w-[85%] bg-surface-secondary";
+const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full";
 
 // --- Pin hook ---
 
@@ -103,7 +103,7 @@ const UserMessageTextPart = React.memo(function UserMessageTextPart({
     <Streamdown
       mode="static"
       plugins={STREAMDOWN_PLUGINS}
-      className="text-[0.9375rem] leading-[1.6]"
+      className="text-[0.9375rem] leading-[1.65]"
     >
       {text}
     </Streamdown>
@@ -124,7 +124,7 @@ const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
       mode={isAnimating ? "streaming" : "static"}
       plugins={STREAMDOWN_PLUGINS}
       isAnimating={isAnimating}
-      className="text-[1.0625rem] text-foreground/85 leading-[1.75]"
+      className="text-[0.9375rem] text-foreground/90 leading-[1.7]"
     >
       {text}
     </Streamdown>
@@ -251,7 +251,7 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
                   <HugeiconsIcon icon={InformationCircleIcon} />
                 </Modal.Icon>
                 <Modal.Heading>Message Information</Modal.Heading>
-                <p className="text-sm leading-5 text-muted">
+                <p className="text-sm leading-5 text-muted-foreground">
                   Stored metadata and message payload for this assistant response.
                 </p>
               </Modal.Header>
@@ -304,7 +304,7 @@ function AssistantMessageInfoTooltip({ summary }: AssistantMessageInfoTooltipPro
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{summary.model}</p>
-          <p className="truncate text-xs text-muted">{summary.provider}</p>
+          <p className="truncate text-xs text-muted-foreground">{summary.provider}</p>
         </div>
         <Chip size="sm" variant="soft">
           <Chip.Label>{summary.totalTokens}</Chip.Label>
@@ -332,7 +332,7 @@ interface MessageInfoFieldProps {
 function MessageInfoField({ label, value }: MessageInfoFieldProps) {
   return (
     <div className="min-w-0 rounded-lg bg-surface-secondary px-3 py-2">
-      <p className="text-xs font-medium text-muted">{label}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p className="truncate text-sm text-foreground" title={value}>
         {value}
       </p>
@@ -352,7 +352,7 @@ function MessageInfoJson({ title, value }: MessageInfoJsonProps) {
         <Card.Title>{title}</Card.Title>
       </Card.Header>
       <Card.Content>
-        <pre className="max-h-64 overflow-auto rounded-lg bg-surface px-3 py-2 text-xs leading-5 text-muted">
+        <pre className="max-h-64 overflow-auto rounded-lg bg-surface px-3 py-2 text-xs leading-5 text-muted-foreground">
           {JSON.stringify(value, null, 2)}
         </pre>
       </Card.Content>
@@ -702,7 +702,7 @@ const UserMessage = React.memo(function UserMessage({
   }, [isEditing, messageText]);
 
   return (
-    <div className="group/message flex flex-col items-end gap-3" data-chat-message-id={message.id}>
+    <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
       <Card
         variant="secondary"
         className={USER_MESSAGE_CARD_CLASS_NAME}
@@ -770,7 +770,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
 
   return (
     <div
-      className="group/message flex flex-col items-start gap-3"
+      className="group/message flex flex-col items-start gap-2"
       data-chat-message-id={message.id}
     >
       <Card
@@ -781,7 +781,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
         <Card.Content>
           {isEditing ? (
             <Textarea
-              className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[1.0625rem] leading-[1.75] text-foreground/85"
+              className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.7] text-foreground/90"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
             />

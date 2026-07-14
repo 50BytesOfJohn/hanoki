@@ -55,7 +55,7 @@ type ChatTreeNodeData =
 
 const ROOT_ITEM_ID = "root";
 const SIDEBAR_ICON_BUTTON_CLASS =
-  "size-6 min-w-0 shrink-0 p-0 [&_svg:not([class*='size-'])]:size-3.5";
+  "size-5 min-w-0 shrink-0 rounded p-0 text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5";
 
 export function ChatSidebarTree() {
   const workspaceState = useWorkspaceStore((s) => s.state);
@@ -68,7 +68,7 @@ export function ChatSidebarTree() {
     <ChatSidebar>
       <ChatSidebarPanel>
         {!workspaceId ? (
-          <p className="px-3 py-3 text-xs text-muted">Select a workspace.</p>
+          <p className="px-3 py-3 text-xs text-muted-foreground">Select a workspace.</p>
         ) : workspaceState === "loading" ? null : (
           <ChatSidebarTreeInner
             key={workspaceId}
@@ -370,7 +370,7 @@ function ChatSidebarTreeInner({
       <ChatSidebarBlock className="gap-2">
         <ChatSidebarBlockHeader className="space-y-2">
           <SearchField
-            aria-label="Search tabs and file tree"
+            aria-label="Search chats"
             className="min-w-0"
             fullWidth
             name="search"
@@ -380,7 +380,7 @@ function ChatSidebarTreeInner({
           >
             <SearchField.Group>
               <SearchField.SearchIcon />
-              <SearchField.Input placeholder="Search tabs and file tree..." />
+              <SearchField.Input placeholder="Search chats…" />
               <SearchField.ClearButton />
             </SearchField.Group>
           </SearchField>
@@ -388,7 +388,7 @@ function ChatSidebarTreeInner({
 
         <ChatTabsSection normalizedSearchQuery={normalizedSearchQuery} />
 
-        <ChatSidebarSectionHeader title="File Tree">
+        <ChatSidebarSectionHeader title="Chats">
           <Button
             isIconOnly
             size="sm"
@@ -416,9 +416,9 @@ function ChatSidebarTreeInner({
         </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted">No chats or folders yet.</p>
+          <p className="px-3 py-3 text-xs text-muted-foreground">No chats or folders yet.</p>
         ) : filteredItems.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted">No matching chats or folders.</p>
+          <p className="px-3 py-3 text-xs text-muted-foreground">No matching chats or folders.</p>
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <ChatTreeView
@@ -477,7 +477,7 @@ function ChatSidebarTreeInner({
                       {data.kind === "chat" ? (
                         <ChatTreeItemIcon chatId={data.chat.id} />
                       ) : data.kind === "folder" ? (
-                        <ChatTreeItemIconFrame className="text-muted opacity-50">
+                        <ChatTreeItemIconFrame className="text-muted-foreground opacity-50">
                           <HugeiconsIcon icon={ArrowRight01Icon} />
                         </ChatTreeItemIconFrame>
                       ) : null}
@@ -594,7 +594,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
   const isActive = status === "streaming" || status === "submitted";
 
   return (
-    <ChatTreeItemIconFrame className="text-muted">
+    <ChatTreeItemIconFrame className="text-muted-foreground">
       {isActive ? (
         <span className="flex size-4 items-center justify-center">
           <span className="size-2 animate-pulse rounded-full bg-primary" />
@@ -669,12 +669,12 @@ function ChatTabListItem({
         }
       }}
       className={cn(
-        "group/tab relative flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2 text-sm outline-hidden select-none transition-colors duration-150",
-        "hover:bg-default/70",
-        isActive ? "bg-surface-tertiary font-medium text-foreground" : "text-foreground/70",
+        "group/tab relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+        "hover:bg-hover",
+        isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
       )}
     >
-      <span className="flex shrink-0 items-center justify-center text-muted [&_svg:not([class*='size-'])]:size-4">
+      <span className="flex shrink-0 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5">
         <HugeiconsIcon icon={Chat01Icon} />
       </span>
       <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -707,8 +707,10 @@ function ChatSidebarSectionHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex h-8 shrink-0 items-center justify-between gap-2 px-3">
-      <h2 className="truncate text-xs font-medium uppercase tracking-wide text-muted">{title}</h2>
+    <div className="flex h-7 shrink-0 items-center justify-between gap-2 px-3">
+      <h2 className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
+        {title}
+      </h2>
       {children ? <div className="flex shrink-0 items-center gap-1">{children}</div> : null}
     </div>
   );
@@ -731,11 +733,11 @@ function ChatTreeItemRow({
   return (
     <div
       className={cn(
-        "group/tree-item relative flex h-8 items-center gap-1.5 rounded-md px-2 text-sm outline-hidden select-none transition-colors duration-150",
-        "text-foreground/70 data-[active=true]:bg-surface-tertiary data-[active=true]:font-medium data-[active=true]:text-foreground",
-        "data-[focused=true]:ring-2 data-[focused=true]:ring-focus",
-        "data-[drop-target=true]:bg-default/70 data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted/30 data-[drop-target=true]:ring-dashed",
-        "hover:bg-default/70",
+        "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+        "text-foreground/75 data-[active=true]:bg-surface-tertiary data-[active=true]:text-foreground",
+        "data-[focused=true]:ring-1 data-[focused=true]:ring-focus/60",
+        "data-[drop-target=true]:bg-hover data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted/30 data-[drop-target=true]:ring-dashed",
+        "hover:bg-hover",
         className,
       )}
       role="treeitem"
@@ -761,7 +763,7 @@ function ChatTreeDisclosureButton({
   onToggle: () => void;
 }) {
   if (!hasChildren) {
-    return <span className="size-6 shrink-0" aria-hidden />;
+    return <span className="size-5 shrink-0" aria-hidden />;
   }
 
   return (
@@ -769,7 +771,7 @@ function ChatTreeDisclosureButton({
       isIconOnly
       size="sm"
       variant="ghost"
-      className={cn(SIDEBAR_ICON_BUTTON_CLASS, "text-muted")}
+      className={cn(SIDEBAR_ICON_BUTTON_CLASS, "text-muted-foreground")}
       aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
       onClick={(event) => {
         event.stopPropagation();
@@ -785,7 +787,7 @@ function ChatTreeItemIconFrame({ className, ...props }: React.ComponentProps<"sp
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+        "flex shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
         className,
       )}
       {...props}
@@ -794,7 +796,7 @@ function ChatTreeItemIconFrame({ className, ...props }: React.ComponentProps<"sp
 }
 
 function ChatTreeItemLabel({ className, ...props }: React.ComponentProps<"span">) {
-  return <span className={cn("min-w-0 flex-1 truncate text-sm", className)} {...props} />;
+  return <span className={cn("min-w-0 flex-1 truncate", className)} {...props} />;
 }
 
 function ChatTreeDragLine({ className, ...props }: React.ComponentProps<"div">) {

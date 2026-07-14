@@ -19,9 +19,9 @@ const nodeTypes = {
 };
 
 const MINIMAP_COLORS = {
-  active: "#3f7a5f",
-  default: "#5b6270",
-  selected: "#d4d4d8",
+  active: "var(--accent)",
+  default: "var(--default)",
+  selected: "var(--foreground)",
 };
 
 interface ChatGraphCanvasProps {
@@ -80,7 +80,7 @@ export function ChatGraphCanvas({
   }, [focusMessageId, nodes, onFocusHandled, reactFlow]);
 
   return (
-    <div className="h-full w-full bg-background">
+    <div className="h-full w-full">
       <ReactFlow
         key={messages.at(-1)?.id ?? "empty"}
         colorMode="dark"
@@ -101,10 +101,10 @@ export function ChatGraphCanvas({
       >
         <Background color="var(--color-border)" gap={24} size={1} />
         <MiniMap
-          bgColor="#171717"
-          className="!overflow-hidden !rounded-xl !border !border-border !shadow-sm"
-          maskColor="rgba(10, 10, 10, 0.72)"
-          maskStrokeColor="#525252"
+          bgColor="var(--background)"
+          className="!overflow-hidden !rounded-md !border !border-border !shadow-sm"
+          maskColor="color-mix(in oklch, var(--background) 75%, transparent)"
+          maskStrokeColor="var(--border)"
           maskStrokeWidth={1.5}
           nodeBorderRadius={6}
           nodeColor={(node) => {
@@ -118,13 +118,13 @@ export function ChatGraphCanvas({
 
             return MINIMAP_COLORS.default;
           }}
-          nodeStrokeColor="#0a0a0a"
+          nodeStrokeColor="var(--background)"
           nodeStrokeWidth={2}
           pannable
           zoomable
         />
         <Controls
-          className="!overflow-hidden !rounded-xl !border !border-border !bg-card !shadow-sm [&_.react-flow__controls-button]:!h-10 [&_.react-flow__controls-button]:!w-10 [&_.react-flow__controls-button]:!border-border [&_.react-flow__controls-button]:!bg-card [&_.react-flow__controls-button]:!text-foreground [&_.react-flow__controls-button:hover]:!bg-muted [&_.react-flow__controls-button:hover]:!text-foreground [&_.react-flow__controls-button_svg]:!fill-current"
+          className="!overflow-hidden !rounded-md !border !border-border !bg-card !shadow-sm [&_.react-flow__controls-button]:!h-7 [&_.react-flow__controls-button]:!w-7 [&_.react-flow__controls-button]:!border-border [&_.react-flow__controls-button]:!bg-card [&_.react-flow__controls-button]:!text-muted-foreground [&_.react-flow__controls-button:hover]:!bg-hover [&_.react-flow__controls-button:hover]:!text-foreground [&_.react-flow__controls-button_svg]:!fill-current"
           showInteractive={false}
         />
       </ReactFlow>

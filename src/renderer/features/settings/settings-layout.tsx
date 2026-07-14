@@ -46,11 +46,16 @@ export function SettingsLayout() {
     <WindowChrome
       toolbar={
         <div className="flex w-full items-center justify-between gap-3">
-          <Button size="sm" variant="ghost" render={<Link to="/chat" />}>
-            <HugeiconsIcon icon={ArrowLeft01Icon} />
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-muted-foreground"
+            render={<Link to="/chat" />}
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3.5!" />
             <span>Chat</span>
           </Button>
-          <div className="font-heading text-sm font-semibold tracking-tight">Settings</div>
+          <div className="text-[13px] font-medium text-foreground/90">Settings</div>
           <div className="w-14" />
         </div>
       }
@@ -177,7 +182,11 @@ export function SettingsLayout() {
           </SidebarContent>
         </Sidebar>
 
-        <Outlet />
+        <div className="min-w-0 flex-1 p-1.5 pt-0">
+          <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto rounded-lg border border-border bg-surface scrollbar">
+            <Outlet />
+          </div>
+        </div>
       </SidebarProvider>
     </WindowChrome>
   );

@@ -8,15 +8,15 @@ import { SUPPORTED_PROVIDERS } from "@shared/providers/catalog";
 
 export function ProviderPickerPage() {
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
       <div className="space-y-2">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight">Add Provider</h1>
-        <p className="text-muted-foreground">
+        <h1 className="font-heading text-xl font-semibold tracking-tight">Add Provider</h1>
+        <p className="text-sm text-muted-foreground">
           Choose a provider to start configuring API access for the app.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {SUPPORTED_PROVIDERS.map((provider) => {
           const ProviderIcon = getProviderIconById(provider.id);
 

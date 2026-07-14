@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Button as HeroButton, Dropdown, Separator, type Key } from "@heroui/react";
@@ -11,7 +10,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { Button } from "@/components/ui/button";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
+import hanokiLogoUrl from "../../../../assets/logo.png";
 import { useChatSidebar } from "./chat-sidebar";
 import { useWorkspaceStore } from "../workspace/store";
 
@@ -26,26 +27,41 @@ export function ChatToolbar() {
   const isSidebarOpen = isMobile ? openMobile : open;
 
   return (
-    <div className="flex w-full items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2 w-full">
-        <HeroButton
-          isIconOnly
-          size="sm"
+    <div className="flex w-full items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-1">
+        <Button
           variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
           aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          onPress={toggleSidebar}
+          onClick={toggleSidebar}
         >
-          <HugeiconsIcon icon={isSidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon} />
-        </HeroButton>
+          <HugeiconsIcon
+            icon={isSidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon}
+            className="size-4!"
+          />
+        </Button>
+
+        <img
+          src={hanokiLogoUrl}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="mx-0.5 size-5 shrink-0 select-none"
+        />
 
         <Dropdown>
           <HeroButton
             variant="ghost"
             size="sm"
-            style={{ "--from-color": workspace?.color ?? "transparent" } as CSSProperties}
-            className="bg-linear-to-tr from-(--from-color) via-transparent to-transparent"
+            className="h-6 gap-1.5 rounded-md px-2 text-xs font-medium"
           >
-            {workspace?.name ?? "…"}
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full"
+              style={{ background: workspace?.color ?? "var(--muted)" }}
+            />
+            <span className="max-w-40 truncate">{workspace?.name ?? "…"}</span>
           </HeroButton>
           <Dropdown.Popover placement="bottom start">
             <Dropdown.Menu
@@ -67,6 +83,7 @@ export function ChatToolbar() {
                     <Dropdown.ItemIndicator type="dot" />
                     <HugeiconsIcon
                       icon={CircleIcon}
+                      className="size-3"
                       color={ws.color ?? "current"}
                       fill={ws.color ?? "current"}
                     />
@@ -86,17 +103,17 @@ export function ChatToolbar() {
         </Dropdown>
       </div>
 
-      <HeroButton
-        isIconOnly
-        size="sm"
+      <Button
         variant="ghost"
+        size="icon-xs"
+        className="text-muted-foreground"
         aria-label="Settings"
-        onPress={() => {
+        onClick={() => {
           void navigate({ to: "/settings" });
         }}
       >
-        <HugeiconsIcon icon={Setting07Icon} />
-      </HeroButton>
+        <HugeiconsIcon icon={Setting07Icon} className="size-4!" />
+      </Button>
     </div>
   );
 }

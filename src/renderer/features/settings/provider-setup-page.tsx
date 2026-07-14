@@ -25,12 +25,12 @@ export function ProviderSetupPage({ providerId }: ProviderSetupPageProps) {
 
   if (!provider) {
     return (
-      <div className="space-y-6">
+      <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
         <div className="space-y-2">
-          <h1 className="font-heading text-3xl font-semibold tracking-tight">
+          <h1 className="font-heading text-xl font-semibold tracking-tight">
             Provider Not Supported
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             The selected provider is not available in this build yet.
           </p>
         </div>
@@ -131,13 +131,13 @@ function ProviderConfigSetup({ provider }: ProviderConfigSetupProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <HugeiconsIcon icon={BotIcon} />
-          <h1 className="font-heading text-3xl font-semibold tracking-tight">{provider.name}</h1>
+          <h1 className="font-heading text-xl font-semibold tracking-tight">{provider.name}</h1>
         </div>
-        <p className="text-muted-foreground">{provider.description}</p>
+        <p className="text-sm text-muted-foreground">{provider.description}</p>
       </div>
 
       <Tabs defaultValue="models" className="gap-4">
