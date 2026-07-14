@@ -12,6 +12,7 @@ import {
   useChatRegenerateMessage,
   useChatIsInteractionLocked,
   useChatIsStreaming,
+  useChatId,
   useChatMessages,
   useChatModelId,
   useChatSendMessage,
@@ -122,6 +123,7 @@ function ActiveChatView({ chatId }: { chatId: string }) {
 
 function ActiveChatContent() {
   const [input, setInput] = React.useState("");
+  const chatId = useChatId();
   const modelId = useChatModelId();
   const messages = useChatMessages();
   const sendMessage = useChatSendMessage();
@@ -130,7 +132,7 @@ function ActiveChatContent() {
   const canStop = useChatCanStop();
   const isInteractionLocked = useChatIsInteractionLocked();
   const isStreaming = useChatIsStreaming();
-  const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(isStreaming);
+  const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(chatId, isStreaming);
   const jumpToMessage = React.useCallback(
     (direction: "next" | "previous") => {
       const container = containerRef.current;
