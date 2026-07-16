@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hanoki/hanoki.git"
+    "url": "https://github.com/50BytesOfJohn/hanoki.git"
   },
   "main": ".vite/build/main.js",
   "scripts": {

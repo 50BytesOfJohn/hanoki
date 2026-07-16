@@ -23,6 +23,11 @@ const APPLE_ID = process.env.APPLE_ID;
 const APPLE_APP_SPECIFIC_PASSWORD = process.env.APPLE_APP_SPECIFIC_PASSWORD;
 const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID;
 const isPrereleaseTag = (process.env.GITHUB_REF_NAME ?? "").includes("-");
+// Derive the GitHub repository from the Actions-provided `GITHUB_REPOSITORY`
+// ("owner/name"), falling back to the canonical repository when run locally.
+const [GITHUB_REPOSITORY_OWNER, GITHUB_REPOSITORY_NAME] = (
+  process.env.GITHUB_REPOSITORY ?? "50BytesOfJohn/hanoki"
+).split("/");
 const execFile = promisify(execFileCallback);
 const hasMacDeveloperSigningIdentity = Boolean(APPLE_CODESIGN_IDENTITY);
 const shouldNotarizeMacApp =
@@ -194,8 +199,8 @@ const config: ForgeConfig = {
       name: "@electron-forge/publisher-github",
       config: {
         repository: {
-          owner: "hanoki",
-          name: "hanoki",
+          owner: GITHUB_REPOSITORY_OWNER,
+          name: GITHUB_REPOSITORY_NAME,
         },
         draft: false,
         prerelease: isPrereleaseTag,
