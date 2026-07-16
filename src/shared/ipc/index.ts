@@ -110,8 +110,15 @@ export interface SumiPromptActionsSettings {
   model: SumiModelReference | null;
 }
 
+export interface SumiTitleGenerationSettings {
+  enabled: boolean;
+  autoGenerate: boolean;
+  model: SumiModelReference | null;
+}
+
 export interface SumiSettings {
   promptActions: SumiPromptActionsSettings;
+  titleGeneration: SumiTitleGenerationSettings;
 }
 
 export interface SumiPromptActionsSettingsUpdateInput {
@@ -119,8 +126,15 @@ export interface SumiPromptActionsSettingsUpdateInput {
   model?: SumiModelReference;
 }
 
+export interface SumiTitleGenerationSettingsUpdateInput {
+  enabled?: boolean;
+  autoGenerate?: boolean;
+  model?: SumiModelReference;
+}
+
 export interface SumiSettingsUpdateInput {
   promptActions?: SumiPromptActionsSettingsUpdateInput;
+  titleGeneration?: SumiTitleGenerationSettingsUpdateInput;
 }
 
 export interface TextContextMenuInput {
@@ -153,11 +167,13 @@ export interface ChatInfo {
 export interface ChatSettings {
   modelId?: string | null;
   systemPrompt?: string | null;
+  webEnabled?: boolean;
 }
 
 export interface ChatSettingsUpdateInput {
   modelId?: string | null;
   systemPrompt?: string | null;
+  webEnabled?: boolean;
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {

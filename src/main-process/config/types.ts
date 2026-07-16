@@ -39,5 +39,12 @@ export interface AppConfig {
       providerId?: string;
       providerModelId?: string;
     };
+    titleGeneration: {
+      initialized: boolean;
+      enabled: boolean;
+      autoGenerate: boolean;
+      providerId?: string;
+      providerModelId?: string;
+    };
   };
 }

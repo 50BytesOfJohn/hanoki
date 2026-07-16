@@ -66,7 +66,7 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
   }
 
   const inputRecord = rawInput as Record<string, unknown>;
-  const allowedKeys = new Set(["modelId", "systemPrompt"]);
+  const allowedKeys = new Set(["modelId", "systemPrompt", "webEnabled"]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
       throw AppError.badRequest(`Unsupported chat settings update field "${key}".`);
@@ -92,6 +92,14 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
       typeof inputRecord.systemPrompt === "string" && inputRecord.systemPrompt.trim().length === 0
         ? null
         : inputRecord.systemPrompt;
+  }
+
+  if (inputRecord.webEnabled !== undefined) {
+    if (typeof inputRecord.webEnabled !== "boolean") {
+      throw AppError.badRequest("webEnabled must be a boolean.");
+    }
+
+    parsedInput.webEnabled = inputRecord.webEnabled;
   }
 
   return [chatId, parsedInput];

@@ -1,11 +1,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  Chatting01Icon,
-  PinIcon,
-  PinOffIcon,
-} from "@hugeicons/core-free-icons";
+import { Chatting01Icon, PinIcon, PinOffIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,21 +23,11 @@ import {
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
 import { messagesApi } from "@/api/messages";
-import {
-  SettingsPageHeader,
-  SettingsPageShell,
-} from "@/features/settings/settings-ui";
-import {
-  getPinnedBranchesQueryOptions,
-  CURRENT_BRANCH_QUERY_KEY,
-} from "@/queries/chats";
+import { SettingsPageHeader, SettingsPageShell } from "@/features/settings/settings-ui";
+import { getPinnedBranchesQueryOptions, CURRENT_BRANCH_QUERY_KEY } from "@/queries/chats";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
@@ -50,11 +36,7 @@ import { useChatStore } from "@/stores/chat-store";
 export function PinnedBranchesPage() {
   const chatId = useWorkspaceStore((s) => s.currentChatId);
 
-  const {
-    data: pinned = [],
-    isLoading,
-    error,
-  } = useQuery(getPinnedBranchesQueryOptions());
+  const { data: pinned = [], isLoading, error } = useQuery(getPinnedBranchesQueryOptions());
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
 
   const modelDisplayNameById = React.useMemo(() => {
@@ -93,9 +75,7 @@ export function PinnedBranchesPage() {
       ) : error ? (
         <PinnedBranchesEmptyState
           title="Unable to load pinned branches"
-          description={
-            error instanceof Error ? error.message : "Something went wrong."
-          }
+          description={error instanceof Error ? error.message : "Something went wrong."}
         />
       ) : filteredPinned.length === 0 ? (
         <PinnedBranchesEmptyState
@@ -109,9 +89,7 @@ export function PinnedBranchesPage() {
               key={summary.messageId}
               summary={summary}
               modelDisplayName={
-                summary.model
-                  ? (modelDisplayNameById.get(summary.model) ?? summary.model)
-                  : null
+                summary.model ? (modelDisplayNameById.get(summary.model) ?? summary.model) : null
               }
             />
           ))}
@@ -129,20 +107,11 @@ function PinnedBranchesShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PinnedBranchesEmptyState({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
+function PinnedBranchesEmptyState({ title, description }: { title: string; description: string }) {
   return (
     <Empty className="rounded-lg border border-border py-12">
       <EmptyHeader>
-        <EmptyMedia
-          variant="icon"
-          className="bg-surface-secondary text-muted-foreground"
-        >
+        <EmptyMedia variant="icon" className="bg-surface-secondary text-muted-foreground">
           <HugeiconsIcon icon={PinIcon} size={20} />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
@@ -164,12 +133,9 @@ function PinnedBranchItem({
   const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
 
   const switchBranchMutation = useMutation({
-    mutationFn: () =>
-      messagesApi.switchBranch(summary.chatId, summary.messageId),
+    mutationFn: () => messagesApi.switchBranch(summary.chatId, summary.messageId),
     onSuccess: (messages) => {
-      const chatSession = useChatStore
-        .getState()
-        .chatEntries.get(summary.chatId);
+      const chatSession = useChatStore.getState().chatEntries.get(summary.chatId);
       if (chatSession) {
         chatSession.messages = messages;
       }
@@ -198,8 +164,7 @@ function PinnedBranchItem({
     });
   };
 
-  const preview =
-    summary.textPreview.trim() || "This pinned message has no text preview.";
+  const preview = summary.textPreview.trim() || "This pinned message has no text preview.";
   const mutationError = switchBranchMutation.error ?? unpinMutation.error;
 
   return (
@@ -255,11 +220,7 @@ function PinnedBranchItem({
               />
             }
           >
-            {unpinMutation.isPending ? (
-              <Spinner />
-            ) : (
-              <HugeiconsIcon icon={PinOffIcon} />
-            )}
+            {unpinMutation.isPending ? <Spinner /> : <HugeiconsIcon icon={PinOffIcon} />}
           </TooltipTrigger>
           <TooltipContent>Unpin branch</TooltipContent>
         </Tooltip>
@@ -268,9 +229,7 @@ function PinnedBranchItem({
       {mutationError ? (
         <ItemFooter>
           <p className="text-xs text-danger">
-            {mutationError instanceof Error
-              ? mutationError.message
-              : "Something went wrong."}
+            {mutationError instanceof Error ? mutationError.message : "Something went wrong."}
           </p>
         </ItemFooter>
       ) : null}

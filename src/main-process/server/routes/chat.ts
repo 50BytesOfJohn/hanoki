@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { consumeStream, convertToModelMessages, smoothStream, streamText } from "ai";
+import { consumeStream, convertToModelMessages, isStepCount, smoothStream, streamText } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
+import type { ChatTitleUpdatedEvent } from "@shared/events";
 import {
   normalizeChatMessageMetadata,
   type ChatMessageMetadata,
@@ -12,18 +13,25 @@ import {
   getChatCurrentBranchId,
   setChatCurrentBranch,
 } from "../../chat-tree/repository";
-import { getMessageById, upsertMessage } from "../../messages/repository";
+import { getMessageById, listAllMessagesByChatId, upsertMessage } from "../../messages/repository";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
 import { buildResponseMetadata } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
+import { readSumiSettings } from "../../services/settings-service";
+import { generateSumiChatTitle } from "../assistant/title-generation";
+import { webTools } from "../assistant/web-tools";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
 
-export function createChatRoute() {
+interface CreateChatRouteOptions {
+  onChatTitleUpdated?: (event: Omit<ChatTitleUpdatedEvent, "type">) => void;
+}
+
+export function createChatRoute(options?: CreateChatRouteOptions) {
   const app = new Hono();
 
   app.post("/api/chat", async (c) => {
@@ -104,6 +112,11 @@ export function createChatRoute() {
       responseParentId = continuationTargetMessage.parentId;
     }
 
+    const shouldAutoGenerateTitle =
+      mode !== "continue-message" &&
+      lastRequestMessage?.role === "user" &&
+      !listAllMessagesByChatId(chat.id).some((message) => message.role === "user");
+
     if (mode !== "continue-message" && lastRequestMessage?.role === "user") {
       const parentId = lastRequestMessage.metadata?.parentId ?? null;
 
@@ -115,6 +128,24 @@ export function createChatRoute() {
         parts: lastRequestMessage.parts,
         metadata: { parentId },
       });
+
+      const titleGeneration = readSumiSettings().titleGeneration;
+      if (shouldAutoGenerateTitle && titleGeneration.enabled && titleGeneration.autoGenerate) {
+        void generateSumiChatTitle({
+          chatId: chat.id,
+          sourcePrompt: extractUiMessageText(lastRequestMessage),
+        })
+          .then((event) => {
+            options?.onChatTitleUpdated?.({
+              chatId: event.chatId,
+              workspaceId: event.workspaceId,
+              title: event.title,
+            });
+          })
+          .catch((error) => {
+            console.error("[sumi-title] Automatic title generation failed.", error);
+          });
+      }
     }
 
     const startTime = Date.now();
@@ -142,6 +173,8 @@ export function createChatRoute() {
       model: languageModel,
       experimental_transform: smoothStream({ chunking: "line" }),
       messages: await convertToModelMessages(modelInputMessages),
+      tools: chat.settings.webEnabled ? webTools : undefined,
+      stopWhen: chat.settings.webEnabled ? isStepCount(5) : undefined,
     });
 
     return result.toUIMessageStreamResponse({
@@ -229,6 +262,19 @@ export function createChatRoute() {
   });
 
   return app;
+}
+
+function extractUiMessageText(message: HanokiUiMessage): string | null {
+  const text = message.parts
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        part.type === "text" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+
+  return text || null;
 }
 
 function prependSystemPrompt(

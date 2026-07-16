@@ -48,11 +48,18 @@ export function useUpdateSumiSettings() {
 
       const previous = queryClient.getQueryData<SumiSettings>(queryKeys.settings.sumi());
       const promptActionsInput = input.promptActions;
-      if (previous && promptActionsInput) {
+      const titleGenerationInput = input.titleGeneration;
+      if (previous && (promptActionsInput || titleGenerationInput)) {
         queryClient.setQueryData<SumiSettings>(queryKeys.settings.sumi(), {
           promptActions: {
-            enabled: promptActionsInput.enabled ?? previous.promptActions.enabled,
-            model: promptActionsInput.model ?? previous.promptActions.model,
+            enabled: promptActionsInput?.enabled ?? previous.promptActions.enabled,
+            model: promptActionsInput?.model ?? previous.promptActions.model,
+          },
+          titleGeneration: {
+            enabled: titleGenerationInput?.enabled ?? previous.titleGeneration.enabled,
+            autoGenerate:
+              titleGenerationInput?.autoGenerate ?? previous.titleGeneration.autoGenerate,
+            model: titleGenerationInput?.model ?? previous.titleGeneration.model,
           },
         });
       }

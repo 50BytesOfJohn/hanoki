@@ -49,6 +49,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -824,11 +825,17 @@ const AssistantMessage = React.memo(function AssistantMessage({
           />
         ) : (
           <>
-            {message.parts.map((part, i) =>
-              part.type === "text" ? (
-                <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
-              ) : null,
-            )}
+            {message.parts.map((part, i) => {
+              if (part.type === "text") {
+                return (
+                  <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
+                );
+              }
+              if (isToolUIPart(part)) {
+                return <ToolCallMarker key={part.toolCallId} part={part} />;
+              }
+              return null;
+            })}
             {isThinking ? <ThinkingMarker hasPriorText={messageText.length > 0} /> : null}
           </>
         )}

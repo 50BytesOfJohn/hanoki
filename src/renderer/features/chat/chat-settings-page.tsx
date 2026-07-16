@@ -20,9 +20,7 @@ import { cn } from "@/lib/utils";
 export function ChatSettingsPage() {
   const activeChatId = useWorkspaceStore((state) => state.currentChatId);
 
-  const chatQuery = useQuery(
-    getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }),
-  );
+  const chatQuery = useQuery(getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }));
 
   if (!activeChatId) {
     return (
@@ -36,9 +34,7 @@ export function ChatSettingsPage() {
   if (chatQuery.isPending) {
     return (
       <ChatSettingsShell>
-        <p className="text-[13px] text-muted-foreground">
-          Loading chat settings…
-        </p>
+        <p className="text-[13px] text-muted-foreground">Loading chat settings…</p>
       </ChatSettingsShell>
     );
   }
@@ -48,9 +44,7 @@ export function ChatSettingsPage() {
       <ChatEmptyPage
         title="Unable to load chat settings"
         description={
-          chatQuery.error instanceof Error
-            ? chatQuery.error.message
-            : "Something went wrong."
+          chatQuery.error instanceof Error ? chatQuery.error.message : "Something went wrong."
         }
       />
     );
@@ -58,12 +52,7 @@ export function ChatSettingsPage() {
 
   const chat = chatQuery.data;
   if (!chat) {
-    return (
-      <ChatEmptyPage
-        title="Chat not found"
-        description="This chat may have been deleted."
-      />
-    );
+    return <ChatEmptyPage title="Chat not found" description="This chat may have been deleted." />;
   }
 
   return (
@@ -72,9 +61,8 @@ export function ChatSettingsPage() {
         title="Chat Settings"
         description={
           <>
-            Applies only to{" "}
-            <span className="text-foreground">{chat.title}</span>, on top of
-            your global defaults.
+            Applies only to <span className="text-foreground">{chat.title}</span>, on top of your
+            global defaults.
           </>
         }
       />
@@ -98,13 +86,7 @@ function ChatSettingsShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SystemPromptRow({
-  chatId,
-  savedPrompt,
-}: {
-  chatId: string;
-  savedPrompt: string;
-}) {
+function SystemPromptRow({ chatId, savedPrompt }: { chatId: string; savedPrompt: string }) {
   const updateChatSettings = useUpdateChatSettings();
   const [prompt, setPrompt] = React.useState(savedPrompt);
   const [error, setError] = React.useState<string | null>(null);
@@ -119,11 +101,7 @@ function SystemPromptRow({
         input: { systemPrompt: prompt.trim().length === 0 ? null : prompt },
       });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to save the system prompt.",
-      );
+      setError(err instanceof Error ? err.message : "Failed to save the system prompt.");
     }
   }
 
@@ -152,9 +130,7 @@ function SystemPromptRow({
             disabled={!isDirty || updateChatSettings.isPending}
             onClick={() => void handleSave()}
           >
-            {updateChatSettings.isPending ? (
-              <Spinner data-icon="inline-start" />
-            ) : null}
+            {updateChatSettings.isPending ? <Spinner data-icon="inline-start" /> : null}
             Save
           </Button>
           <Button

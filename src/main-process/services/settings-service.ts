@@ -55,30 +55,51 @@ export function createSettingsService(): SettingsService {
     updateSumiSettings(input) {
       const current = readSumiSettings();
       const promptActionsInput = input.promptActions;
-
-      if (!promptActionsInput) {
-        return current;
-      }
-
-      const model = promptActionsInput.model ?? current.promptActions.model;
-      if (promptActionsInput.model) {
+      const model = promptActionsInput?.model ?? current.promptActions.model;
+      if (promptActionsInput?.model) {
         validateSumiModelReference(promptActionsInput.model);
       }
 
-      const enabled = promptActionsInput.enabled ?? current.promptActions.enabled;
-      if (enabled && !model) {
+      const promptActionsEnabled = promptActionsInput?.enabled ?? current.promptActions.enabled;
+      if (promptActionsEnabled && !model) {
         throw AppError.badRequest("Select a model before enabling Sumi prompt actions.");
       }
+
+      const titleGenerationInput = input.titleGeneration;
+      const titleGenerationModel = titleGenerationInput?.model ?? current.titleGeneration.model;
+      if (titleGenerationInput?.model) {
+        validateSumiModelReference(titleGenerationInput.model);
+      }
+
+      const titleGenerationEnabled =
+        titleGenerationInput?.enabled ?? current.titleGeneration.enabled;
+      if (titleGenerationEnabled && !titleGenerationModel) {
+        throw AppError.badRequest("Select a model before enabling Sumi title generation.");
+      }
+
+      const autoGenerate =
+        titleGenerationInput?.autoGenerate ?? current.titleGeneration.autoGenerate;
 
       updateConfig({
         sumi: {
           promptActions: {
             initialized: true,
-            enabled,
+            enabled: promptActionsEnabled,
             ...(model
               ? {
                   providerId: model.providerId,
                   providerModelId: model.providerModelId,
+                }
+              : {}),
+          },
+          titleGeneration: {
+            initialized: true,
+            enabled: titleGenerationEnabled,
+            autoGenerate,
+            ...(titleGenerationModel
+              ? {
+                  providerId: titleGenerationModel.providerId,
+                  providerModelId: titleGenerationModel.providerModelId,
                 }
               : {}),
           },
@@ -87,8 +108,13 @@ export function createSettingsService(): SettingsService {
 
       return {
         promptActions: {
-          enabled,
+          enabled: promptActionsEnabled,
           model,
+        },
+        titleGeneration: {
+          enabled: titleGenerationEnabled,
+          autoGenerate,
+          model: titleGenerationModel,
         },
       };
     },
@@ -97,11 +123,12 @@ export function createSettingsService(): SettingsService {
 
 export function readSumiSettings(): SumiSettings {
   let promptActionsConfig = getConfig().sumi.promptActions;
+  let titleGenerationConfig = getConfig().sumi.titleGeneration;
+  const openRouterProvider = listProviders().find(
+    (provider) => provider.catalogId === "openrouter",
+  );
 
   if (!promptActionsConfig.initialized) {
-    const openRouterProvider = listProviders().find(
-      (provider) => provider.catalogId === "openrouter",
-    );
     const initialFeatureConfig = openRouterProvider
       ? {
           initialized: true,
@@ -122,15 +149,47 @@ export function readSumiSettings(): SumiSettings {
     promptActionsConfig = getConfig().sumi.promptActions;
   }
 
-  const model = readSumiModelReference(
+  if (!titleGenerationConfig.initialized) {
+    const initialFeatureConfig = openRouterProvider
+      ? {
+          initialized: true,
+          enabled: true,
+          autoGenerate: false,
+          providerId: openRouterProvider.id,
+          providerModelId: DEFAULT_SUMI_OPENROUTER_MODEL_ID,
+        }
+      : {
+          initialized: true,
+          enabled: false,
+          autoGenerate: false,
+        };
+
+    updateConfig({
+      sumi: {
+        titleGeneration: initialFeatureConfig,
+      },
+    });
+    titleGenerationConfig = getConfig().sumi.titleGeneration;
+  }
+
+  const promptActionsModel = readSumiModelReference(
     promptActionsConfig.providerId,
     promptActionsConfig.providerModelId,
+  );
+  const titleGenerationModel = readSumiModelReference(
+    titleGenerationConfig.providerId,
+    titleGenerationConfig.providerModelId,
   );
 
   return {
     promptActions: {
-      enabled: promptActionsConfig.enabled && model !== null,
-      model,
+      enabled: promptActionsConfig.enabled && promptActionsModel !== null,
+      model: promptActionsModel,
+    },
+    titleGeneration: {
+      enabled: titleGenerationConfig.enabled && titleGenerationModel !== null,
+      autoGenerate: titleGenerationConfig.autoGenerate,
+      model: titleGenerationModel,
     },
   };
 }

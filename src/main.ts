@@ -53,7 +53,11 @@ if (!app.requestSingleInstanceLock()) {
     try {
       aiServerState = { status: "starting", port: null, error: null };
       broadcastSystemEvent({ type: "ai-server:starting" });
-      aiServer = await createAiServer();
+      aiServer = await createAiServer({
+        onChatTitleUpdated: (event) => {
+          broadcastSystemEvent({ type: "chat:title-updated", ...event });
+        },
+      });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
       broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });
     } catch (error) {

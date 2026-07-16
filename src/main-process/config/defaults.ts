@@ -21,5 +21,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       initialized: false,
       enabled: false,
     },
+    titleGeneration: {
+      initialized: false,
+      enabled: false,
+      autoGenerate: false,
+    },
   },
 };

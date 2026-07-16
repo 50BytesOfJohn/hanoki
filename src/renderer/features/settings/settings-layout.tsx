@@ -3,6 +3,7 @@ import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
   Add01Icon,
   AiMagicIcon,
+  AiWebBrowsingIcon,
   ArrowLeft01Icon,
   PaintBrush02Icon,
   SlidersHorizontalIcon,
@@ -35,6 +36,14 @@ const globalNavItems = [
   },
   { to: "/settings/appearance", label: "Appearance", icon: PaintBrush02Icon },
   { to: "/settings/sumi", label: "Sumi", icon: AiMagicIcon },
+] as const;
+
+const chatFeaturesNavItems = [
+  {
+    to: "/settings/web",
+    label: "Web search & fetch",
+    icon: AiWebBrowsingIcon,
+  },
 ] as const;
 
 export function SettingsLayout() {
@@ -80,6 +89,25 @@ export function SettingsLayout() {
                           }),
                         )}
                         render={<Link to={item.to} activeOptions={{ exact: "exact" in item }} />}
+                      >
+                        <HugeiconsIcon icon={item.icon} />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Chat features</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {chatFeaturesNavItems.map((item) => (
+                    <SidebarMenuItem key={item.to}>
+                      <SidebarMenuButton
+                        isActive={Boolean(matchRoute({ to: item.to }))}
+                        render={<Link to={item.to} />}
                       >
                         <HugeiconsIcon icon={item.icon} />
                         <span>{item.label}</span>

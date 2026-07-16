@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron";
+import { BrowserWindow, shell } from "electron";
 import path from "node:path";
 
 import { isTrustedRendererUrl, type TrustedSenderRegistry } from "../ipc/trusted-senders";
@@ -68,7 +68,12 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     options.trustedSenders.unregisterTrustedWebContents(mainWindow.webContents.id);
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https:") || url.startsWith("http:")) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedRendererUrl(url)) {
       event.preventDefault();

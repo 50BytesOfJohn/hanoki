@@ -209,6 +209,13 @@
   }
 }
 
+/* Streamdown styles inline code with `bg-muted`, assuming shadcn's
+   muted-as-fill; here --muted is a text gray, so remap to the layer ladder. */
+[data-streamdown="inline-code"] {
+  background: var(--surface-tertiary);
+  color: var(--foreground);
+}
+
 @layer utilities {
   .scrollbar {
     scrollbar-color: color-mix(in oklch, var(--scrollbar) 55%, transparent) transparent;

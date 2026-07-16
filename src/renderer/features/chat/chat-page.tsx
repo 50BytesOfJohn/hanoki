@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
-import { Cancel01Icon, SentIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, AiWebBrowsingIcon, Cancel01Icon, SentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,13 @@ import {
   ComboboxValue,
 } from "@/components/ui/combobox";
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuTrigger,
+} from "@/components/ui/menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useChatCanStop,
@@ -35,6 +42,7 @@ import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context"
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { getProviderIconById } from "@/lib/provider-icons";
+import { useUpdateChatSettings } from "@/mutations/chats";
 import { cn } from "@/lib/utils";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
@@ -383,7 +391,10 @@ function ActiveChatContent() {
                 submitMessage();
               }}
             >
-              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+              {/* has-disabled overrides: InputGroup dims itself when ANY child is
+                  disabled, and the Send button is disabled whenever the prompt is
+                  empty — which made the sticky composer translucent over messages. */}
+              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
                 <InputGroupTextarea
                   data-chat-composer-input="true"
                   aria-label="Chat message"
@@ -397,6 +408,7 @@ function ActiveChatContent() {
                   align="block-end"
                   className="flex w-full items-center gap-1.5 px-2 py-0"
                 >
+                  <WebToolsMenu />
                   <ModelSelector />
                   <div className="ml-auto flex items-center gap-1.5">
                     <SumiPromptAction
@@ -451,6 +463,54 @@ function ActiveChatContent() {
   );
 }
 
+function WebToolsMenu() {
+  const chatId = useChatId();
+  const isInteractionLocked = useChatIsInteractionLocked();
+  const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const updateChatSettings = useUpdateChatSettings();
+  const webEnabled = chat?.settings.webEnabled ?? false;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-foreground"
+            aria-label="Chat tools"
+            aria-pressed={webEnabled}
+            disabled={isInteractionLocked}
+          />
+        }
+      >
+        <HugeiconsIcon icon={Add01Icon} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-44">
+        <DropdownMenuGroup>
+          <DropdownMenuCheckboxItem
+            variant="switch"
+            checked={webEnabled}
+            disabled={updateChatSettings.isPending}
+            onCheckedChange={(checked) => {
+              updateChatSettings.mutate({
+                id: chatId,
+                input: { webEnabled: checked },
+              });
+            }}
+          >
+            <span className="flex items-center gap-2">
+              <HugeiconsIcon icon={AiWebBrowsingIcon} />
+              Web
+            </span>
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function isComposerInputEvent(event: KeyboardEvent): boolean {
   if (!(event.target instanceof HTMLElement)) {
     return false;
@@ -479,7 +539,7 @@ function ModelSelector() {
     >
       <ComboboxTrigger
         aria-label="Select model"
-        className="inline-flex h-7 max-w-48 min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 text-[13px] text-muted-foreground shadow-none transition-colors duration-100 hover:bg-hover hover:text-foreground dark:bg-transparent dark:hover:bg-hover"
+        className="inline-flex h-7 max-w-48 min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 text-[13px] text-foreground shadow-none transition-colors duration-100 hover:bg-hover dark:bg-transparent dark:hover:bg-hover [&_svg]:text-foreground"
       >
         <ComboboxValue>
           {(value: ProviderModelInfo | null) => {

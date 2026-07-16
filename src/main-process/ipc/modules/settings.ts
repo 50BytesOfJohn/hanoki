@@ -70,40 +70,77 @@ function parseSumiSettingsUpdateInput(args: unknown[]): [SumiSettingsUpdateInput
   expectArgCount(args, 1);
 
   const rawInput = expectRecord(args[0], "Sumi settings update payload");
-  expectAllowedKeys(rawInput, ["promptActions"]);
+  expectAllowedKeys(rawInput, ["promptActions", "titleGeneration"]);
+  const parsedInput: SumiSettingsUpdateInput = {};
 
-  if (rawInput.promptActions === undefined) {
-    return [{}];
-  }
+  if (rawInput.promptActions !== undefined) {
+    const rawPromptActions = expectRecord(rawInput.promptActions, "promptActions settings update");
+    expectAllowedKeys(rawPromptActions, ["enabled", "model"]);
 
-  const rawPromptActions = expectRecord(rawInput.promptActions, "promptActions settings update");
-  expectAllowedKeys(rawPromptActions, ["enabled", "model"]);
+    const promptActionsInput: NonNullable<SumiSettingsUpdateInput["promptActions"]> = {};
 
-  const promptActionsInput: NonNullable<SumiSettingsUpdateInput["promptActions"]> = {};
-
-  if (rawPromptActions.enabled !== undefined) {
-    if (typeof rawPromptActions.enabled !== "boolean") {
-      throw AppError.badRequest("promptActions.enabled must be a boolean.");
+    if (rawPromptActions.enabled !== undefined) {
+      if (typeof rawPromptActions.enabled !== "boolean") {
+        throw AppError.badRequest("promptActions.enabled must be a boolean.");
+      }
+      promptActionsInput.enabled = rawPromptActions.enabled;
     }
-    promptActionsInput.enabled = rawPromptActions.enabled;
+
+    if (rawPromptActions.model !== undefined) {
+      promptActionsInput.model = parseSumiModelReference(
+        rawPromptActions.model,
+        "promptActions.model",
+      );
+    }
+
+    parsedInput.promptActions = promptActionsInput;
   }
 
-  if (rawPromptActions.model !== undefined) {
-    promptActionsInput.model = parseSumiModelReference(rawPromptActions.model);
+  if (rawInput.titleGeneration !== undefined) {
+    const rawTitleGeneration = expectRecord(
+      rawInput.titleGeneration,
+      "titleGeneration settings update",
+    );
+    expectAllowedKeys(rawTitleGeneration, ["enabled", "autoGenerate", "model"]);
+
+    const titleGenerationInput: NonNullable<SumiSettingsUpdateInput["titleGeneration"]> = {};
+
+    if (rawTitleGeneration.enabled !== undefined) {
+      if (typeof rawTitleGeneration.enabled !== "boolean") {
+        throw AppError.badRequest("titleGeneration.enabled must be a boolean.");
+      }
+      titleGenerationInput.enabled = rawTitleGeneration.enabled;
+    }
+
+    if (rawTitleGeneration.autoGenerate !== undefined) {
+      if (typeof rawTitleGeneration.autoGenerate !== "boolean") {
+        throw AppError.badRequest("titleGeneration.autoGenerate must be a boolean.");
+      }
+      titleGenerationInput.autoGenerate = rawTitleGeneration.autoGenerate;
+    }
+
+    if (rawTitleGeneration.model !== undefined) {
+      titleGenerationInput.model = parseSumiModelReference(
+        rawTitleGeneration.model,
+        "titleGeneration.model",
+      );
+    }
+
+    parsedInput.titleGeneration = titleGenerationInput;
   }
 
-  return [{ promptActions: promptActionsInput }];
+  return [parsedInput];
 }
 
-function parseSumiModelReference(value: unknown): SumiModelReference {
-  const model = expectRecord(value, "promptActions.model");
+function parseSumiModelReference(value: unknown, label: string): SumiModelReference {
+  const model = expectRecord(value, label);
   expectAllowedKeys(model, ["providerId", "providerModelId"]);
 
   if (typeof model.providerId !== "string" || model.providerId.trim().length === 0) {
-    throw AppError.badRequest("promptActions.model.providerId must be a non-empty string.");
+    throw AppError.badRequest(`${label}.providerId must be a non-empty string.`);
   }
   if (typeof model.providerModelId !== "string" || model.providerModelId.trim().length === 0) {
-    throw AppError.badRequest("promptActions.model.providerModelId must be a non-empty string.");
+    throw AppError.badRequest(`${label}.providerModelId must be a non-empty string.`);
   }
 
   return {

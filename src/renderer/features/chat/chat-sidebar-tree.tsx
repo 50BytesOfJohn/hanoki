@@ -59,6 +59,7 @@ import {
   ChatSidebarPanel,
 } from "./chat-sidebar";
 import { ChatSearchDialog } from "./chat-search-dialog";
+import { subscribeToChatTitleUpdates } from "./chat-title-events";
 import { useWorkspaceStore } from "../workspace/store";
 
 type ChatTreeNodeData =
@@ -281,6 +282,19 @@ function ChatSidebarTreeInner({
       }
     }
   }, [tree]);
+
+  React.useEffect(
+    () =>
+      subscribeToChatTitleUpdates((event) => {
+        if (event.workspaceId !== workspaceId) {
+          return;
+        }
+
+        invalidateTree();
+        tree.rebuildTree();
+      }),
+    [invalidateTree, tree, workspaceId],
+  );
 
   const openDeleteDialog = React.useCallback((itemIds: readonly string[]) => {
     const itemRefs = itemIds

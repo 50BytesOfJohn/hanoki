@@ -1,21 +1,27 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft01Icon, CheckmarkCircle02Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { getProviderIconById } from "@/lib/provider-icons";
 import { listProviderModelsQueryOptions, listProvidersQueryOptions } from "@/queries/providers";
-import { cn } from "@/lib/utils";
 
 export interface ModelPickerValue {
   providerId: string;
@@ -40,7 +46,6 @@ export function ModelPickerDialog({
   const { data: providers = [], isPending: areProvidersPending } =
     useQuery(listProvidersQueryOptions);
   const [providerId, setProviderId] = React.useState<string | null>(null);
-  const [pendingValue, setPendingValue] = React.useState<ModelPickerValue | null>(value);
   const [search, setSearch] = React.useState("");
   const modelsQuery = useQuery({
     ...listProviderModelsQueryOptions(providerId ?? ""),
@@ -48,123 +53,103 @@ export function ModelPickerDialog({
   });
 
   React.useEffect(() => {
-    if (!open) {
-      return;
+    if (open) {
+      // Reopen on the provider of the current value so its model is one step away.
+      setProviderId(value?.providerId ?? null);
+      setSearch("");
     }
-
-    setProviderId(null);
-    setPendingValue(value);
-    setSearch("");
   }, [open, value]);
 
   const selectedProvider = providers.find((provider) => provider.id === providerId) ?? null;
-  const visibleModels = React.useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase();
+  const SelectedProviderIcon = selectedProvider
+    ? getProviderIconById(selectedProvider.catalogId)
+    : null;
+  const visibleModels = React.useMemo(
+    () =>
+      (modelsQuery.data ?? []).filter(
+        (model) =>
+          model.status === "active" && (includeDisabledModels || model.isEnabled),
+      ),
+    [includeDisabledModels, modelsQuery.data],
+  );
 
-    return (modelsQuery.data ?? []).filter((model) => {
-      if (model.status !== "active") {
-        return false;
-      }
-      if (!includeDisabledModels && !model.isEnabled) {
-        return false;
-      }
-      if (!normalizedSearch) {
-        return true;
-      }
-
-      return `${model.displayName ?? ""} ${model.providerModelId}`
-        .toLocaleLowerCase()
-        .includes(normalizedSearch);
-    });
-  }, [includeDisabledModels, modelsQuery.data, search]);
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      setProviderId(null);
-      setSearch("");
-    }
-    onOpenChange(nextOpen);
+  function showProviders() {
+    setProviderId(null);
+    setSearch("");
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex h-[min(36rem,calc(100vh-3rem))] max-w-xl grid-rows-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border px-4 py-3 pr-12">
-          <div className="flex items-center gap-2">
-            {selectedProvider ? (
-              <Button
-                aria-label="Back to providers"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => {
-                  setProviderId(null);
-                  setSearch("");
-                }}
-              >
-                <HugeiconsIcon icon={ArrowLeft01Icon} />
-              </Button>
-            ) : null}
-            <div className="min-w-0">
-              <DialogTitle>
-                {selectedProvider ? selectedProvider.displayName : "Select model"}
-              </DialogTitle>
-              <DialogDescription>
-                {selectedProvider
-                  ? "Choose a model, then confirm your selection."
-                  : "Choose a configured provider to browse its models."}
-              </DialogDescription>
-            </div>
-          </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="flex-row items-center gap-1.5 border-b border-separator px-3 py-2.5 pe-12">
+          {selectedProvider ? (
+            <Button
+              aria-label="Back to providers"
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={showProviders}
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} />
+            </Button>
+          ) : null}
+          {SelectedProviderIcon ? <SelectedProviderIcon className="size-4 shrink-0" /> : null}
+          <DialogTitle className="truncate text-sm">
+            {selectedProvider ? selectedProvider.displayName : "Select model"}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {selectedProvider
+              ? "Choose a model from this provider."
+              : "Choose a configured provider to browse its models."}
+          </DialogDescription>
         </DialogHeader>
 
-        {selectedProvider ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="relative shrink-0 border-b border-border p-3">
-              <HugeiconsIcon
-                icon={Search01Icon}
-                className="pointer-events-none absolute left-5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                aria-label="Search models"
-                autoFocus
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search models"
-                className="pl-8"
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar">
-              {modelsQuery.isPending ? (
-                <DialogStateMessage>Loading models…</DialogStateMessage>
+        <Command
+          className="h-[min(32rem,calc(100vh-8rem))] rounded-none! bg-transparent"
+          onKeyDown={(event) => {
+            if (event.key === "Backspace" && !search && selectedProvider) {
+              event.preventDefault();
+              showProviders();
+            }
+          }}
+        >
+          <CommandInput
+            autoFocus
+            value={search}
+            onValueChange={setSearch}
+            placeholder={selectedProvider ? "Search models…" : "Search providers…"}
+          />
+          <CommandList className="max-h-none flex-1 scroll-py-2">
+            {selectedProvider ? (
+              modelsQuery.isPending ? (
+                <CommandStateMessage>
+                  <Spinner /> Loading models…
+                </CommandStateMessage>
               ) : modelsQuery.isError ? (
-                <DialogStateMessage>Models could not be loaded.</DialogStateMessage>
-              ) : visibleModels.length === 0 ? (
-                <DialogStateMessage>No matching models.</DialogStateMessage>
+                <CommandStateMessage>Models could not be loaded.</CommandStateMessage>
               ) : (
-                <div className="space-y-1">
-                  {visibleModels.map((model) => {
-                    const isSelected =
-                      pendingValue?.providerId === model.providerId &&
-                      pendingValue.providerModelId === model.providerModelId;
-
-                    return (
-                      <button
+                <>
+                  <CommandEmpty>No matching models.</CommandEmpty>
+                  <CommandGroup>
+                    {visibleModels.map((model) => (
+                      <CommandItem
                         key={model.id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        className={cn(
-                          "flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors outline-none hover:bg-hover focus-visible:border-focus/70",
-                          isSelected ? "border-focus/30 bg-accent-soft" : null,
-                        )}
-                        onClick={() =>
-                          setPendingValue({
+                        value={`${model.displayName ?? ""} ${model.providerModelId} ${model.id}`}
+                        data-checked={
+                          value?.providerId === model.providerId &&
+                          value.providerModelId === model.providerModelId
+                        }
+                        className="py-2"
+                        onSelect={() => {
+                          onConfirm({
                             providerId: model.providerId,
                             providerModelId: model.providerModelId,
-                          })
-                        }
+                          });
+                          onOpenChange(false);
+                        }}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">
+                          <div className="truncate font-medium">
                             {model.displayName?.trim() || model.providerModelId}
                           </div>
                           <div className="truncate font-mono text-[11px] text-muted-foreground">
@@ -176,76 +161,54 @@ export function ModelPickerDialog({
                             Hidden in chat
                           </span>
                         ) : null}
-                        {isSelected ? (
-                          <HugeiconsIcon
-                            icon={CheckmarkCircle02Icon}
-                            className="size-4 shrink-0 text-accent-soft-foreground"
-                          />
-                        ) : null}
-                      </button>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </>
+              )
+            ) : areProvidersPending ? (
+              <CommandStateMessage>
+                <Spinner /> Loading providers…
+              </CommandStateMessage>
+            ) : providers.length === 0 ? (
+              <CommandStateMessage>No providers configured.</CommandStateMessage>
+            ) : (
+              <>
+                <CommandEmpty>No matching providers.</CommandEmpty>
+                <CommandGroup>
+                  {providers.map((provider) => {
+                    const ProviderIcon = getProviderIconById(provider.catalogId);
+
+                    return (
+                      <CommandItem
+                        key={provider.id}
+                        value={`${provider.displayName} ${provider.id}`}
+                        className="py-2.5"
+                        onSelect={() => {
+                          setProviderId(provider.id);
+                          setSearch("");
+                        }}
+                      >
+                        <ProviderIcon className="size-4.5" />
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {provider.displayName}
+                        </span>
+                      </CommandItem>
                     );
                   })}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar">
-            {areProvidersPending ? (
-              <DialogStateMessage>Loading providers…</DialogStateMessage>
-            ) : providers.length === 0 ? (
-              <DialogStateMessage>No providers configured.</DialogStateMessage>
-            ) : (
-              <div className="space-y-1">
-                {providers.map((provider) => {
-                  const ProviderIcon = getProviderIconById(provider.catalogId);
-
-                  return (
-                    <button
-                      key={provider.id}
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-3 text-left transition-colors outline-none hover:bg-hover focus-visible:border-focus/70"
-                      onClick={() => setProviderId(provider.id)}
-                    >
-                      <ProviderIcon className="size-5 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {provider.displayName}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                </CommandGroup>
+              </>
             )}
-          </div>
-        )}
-
-        <DialogFooter className="m-0 shrink-0 rounded-none px-4 py-3">
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={
-              !selectedProvider || !pendingValue || pendingValue.providerId !== selectedProvider.id
-            }
-            onClick={() => {
-              if (!pendingValue || pendingValue.providerId !== selectedProvider?.id) {
-                return;
-              }
-              onConfirm(pendingValue);
-              handleOpenChange(false);
-            }}
-          >
-            Select
-          </Button>
-        </DialogFooter>
+          </CommandList>
+        </Command>
       </DialogContent>
     </Dialog>
   );
 }
 
-function DialogStateMessage({ children }: { children: React.ReactNode }) {
+function CommandStateMessage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full min-h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+    <div className="flex h-full min-h-40 items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
       {children}
     </div>
   );

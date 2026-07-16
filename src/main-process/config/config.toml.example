@@ -21,3 +21,8 @@ submitBehavior = "enter"
 [sumi.promptActions]
 initialized = false
 enabled = false
+
+[sumi.titleGeneration]
+initialized = false
+enabled = false
+autoGenerate = false

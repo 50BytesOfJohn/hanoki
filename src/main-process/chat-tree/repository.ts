@@ -11,6 +11,7 @@ type ChatTableRow = typeof chats.$inferSelect;
 type ChatSettings = {
   modelId?: string | null;
   systemPrompt?: string | null;
+  webEnabled?: boolean;
 };
 type ChatSettingsPatch = Partial<ChatSettings>;
 
@@ -104,6 +105,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   const record = value as Record<string, unknown>;
   const modelId = record.modelId;
   const systemPrompt = record.systemPrompt;
+  const webEnabled = record.webEnabled;
   const normalizedSettings: ChatSettings = {};
 
   if (typeof modelId === "string") {
@@ -116,6 +118,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.systemPrompt = systemPrompt;
   } else if (systemPrompt === null) {
     normalizedSettings.systemPrompt = null;
+  }
+
+  if (typeof webEnabled === "boolean") {
+    normalizedSettings.webEnabled = webEnabled;
   }
 
   return normalizedSettings;
@@ -136,6 +142,10 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
 
   if ("systemPrompt" in settingsPatch) {
     nextSettings.systemPrompt = settingsPatch.systemPrompt ?? null;
+  }
+
+  if ("webEnabled" in settingsPatch) {
+    nextSettings.webEnabled = settingsPatch.webEnabled ?? false;
   }
 
   return nextSettings;

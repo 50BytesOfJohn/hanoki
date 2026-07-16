@@ -21,10 +21,18 @@ export interface ProvidersStartupModelSyncCompletedEvent {
   failedProviders: number;
 }
 
+export interface ChatTitleUpdatedEvent {
+  type: "chat:title-updated";
+  chatId: string;
+  workspaceId: string;
+  title: string;
+}
+
 export type SystemEvent =
   | AiServerEvent
   | ProviderModelsSyncCompletedEvent
-  | ProvidersStartupModelSyncCompletedEvent;
+  | ProvidersStartupModelSyncCompletedEvent
+  | ChatTitleUpdatedEvent;
 
 export interface AiServerStateSnapshot {
   status: "idle" | "starting" | "ready" | "error";
