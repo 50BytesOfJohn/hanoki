@@ -8,13 +8,14 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { WorkspaceSettings } from "@shared/ipc";
 
 type JsonObject = Record<string, unknown>;
 const timestampMs = (columnName: string) =>
   integer(columnName)
     .notNull()
     .$defaultFn(() => Date.now());
-const jsonObject = <T extends JsonObject = JsonObject>(columnName: string) =>
+const jsonObject = <T extends object = JsonObject>(columnName: string) =>
   text(columnName, { mode: "json" })
     .$type<T>()
     .notNull()
@@ -30,7 +31,7 @@ export const workspaces = sqliteTable("workspaces", {
   name: text("name").notNull(),
   color: text("color"),
   // JSON object stored as TEXT in SQLite (parsed by app code).
-  settings: jsonObject("settings"),
+  settings: jsonObject<WorkspaceSettings>("settings"),
   data: jsonObject("data"),
   metadata: jsonObject("metadata"),
   extensions: jsonObject("extensions"),

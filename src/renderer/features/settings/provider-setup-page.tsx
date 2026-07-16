@@ -7,14 +7,13 @@ import {
   type SupportedProviderDefinition,
 } from "@shared/providers/catalog";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BotIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+
 import { providerApi } from "@/api/providers";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getProviderIconById } from "@/lib/provider-icons";
 import { queryKeys } from "@/queries/keys";
-import { ProviderSetupConfigTab, ProviderSetupModelsTab } from "./provider-setup-page/tabs";
+import { ProviderSetupConfigForm } from "./provider-setup-page/tabs";
+import { SettingsPageHeader, SettingsPageShell } from "./settings-ui";
 
 interface ProviderSetupPageProps {
   providerId: string;
@@ -25,28 +24,15 @@ export function ProviderSetupPage({ providerId }: ProviderSetupPageProps) {
 
   if (!provider) {
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
-        <div className="space-y-2">
-          <h1 className="font-heading text-xl font-semibold tracking-tight">
-            Provider Not Supported
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            The selected provider is not available in this build yet.
-          </p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Unknown Provider</CardTitle>
-            <CardDescription>Pick a supported provider to continue setup.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Button variant="outline" render={<Link to="/settings/providers/new" />}>
-              <span>Back</span>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <SettingsPageShell>
+        <SettingsPageHeader
+          title="Provider not supported"
+          description="The selected provider is not available in this build yet."
+        />
+        <Button variant="outline" render={<Link to="/settings/providers/new" />}>
+          <span>Back to providers</span>
+        </Button>
+      </SettingsPageShell>
     );
   }
 
@@ -60,6 +46,7 @@ interface ProviderConfigSetupProps {
 function ProviderConfigSetup({ provider }: ProviderConfigSetupProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const ProviderIcon = getProviderIconById(provider.id);
   const [configValues, setConfigValues] = useState<Record<string, unknown>>(() =>
     createInitialConfigValues(provider),
   );
@@ -131,47 +118,36 @@ function ProviderConfigSetup({ provider }: ProviderConfigSetupProps) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={BotIcon} />
-          <h1 className="font-heading text-xl font-semibold tracking-tight">{provider.name}</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">{provider.description}</p>
-      </div>
+    <SettingsPageShell>
+      <SettingsPageHeader
+        leading={
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-secondary">
+            <ProviderIcon className="size-5" />
+          </div>
+        }
+        title={provider.name}
+        description={provider.description}
+      />
 
-      <Tabs defaultValue="models" className="gap-4">
-        <TabsList variant="line">
-          <TabsTrigger value="models">Models</TabsTrigger>
-          <TabsTrigger value="config">Config</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="models">
-          <ProviderSetupModelsTab provider={provider} />
-        </TabsContent>
-
-        <TabsContent value="config">
-          <ProviderSetupConfigTab
-            provider={provider}
-            configValues={configValues}
-            hasRequiredFields={hasRequiredFields}
-            canSubmitCredentialTest={canSubmitCredentialTest}
-            isTestingCredentials={isTestingCredentials}
-            isSaving={isSaving}
-            testResult={testResult}
-            testError={testError}
-            saveError={saveError}
-            onFieldChange={updateFieldValue}
-            onTest={() => {
-              void handleTestCredentials();
-            }}
-            onSave={() => {
-              void handleSave();
-            }}
-          />
-        </TabsContent>
-      </Tabs>
-    </div>
+      <ProviderSetupConfigForm
+        provider={provider}
+        configValues={configValues}
+        hasRequiredFields={hasRequiredFields}
+        canSubmitCredentialTest={canSubmitCredentialTest}
+        isTestingCredentials={isTestingCredentials}
+        isSaving={isSaving}
+        testResult={testResult}
+        testError={testError}
+        saveError={saveError}
+        onFieldChange={updateFieldValue}
+        onTest={() => {
+          void handleTestCredentials();
+        }}
+        onSave={() => {
+          void handleSave();
+        }}
+      />
+    </SettingsPageShell>
   );
 }
 

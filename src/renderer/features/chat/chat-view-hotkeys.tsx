@@ -24,7 +24,7 @@ export function ChatViewHotkeys() {
   });
 
   useHotkey(
-    "Ctrl+Tab",
+    "Control+Tab",
     (event) => {
       if (tabs.length < 2) return;
       event.preventDefault();
@@ -36,7 +36,7 @@ export function ChatViewHotkeys() {
   );
 
   useHotkey(
-    "Ctrl+Shift+Tab",
+    "Control+Shift+Tab",
     (event) => {
       if (tabs.length < 2) return;
       event.preventDefault();

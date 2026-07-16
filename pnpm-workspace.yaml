@@ -4,3 +4,7 @@ onlyBuiltDependencies:
   - electron-winstaller
   - esbuild
   - msw
+
+peerDependencyRules:
+  allowedVersions:
+    "@electron/fuses": ">=1 <3"

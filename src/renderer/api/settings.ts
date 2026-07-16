@@ -1,4 +1,4 @@
-import type { GlobalChatSettingsUpdateInput } from "@shared/ipc";
+import type { GlobalChatSettingsUpdateInput, SumiSettingsUpdateInput } from "@shared/ipc";
 import "../lib/electron-api";
 
 export const settingsApi = {
@@ -7,5 +7,11 @@ export const settingsApi = {
   },
   updateGlobalChat(input: GlobalChatSettingsUpdateInput) {
     return window.electronAPI.updateGlobalChatSettings(input);
+  },
+  getSumi() {
+    return window.electronAPI.getSumiSettings();
+  },
+  updateSumi(input: SumiSettingsUpdateInput) {
+    return window.electronAPI.updateSumiSettings(input);
   },
 };

@@ -149,7 +149,7 @@ class NodeSQLitePreparedQuery<
     private readonly logger: Logger,
     private readonly fields: SelectedFieldsOrdered | undefined,
     executeMethod: SQLiteExecuteMethod,
-    private readonly _isResponseInArrayMode: boolean,
+    private readonly responseInArrayMode: boolean,
     private readonly customResultMapper?: (rows: unknown[][]) => unknown,
   ) {
     super("sync", executeMethod, query);
@@ -223,7 +223,7 @@ class NodeSQLitePreparedQuery<
   }
 
   isResponseInArrayMode(): boolean {
-    return this._isResponseInArrayMode;
+    return this.responseInArrayMode;
   }
 }
 

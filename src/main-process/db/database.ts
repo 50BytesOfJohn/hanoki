@@ -11,13 +11,13 @@ import * as schema from "./schema";
 
 export type AppDatabase = NodeSQLiteDatabase<typeof schema>;
 
-const _require = createRequire(__filename);
+const localRequire = createRequire(__filename);
 const APP_DATABASE_FILENAME = "app.sqlite";
 let connection: { sqlite: DatabaseSync; db: AppDatabase } | null = null;
 
 function resolveMigrationsFolder(): string {
   if (process.versions.electron) {
-    const { app } = _require("electron") as typeof import("electron");
+    const { app } = localRequire("electron") as typeof import("electron");
 
     if (app.isPackaged) {
       // Packaged Electron app — migrations come from extraResource in forge.config.ts.

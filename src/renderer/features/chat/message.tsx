@@ -2,7 +2,20 @@ import * as React from "react";
 import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ButtonGroup, Card, Chip, Modal, Separator, Tooltip } from "@heroui/react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "@/components/ui/preview-card";
+import { Separator } from "@/components/ui/separator";
 
 import type { ChatMessageMetadata, HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { EditMessageBehavior, ProviderModelInfo } from "@shared/ipc";
@@ -35,11 +48,16 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 
 const STREAMDOWN_PLUGINS = { code };
-const USER_MESSAGE_CARD_CLASS_NAME = "max-w-[85%] bg-surface-secondary";
-const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full";
+const USER_MESSAGE_CARD_CLASS_NAME =
+  "max-w-[85%] rounded-xl bg-surface-secondary px-4 py-3 text-sm";
+const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full text-sm";
+/* Quiet toolbar buttons: ghost variant with muted text until hovered */
+const TOOLBAR_BUTTON_CLASS = "text-muted-foreground";
 
 // --- Pin hook ---
 
@@ -131,6 +149,21 @@ const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
   );
 });
 
+function hasStreamingReasoning(message: HanokiUiMessage): boolean {
+  return message.parts.some((part) => part.type === "reasoning" && part.state === "streaming");
+}
+
+function ThinkingMarker({ hasPriorText }: { hasPriorText: boolean }) {
+  return (
+    <Marker role="status" className={cn("text-xs", hasPriorText && "mt-2")}>
+      <MarkerIcon>
+        <Spinner />
+      </MarkerIcon>
+      <MarkerContent className="shimmer">Thinking…</MarkerContent>
+    </Marker>
+  );
+}
+
 // --- Role-specific tools components ---
 interface MessageToolsProps extends React.ComponentProps<"div"> {
   forceVisible?: boolean;
@@ -157,11 +190,7 @@ const MessageTools = React.memo(function MessageTools({
 });
 
 function MessageButtonGroup({ children }: { children: React.ReactNode }) {
-  return (
-    <ButtonGroup size="sm" variant="tertiary">
-      {children}
-    </ButtonGroup>
-  );
+  return <div className="flex items-center gap-0.5">{children}</div>;
 }
 
 interface CopyMessageButtonProps {
@@ -183,11 +212,11 @@ const CopyMessageButton = React.memo(function CopyMessageButton({ text }: CopyMe
   return (
     <Button
       aria-label={isCopied ? "Copied message" : "Copy message"}
-      variant="tertiary"
-      size="sm"
-      isIconOnly
-      isDisabled={text.length === 0}
-      onPress={() => {
+      variant="ghost"
+      size="icon-sm"
+      className={TOOLBAR_BUTTON_CLASS}
+      disabled={text.length === 0}
+      onClick={() => {
         void navigator.clipboard.writeText(text).then(() => setIsCopied(true));
       }}
     >
@@ -225,71 +254,68 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
 
   return (
     <>
-      <Tooltip delay={150} closeDelay={80}>
-        <Button
-          aria-label="Show assistant message information"
-          isIconOnly
-          size="sm"
-          variant="tertiary"
-          onPress={() => setIsOpen(true)}
+      <PreviewCard>
+        <PreviewCardTrigger
+          render={
+            <Button
+              aria-label="Show assistant message information"
+              size="icon-sm"
+              variant="ghost"
+              className={TOOLBAR_BUTTON_CLASS}
+              onClick={() => setIsOpen(true)}
+            />
+          }
         >
           <HugeiconsIcon icon={InformationCircleIcon} />
-        </Button>
-        <Tooltip.Content showArrow offset={10} placement="bottom">
-          <Tooltip.Arrow />
+        </PreviewCardTrigger>
+        <PreviewCardPopup sideOffset={10} className="w-auto p-3">
           <AssistantMessageInfoTooltip summary={summary} />
-        </Tooltip.Content>
-      </Tooltip>
+        </PreviewCardPopup>
+      </PreviewCard>
 
-      <Modal isOpen={isOpen} onOpenChange={setIsOpen}>
-        <Modal.Backdrop variant="blur">
-          <Modal.Container size="lg" scroll="inside">
-            <Modal.Dialog className="sm:max-w-2xl">
-              <Modal.CloseTrigger />
-              <Modal.Header>
-                <Modal.Icon className="bg-default text-foreground">
-                  <HugeiconsIcon icon={InformationCircleIcon} />
-                </Modal.Icon>
-                <Modal.Heading>Message Information</Modal.Heading>
-                <p className="text-sm leading-5 text-muted-foreground">
-                  Stored metadata and message payload for this assistant response.
-                </p>
-              </Modal.Header>
-              <Modal.Body className="gap-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {details.primary.map((item) => (
-                    <MessageInfoField key={item.label} label={item.label} value={item.value} />
-                  ))}
-                </div>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Message Information</DialogTitle>
+            <DialogDescription>
+              Stored metadata and message payload for this assistant response.
+            </DialogDescription>
+          </DialogHeader>
 
-                <Separator />
+          <div className="flex min-h-0 flex-col gap-5 overflow-y-auto scrollbar">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {details.primary.map((item) => (
+                <MessageInfoField key={item.label} label={item.label} value={item.value} />
+              ))}
+            </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {details.tokens.map((item) => (
-                    <MessageInfoField key={item.label} label={item.label} value={item.value} />
-                  ))}
-                </div>
+            <Separator />
 
-                <Separator />
+            <div className="grid gap-3 sm:grid-cols-3">
+              {details.tokens.map((item) => (
+                <MessageInfoField key={item.label} label={item.label} value={item.value} />
+              ))}
+            </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {details.branch.map((item) => (
-                    <MessageInfoField key={item.label} label={item.label} value={item.value} />
-                  ))}
-                </div>
+            <Separator />
 
-                <MessageInfoJson title="Metadata" value={message.metadata ?? null} />
-                <MessageInfoJson title="Parts" value={message.parts} />
-              </Modal.Body>
-              <Modal.Footer>
-                <Button slot="close" variant="secondary">
-                  Close
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {details.branch.map((item) => (
+                <MessageInfoField key={item.label} label={item.label} value={item.value} />
+              ))}
+            </div>
+
+            <MessageInfoJson title="Metadata" value={message.metadata ?? null} />
+            <MessageInfoJson title="Parts" value={message.parts} />
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setIsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 });
@@ -306,9 +332,7 @@ function AssistantMessageInfoTooltip({ summary }: AssistantMessageInfoTooltipPro
           <p className="truncate text-sm font-medium text-foreground">{summary.model}</p>
           <p className="truncate text-xs text-muted-foreground">{summary.provider}</p>
         </div>
-        <Chip size="sm" variant="soft">
-          <Chip.Label>{summary.totalTokens}</Chip.Label>
-        </Chip>
+        <Badge variant="secondary">{summary.totalTokens}</Badge>
       </div>
 
       <Separator />
@@ -347,15 +371,15 @@ interface MessageInfoJsonProps {
 
 function MessageInfoJson({ title, value }: MessageInfoJsonProps) {
   return (
-    <Card variant="secondary" className="gap-3">
-      <Card.Header>
-        <Card.Title>{title}</Card.Title>
-      </Card.Header>
-      <Card.Content>
+    <Card size="sm" className="gap-3 bg-surface-secondary">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
         <pre className="max-h-64 overflow-auto rounded-lg bg-surface px-3 py-2 text-xs leading-5 text-muted-foreground">
           {JSON.stringify(value, null, 2)}
         </pre>
-      </Card.Content>
+      </CardContent>
     </Card>
   );
 }
@@ -380,22 +404,26 @@ function BranchSwitcherButtonGroup({
   return (
     <MessageButtonGroup>
       <Button
-        isIconOnly
-        isDisabled={isInteractionLocked || !prevSiblingId}
-        onPress={() => prevSiblingId && void switchBranch(prevSiblingId)}
+        size="icon-sm"
+        variant="ghost"
+        className={TOOLBAR_BUTTON_CLASS}
+        aria-label="Previous branch"
+        disabled={isInteractionLocked || !prevSiblingId}
+        onClick={() => prevSiblingId && void switchBranch(prevSiblingId)}
       >
         <HugeiconsIcon icon={ArrowLeft01Icon} />
       </Button>
-      <Button isDisabled={isInteractionLocked}>
-        <ButtonGroup.Separator />
+      <span className="px-0.5 text-xs tabular-nums text-muted-foreground select-none">
         {siblingIndex + 1}/{siblingTotal}
-      </Button>
+      </span>
       <Button
-        isIconOnly
-        isDisabled={isInteractionLocked || !nextSiblingId}
-        onPress={() => nextSiblingId && void switchBranch(nextSiblingId)}
+        size="icon-sm"
+        variant="ghost"
+        className={TOOLBAR_BUTTON_CLASS}
+        aria-label="Next branch"
+        disabled={isInteractionLocked || !nextSiblingId}
+        onClick={() => nextSiblingId && void switchBranch(nextSiblingId)}
       >
-        <ButtonGroup.Separator />
         <HugeiconsIcon icon={ArrowRight01Icon} />
       </Button>
     </MessageButtonGroup>
@@ -462,8 +490,11 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
 
       <MessageButtonGroup>
         <Button
-          isDisabled={isInteractionLocked}
-          onPress={() => {
+          size="sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          disabled={isInteractionLocked}
+          onClick={() => {
             scrollToBottom();
             void continueMessage(message.id);
           }}
@@ -472,38 +503,44 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
         </Button>
 
         <Button
-          isIconOnly
-          isDisabled={isInteractionLocked}
-          onPress={() => {
+          size="icon-sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          aria-label="Regenerate message"
+          disabled={isInteractionLocked}
+          onClick={() => {
             scrollToBottom();
             regenerate({ messageId: message.id });
           }}
         >
-          <ButtonGroup.Separator />
           <HugeiconsIcon icon={Refresh04Icon} />
         </Button>
 
         <Button
-          isIconOnly
-          isDisabled={isInteractionLocked}
-          onPress={() => startEditingMessage(message.id)}
+          size="icon-sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          aria-label="Edit message"
+          disabled={isInteractionLocked}
+          onClick={() => startEditingMessage(message.id)}
         >
-          <ButtonGroup.Separator />
           <HugeiconsIcon icon={Edit01Icon} />
         </Button>
 
         <CopyMessageButton text={messageText} />
 
         <Button
-          isIconOnly
-          onPress={() =>
+          size="icon-sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          aria-label={message.metadata?.pinned ? "Unpin message" : "Pin message"}
+          onClick={() =>
             pinMutation.mutate({
               messageId: message.id,
               pinned: !message.metadata?.pinned,
             })
           }
         >
-          <ButtonGroup.Separator />
           <HugeiconsIcon icon={message.metadata?.pinned ? PinOffIcon : PinIcon} />
         </Button>
       </MessageButtonGroup>
@@ -548,29 +585,34 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
     <MessageTools forceVisible>
       <MessageButtonGroup>
         <Button
-          isDisabled={!canSave}
-          onPress={() => {
+          size="sm"
+          disabled={!canSave}
+          onClick={() => {
             void submitEditedMessage(messageId, draft, "overwrite");
           }}
         >
           Save
         </Button>
         <Button
-          isDisabled={!canSave}
-          onPress={() => {
+          size="sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          disabled={!canSave}
+          onClick={() => {
             void submitEditedMessage(messageId, draft, "branch");
           }}
         >
-          <ButtonGroup.Separator />
           Save as new branch
         </Button>
         <Button
-          onPress={() => {
+          size="sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          onClick={() => {
             onDraftChange(messageText);
             stopEditingMessage();
           }}
         >
-          <ButtonGroup.Separator />
           Cancel
         </Button>
       </MessageButtonGroup>
@@ -645,9 +687,12 @@ const UserMessageTools = React.memo(function UserMessageTools({
 
       <MessageButtonGroup>
         <Button
-          isIconOnly
-          isDisabled={isInteractionLocked}
-          onPress={() => startEditingMessage(message.id)}
+          size="icon-sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          aria-label="Edit message"
+          disabled={isInteractionLocked}
+          onClick={() => startEditingMessage(message.id)}
         >
           <HugeiconsIcon icon={Edit01Icon} />
         </Button>
@@ -655,15 +700,17 @@ const UserMessageTools = React.memo(function UserMessageTools({
         <CopyMessageButton text={messageText} />
 
         <Button
-          isIconOnly
-          onPress={() =>
+          size="icon-sm"
+          variant="ghost"
+          className={TOOLBAR_BUTTON_CLASS}
+          aria-label={message.metadata?.pinned ? "Unpin message" : "Pin message"}
+          onClick={() =>
             pinMutation.mutate({
               messageId: message.id,
               pinned: !message.metadata?.pinned,
             })
           }
         >
-          <ButtonGroup.Separator />
           <HugeiconsIcon icon={message.metadata?.pinned ? PinOffIcon : PinIcon} />
         </Button>
       </MessageButtonGroup>
@@ -703,25 +750,19 @@ const UserMessage = React.memo(function UserMessage({
 
   return (
     <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
-      <Card
-        variant="secondary"
-        className={USER_MESSAGE_CARD_CLASS_NAME}
-        onContextMenu={onContextMenu}
-      >
-        <Card.Content>
-          {isEditing ? (
-            <Textarea
-              className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.6]"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-          ) : (
-            message.parts.map((part, i) =>
-              part.type === "text" ? <UserMessageTextPart key={i} text={part.text} /> : null,
-            )
-          )}
-        </Card.Content>
-      </Card>
+      <div className={USER_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
+        {isEditing ? (
+          <Textarea
+            className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.6]"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        ) : (
+          message.parts.map((part, i) =>
+            part.type === "text" ? <UserMessageTextPart key={i} text={part.text} /> : null,
+          )
+        )}
+      </div>
 
       <UserMessageTools
         chatId={chatId}
@@ -760,6 +801,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const submitEditedMessage = useChatSubmitEditedMessage();
   const onContextMenu = useMessageContextMenu(message.id);
   const messageText = React.useMemo(() => getMessageText(message), [message]);
+  const isThinking = isAnimating && (message.parts.length === 0 || hasStreamingReasoning(message));
   const [draft, setDraft] = React.useState(messageText);
 
   React.useEffect(() => {
@@ -773,40 +815,39 @@ const AssistantMessage = React.memo(function AssistantMessage({
       className="group/message flex flex-col items-start gap-2"
       data-chat-message-id={message.id}
     >
-      <Card
-        variant="transparent"
-        className={ASSISTANT_MESSAGE_CARD_CLASS_NAME}
-        onContextMenu={onContextMenu}
-      >
-        <Card.Content>
-          {isEditing ? (
-            <Textarea
-              className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.7] text-foreground/90"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-          ) : (
-            message.parts.map((part, i) =>
+      <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
+        {isEditing ? (
+          <Textarea
+            className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.7] text-foreground/90"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        ) : (
+          <>
+            {message.parts.map((part, i) =>
               part.type === "text" ? (
                 <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
               ) : null,
-            )
-          )}
-        </Card.Content>
-      </Card>
+            )}
+            {isThinking ? <ThinkingMarker hasPriorText={messageText.length > 0} /> : null}
+          </>
+        )}
+      </div>
 
-      <AssistantMessageTools
-        chatId={chatId}
-        draft={draft}
-        isEditing={isEditing}
-        isInteractionLocked={isInteractionLocked}
-        message={message}
-        messageText={messageText}
-        onDraftChange={setDraft}
-        startEditingMessage={startEditingMessage}
-        stopEditingMessage={stopEditingMessage}
-        submitEditedMessage={submitEditedMessage}
-      />
+      {!isAnimating ? (
+        <AssistantMessageTools
+          chatId={chatId}
+          draft={draft}
+          isEditing={isEditing}
+          isInteractionLocked={isInteractionLocked}
+          message={message}
+          messageText={messageText}
+          onDraftChange={setDraft}
+          startEditingMessage={startEditingMessage}
+          stopEditingMessage={stopEditingMessage}
+          submitEditedMessage={submitEditedMessage}
+        />
+      ) : null}
     </div>
   );
 });

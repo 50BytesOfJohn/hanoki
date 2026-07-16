@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GlobalChatSettings, GlobalChatSettingsUpdateInput } from "@shared/ipc";
+import type { SumiSettings, SumiSettingsUpdateInput } from "@shared/ipc";
 import { settingsApi } from "../api/settings";
 import { queryKeys } from "../queries/keys";
 
@@ -31,6 +32,44 @@ export function useUpdateGlobalChatSettings() {
     onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.settings.globalChat(),
+        exact: true,
+      });
+    },
+  });
+}
+
+export function useUpdateSumiSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: SumiSettingsUpdateInput) => settingsApi.updateSumi(input),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.settings.sumi(), exact: true });
+
+      const previous = queryClient.getQueryData<SumiSettings>(queryKeys.settings.sumi());
+      const promptActionsInput = input.promptActions;
+      if (previous && promptActionsInput) {
+        queryClient.setQueryData<SumiSettings>(queryKeys.settings.sumi(), {
+          promptActions: {
+            enabled: promptActionsInput.enabled ?? previous.promptActions.enabled,
+            model: promptActionsInput.model ?? previous.promptActions.model,
+          },
+        });
+      }
+
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(queryKeys.settings.sumi(), context.previous);
+      }
+    },
+    onSuccess: (next) => {
+      queryClient.setQueryData(queryKeys.settings.sumi(), next);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.sumi(),
         exact: true,
       });
     },

@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createCohere } from "@ai-sdk/cohere";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { createHuggingFace } from "@ai-sdk/huggingface";
 import { createMistral } from "@ai-sdk/mistral";
@@ -96,7 +96,7 @@ export const sdkProviderRegistry = {
   },
   google: {
     createLanguageModel(apiKey, providerModelId) {
-      return createGoogleGenerativeAI({ apiKey })(providerModelId);
+      return createGoogle({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
       return {

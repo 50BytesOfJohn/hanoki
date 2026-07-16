@@ -1,24 +1,42 @@
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { Alert01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+
 import {
-  Alert,
   AlertDialog,
-  Button,
-  Description,
-  Input,
-  Label,
-  Modal,
-  TextField,
-} from "@heroui/react";
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { getSupportedProviderById } from "@shared/providers/catalog";
 import { useDeleteProvider, useUpdateProviderSecrets } from "@/mutations/providers";
 import { listProvidersQueryOptions } from "@/queries/providers";
 
 interface ProviderConfigModalProps {
   providerId: string;
-  trigger: ReactNode;
+  trigger: ReactElement;
 }
 
 export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModalProps) {
@@ -98,226 +116,198 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
   }
 
   return (
-    <Modal isOpen={isConfigOpen} onOpenChange={setIsConfigOpen}>
-      {trigger}
-      <Modal.Backdrop variant="blur">
-        <Modal.Container size="lg">
-          <Modal.Dialog className="sm:max-w-3xl">
-            <Modal.CloseTrigger />
-            <Modal.Header>
-              <Modal.Heading>Provider Config</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="gap-6">
-              {providersQuery.isPending ? (
-                <Alert>
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>Loading provider config...</Alert.Title>
-                  </Alert.Content>
-                </Alert>
-              ) : providersQuery.isError ? (
-                <Alert status="danger">
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>Failed to load provider details</Alert.Title>
-                    <Alert.Description>{getErrorMessage(providersQuery.error)}</Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              ) : !provider ? (
-                <Alert status="danger">
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>Provider not found.</Alert.Title>
-                  </Alert.Content>
-                </Alert>
-              ) : (
-                <div className="space-y-6">
-                  <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-                    <TextField fullWidth isReadOnly className="gap-2" value={provider.displayName}>
-                      <Label>Display Name</Label>
-                      <Input fullWidth variant="secondary" />
-                    </TextField>
+    <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
+      <DialogTrigger render={trigger} />
+      <DialogContent className="max-h-[85vh] overflow-y-auto scrollbar sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Provider Config</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-6">
+          {providersQuery.isPending ? (
+            <Alert>
+              <Spinner />
+              <AlertTitle>Loading provider config...</AlertTitle>
+            </Alert>
+          ) : providersQuery.isError ? (
+            <Alert variant="destructive">
+              <HugeiconsIcon icon={Alert01Icon} />
+              <AlertTitle>Failed to load provider details</AlertTitle>
+              <AlertDescription>{getErrorMessage(providersQuery.error)}</AlertDescription>
+            </Alert>
+          ) : !provider ? (
+            <Alert variant="destructive">
+              <HugeiconsIcon icon={Alert01Icon} />
+              <AlertTitle>Provider not found.</AlertTitle>
+            </Alert>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor={`${provider.id}-display-name`}>Display Name</FieldLabel>
+                  <Input id={`${provider.id}-display-name`} readOnly value={provider.displayName} />
+                </Field>
 
-                    <TextField
-                      fullWidth
-                      isReadOnly
-                      className="gap-2"
-                      value={catalogProvider?.name ?? provider.catalogId}
-                    >
-                      <Label>Provider</Label>
-                      <Input fullWidth variant="secondary" />
-                    </TextField>
-                  </div>
+                <Field>
+                  <FieldLabel htmlFor={`${provider.id}-provider`}>Provider</FieldLabel>
+                  <Input
+                    id={`${provider.id}-provider`}
+                    readOnly
+                    value={catalogProvider?.name ?? provider.catalogId}
+                  />
+                </Field>
+              </div>
 
-                  <TextField fullWidth isReadOnly className="gap-2" value={provider.id}>
-                    <Label>Provider Record ID</Label>
-                    <Input fullWidth variant="secondary" />
-                  </TextField>
+              <Field>
+                <FieldLabel htmlFor={`${provider.id}-record-id`}>Provider Record ID</FieldLabel>
+                <Input id={`${provider.id}-record-id`} readOnly value={provider.id} />
+              </Field>
 
-                  {catalogProvider ? (
-                    <div className="space-y-6">
-                      {Object.entries(catalogProvider.configFields).map(([key, field]) =>
-                        field.type === "secret" ? (
-                          <TextField
-                            key={key}
-                            fullWidth
-                            className="gap-2"
-                            type="password"
-                            value={secretValues[key] ?? ""}
-                            onChange={(value) => {
-                              handleSecretChange(key, value);
-                            }}
-                          >
-                            <Label>{field.label}</Label>
-                            <Input
-                              fullWidth
-                              id={`${provider.id}-${key}-secret`}
-                              placeholder={field.placeholder ?? "Enter replacement secret"}
-                              variant="secondary"
-                            />
-                            <Description>
-                              {field.description}
-                              {
-                                " Enter a new value only when you want to overwrite the stored secret."
-                              }
-                            </Description>
-                          </TextField>
-                        ) : (
-                          <TextField key={key} fullWidth isReadOnly className="gap-2" value="">
-                            <Label>{field.label}</Label>
-                            <Input
-                              fullWidth
-                              id={`${provider.id}-${key}-summary`}
-                              placeholder="Configured"
-                              variant="secondary"
-                            />
-                            <Description>{field.description}</Description>
-                          </TextField>
-                        ),
-                      )}
-
-                      {updateProviderSecrets.isError ? (
-                        <Alert status="danger">
-                          <Alert.Indicator />
-                          <Alert.Content>
-                            <Alert.Title>Failed to update secrets</Alert.Title>
-                            <Alert.Description>
-                              {getErrorMessage(updateProviderSecrets.error)}
-                            </Alert.Description>
-                          </Alert.Content>
-                        </Alert>
-                      ) : null}
-
-                      {didUpdateSecrets ? (
-                        <Alert status="success">
-                          <Alert.Indicator />
-                          <Alert.Content>
-                            <Alert.Title>Provider secrets updated</Alert.Title>
-                            <Alert.Description>
-                              The provider will refresh its model list in the background.
-                            </Alert.Description>
-                          </Alert.Content>
-                        </Alert>
-                      ) : null}
-
-                      {secretFields.length > 0 ? (
-                        <div className="flex justify-end">
-                          <Button
-                            variant="secondary"
-                            isDisabled={!canUpdateSecrets}
-                            isPending={updateProviderSecrets.isPending}
-                            onPress={handleUpdateSecrets}
-                          >
-                            Update Secrets
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <Alert>
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>Unsupported provider definition</Alert.Title>
-                        <Alert.Description>
-                          This provider record exists, but the provider catalog entry is not
-                          available in this build.
-                        </Alert.Description>
-                      </Alert.Content>
-                    </Alert>
+              {catalogProvider ? (
+                <div className="flex flex-col gap-6">
+                  {Object.entries(catalogProvider.configFields).map(([key, field]) =>
+                    field.type === "secret" ? (
+                      <Field key={key}>
+                        <FieldLabel htmlFor={`${provider.id}-${key}-secret`}>
+                          {field.label}
+                        </FieldLabel>
+                        <Input
+                          id={`${provider.id}-${key}-secret`}
+                          type="password"
+                          placeholder={field.placeholder ?? "Enter replacement secret"}
+                          value={secretValues[key] ?? ""}
+                          onChange={(event) => {
+                            handleSecretChange(key, event.target.value);
+                          }}
+                        />
+                        <FieldDescription>
+                          {field.description}
+                          {" Enter a new value only when you want to overwrite the stored secret."}
+                        </FieldDescription>
+                      </Field>
+                    ) : (
+                      <Field key={key}>
+                        <FieldLabel htmlFor={`${provider.id}-${key}-summary`}>
+                          {field.label}
+                        </FieldLabel>
+                        <Input
+                          id={`${provider.id}-${key}-summary`}
+                          readOnly
+                          value=""
+                          placeholder="Configured"
+                        />
+                        <FieldDescription>{field.description}</FieldDescription>
+                      </Field>
+                    ),
                   )}
 
-                  {deleteProvider.isError ? (
-                    <Alert status="danger">
-                      <Alert.Indicator />
-                      <Alert.Content>
-                        <Alert.Title>Failed to delete provider</Alert.Title>
-                        <Alert.Description>
-                          {getErrorMessage(deleteProvider.error)}
-                        </Alert.Description>
-                      </Alert.Content>
+                  {updateProviderSecrets.isError ? (
+                    <Alert variant="destructive">
+                      <HugeiconsIcon icon={Alert01Icon} />
+                      <AlertTitle>Failed to update secrets</AlertTitle>
+                      <AlertDescription>
+                        {getErrorMessage(updateProviderSecrets.error)}
+                      </AlertDescription>
                     </Alert>
                   ) : null}
 
-                  <Alert>
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>Delete provider</Alert.Title>
-                      <Alert.Description>
-                        Deleting this provider permanently removes the provider profile and all
-                        connected models.
-                      </Alert.Description>
-                    </Alert.Content>
-                    <AlertDialog>
+                  {didUpdateSecrets ? (
+                    <Alert>
+                      <HugeiconsIcon icon={CheckmarkCircle02Icon} className="text-success" />
+                      <AlertTitle>Provider secrets updated</AlertTitle>
+                      <AlertDescription>
+                        The provider will refresh its model list in the background.
+                      </AlertDescription>
+                    </Alert>
+                  ) : null}
+
+                  {secretFields.length > 0 ? (
+                    <div className="flex justify-end">
                       <Button
-                        variant="danger"
-                        isDisabled={deleteProvider.isPending}
-                        onPress={() => deleteProvider.reset()}
+                        variant="secondary"
+                        disabled={!canUpdateSecrets}
+                        onClick={handleUpdateSecrets}
                       >
-                        Delete Provider
+                        {updateProviderSecrets.isPending ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : null}
+                        Update Secrets
                       </Button>
-                      <AlertDialog.Backdrop>
-                        <AlertDialog.Container>
-                          <AlertDialog.Dialog>
-                            <AlertDialog.CloseTrigger />
-                            <AlertDialog.Header>
-                              <AlertDialog.Icon status="danger" />
-                              <AlertDialog.Heading>Delete Provider</AlertDialog.Heading>
-                            </AlertDialog.Header>
-                            <AlertDialog.Body>
-                              {provider
-                                ? `Delete "${provider.displayName}" and all models connected to it? This action cannot be undone.`
-                                : "Delete this provider and all models connected to it? This action cannot be undone."}
-                            </AlertDialog.Body>
-                            <AlertDialog.Footer>
-                              <Button slot="close" variant="tertiary">
-                                Cancel
-                              </Button>
-                              <Button
-                                variant="danger"
-                                isDisabled={!provider || deleteProvider.isPending}
-                                isPending={deleteProvider.isPending}
-                                onPress={handleDeleteConfirm}
-                              >
-                                Delete Provider
-                              </Button>
-                            </AlertDialog.Footer>
-                          </AlertDialog.Dialog>
-                        </AlertDialog.Container>
-                      </AlertDialog.Backdrop>
-                    </AlertDialog>
-                  </Alert>
+                    </div>
+                  ) : null}
                 </div>
+              ) : (
+                <Alert>
+                  <HugeiconsIcon icon={Alert01Icon} />
+                  <AlertTitle>Unsupported provider definition</AlertTitle>
+                  <AlertDescription>
+                    This provider record exists, but the provider catalog entry is not available in
+                    this build.
+                  </AlertDescription>
+                </Alert>
               )}
-            </Modal.Body>
-            <Modal.Footer>
-              <Button slot="close" variant="tertiary">
-                Done
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+
+              {deleteProvider.isError ? (
+                <Alert variant="destructive">
+                  <HugeiconsIcon icon={Alert01Icon} />
+                  <AlertTitle>Failed to delete provider</AlertTitle>
+                  <AlertDescription>{getErrorMessage(deleteProvider.error)}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <Alert>
+                <HugeiconsIcon icon={Alert01Icon} />
+                <AlertTitle>Delete provider</AlertTitle>
+                <AlertDescription>
+                  Deleting this provider permanently removes the provider profile and all connected
+                  models.
+                </AlertDescription>
+                <AlertDialog>
+                  <div className="col-span-full mt-2 flex justify-end">
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          variant="destructive"
+                          disabled={deleteProvider.isPending}
+                          onClick={() => deleteProvider.reset()}
+                        />
+                      }
+                    >
+                      Delete Provider
+                    </AlertDialogTrigger>
+                  </div>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Provider</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {provider
+                          ? `Delete "${provider.displayName}" and all models connected to it? This action cannot be undone.`
+                          : "Delete this provider and all models connected to it? This action cannot be undone."}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        variant="destructive"
+                        disabled={!provider || deleteProvider.isPending}
+                        onClick={handleDeleteConfirm}
+                      >
+                        {deleteProvider.isPending ? <Spinner data-icon="inline-start" /> : null}
+                        Delete Provider
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </Alert>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <DialogClose render={<Button variant="ghost" className="text-muted-foreground" />}>
+            Done
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -1,6 +1,9 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Chip, Switch } from "@heroui/react";
+
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import type { ProviderModelInfo } from "@shared/ipc";
 
 interface ProviderModelsTableProps {
@@ -9,7 +12,7 @@ interface ProviderModelsTableProps {
   onModelEnabledChange?: (modelId: string, isEnabled: boolean) => void;
 }
 
-const MODEL_ROW_HEIGHT_PX = 56;
+const MODEL_ROW_HEIGHT_PX = 44;
 
 export function ProviderModelsTable({
   models,
@@ -39,45 +42,31 @@ export function ProviderModelsTable({
           return (
             <div
               key={virtualRow.key}
-              className="absolute left-0 top-0 grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b px-2"
+              className="absolute left-0 top-0 grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-separator px-2 last:border-b-0"
               style={{
                 height: `${MODEL_ROW_HEIGHT_PX}px`,
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <span className="min-w-0 truncate font-medium">{modelName}</span>
-              <Chip color={getModelStatusColor(model.status)} size="sm" variant="soft">
+              <span className="min-w-0 truncate text-[13px] font-medium">{modelName}</span>
+              <Badge
+                variant={model.status === "removed" ? "destructive" : "secondary"}
+                className={cn(model.status === "active" && "text-success")}
+              >
                 {formatModelStatus(model.status)}
-              </Chip>
+              </Badge>
               <Switch
                 aria-label={`Toggle model ${modelName}`}
-                isDisabled={areSwitchesDisabled}
-                isSelected={model.isEnabled}
-                onChange={(isSelected) => onModelEnabledChange?.(model.id, isSelected)}
-              >
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
-              </Switch>
+                disabled={areSwitchesDisabled}
+                checked={model.isEnabled}
+                onCheckedChange={(checked) => onModelEnabledChange?.(model.id, checked)}
+              />
             </div>
           );
         })}
       </div>
     </div>
   );
-}
-
-function getModelStatusColor(
-  status: ProviderModelInfo["status"],
-): "danger" | "default" | "success" {
-  switch (status) {
-    case "active":
-      return "success";
-    case "deprecated":
-      return "default";
-    case "removed":
-      return "danger";
-  }
 }
 
 function formatModelStatus(status: ProviderModelInfo["status"]): string {

@@ -18,9 +18,23 @@ import {
   Cancel01Icon,
   Chat01Icon,
   FolderAddIcon,
+  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AlertDialog, Button, Input, SearchField } from "@heroui/react";
+import { useHotkey } from "@tanstack/react-hotkeys";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
@@ -42,9 +56,9 @@ import {
   ChatSidebar,
   ChatSidebarBlock,
   ChatSidebarBlockContent,
-  ChatSidebarBlockHeader,
   ChatSidebarPanel,
 } from "./chat-sidebar";
+import { ChatSearchDialog } from "./chat-search-dialog";
 import { useWorkspaceStore } from "../workspace/store";
 
 type ChatTreeNodeData =
@@ -111,8 +125,12 @@ function ChatSidebarTreeInner({
   const [pendingDeleteItems, setPendingDeleteItems] = React.useState<ChatTreeItemRef[] | null>(
     null,
   );
-  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchOpen, setSearchOpen] = React.useState(false);
   const selectedItemIdSet = React.useMemo(() => new Set(selectedItems), [selectedItems]);
+
+  useHotkey("Mod+K", () => {
+    setSearchOpen(true);
+  });
 
   const setRenamingItem = React.useCallback(
     (
@@ -254,16 +272,6 @@ function ChatSidebarTreeInner({
 
   const items = tree.getItems();
   const visibleItems = items.filter((item) => item.getId() !== ROOT_ITEM_ID);
-  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
-  const filteredItems = React.useMemo(() => {
-    if (!normalizedSearchQuery) {
-      return visibleItems;
-    }
-
-    return visibleItems.filter((item) =>
-      item.getItemName().toLocaleLowerCase().includes(normalizedSearchQuery),
-    );
-  }, [normalizedSearchQuery, visibleItems]);
 
   const invalidateTree = React.useCallback(() => {
     void tree.getRootItem().invalidateChildrenIds();
@@ -367,47 +375,38 @@ function ChatSidebarTreeInner({
 
   return (
     <>
-      <ChatSidebarBlock className="gap-2">
-        <ChatSidebarBlockHeader className="space-y-2">
-          <SearchField
-            aria-label="Search chats"
-            className="min-w-0"
-            fullWidth
-            name="search"
-            value={searchQuery}
-            variant="secondary"
-            onChange={setSearchQuery}
-          >
-            <SearchField.Group>
-              <SearchField.SearchIcon />
-              <SearchField.Input placeholder="Search chats…" />
-              <SearchField.ClearButton />
-            </SearchField.Group>
-          </SearchField>
-        </ChatSidebarBlockHeader>
-
-        <ChatTabsSection normalizedSearchQuery={normalizedSearchQuery} />
+      <ChatSidebarBlock className="gap-2 pt-1">
+        <ChatTabsSection />
 
         <ChatSidebarSectionHeader title="Chats">
           <Button
-            isIconOnly
-            size="sm"
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Search chats (⌘K)"
+            onClick={() => {
+              setSearchOpen(true);
+            }}
+          >
+            <HugeiconsIcon icon={Search01Icon} />
+          </Button>
+          <Button
+            size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
             aria-label="Add chat to root"
-            onPress={() => {
+            onClick={() => {
               void createChat(null);
             }}
           >
             <HugeiconsIcon icon={Add01Icon} />
           </Button>
           <Button
-            isIconOnly
-            size="sm"
+            size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
             aria-label="Add folder to root"
-            onPress={() => {
+            onClick={() => {
               void createFolder(null);
             }}
           >
@@ -417,8 +416,6 @@ function ChatSidebarTreeInner({
 
         {visibleItems.length === 0 ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">No chats or folders yet.</p>
-        ) : filteredItems.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted-foreground">No matching chats or folders.</p>
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <ChatTreeView
@@ -428,7 +425,7 @@ function ChatSidebarTreeInner({
               })}
             >
               <ChatTreeDragLine style={tree.getDragLineStyle()} />
-              {filteredItems.map((item) => {
+              {visibleItems.map((item) => {
                 const data = item.getItemData();
                 const depth = getItemDepth(item);
 
@@ -482,7 +479,6 @@ function ChatSidebarTreeInner({
                         </ChatTreeItemIconFrame>
                       ) : null}
                       <Input
-                        variant="secondary"
                         className="h-7 min-w-0 flex-1 px-2 text-sm"
                         {...item.getRenameInputProps()}
                       />
@@ -514,19 +510,16 @@ function ChatSidebarTreeInner({
                       <ChatTreeItemIcon chatId={data.chat.id} />
                       <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
                       <Button
-                        isIconOnly
-                        size="sm"
+                        size="icon-xs"
                         variant="ghost"
                         className={cn(
                           SIDEBAR_ICON_BUTTON_CLASS,
-                          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 data-[focus-visible=true]:opacity-100",
+                          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
                         )}
                         aria-label={`Open ${data.chat.title} in new tab`}
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
-                        }}
-                        onPress={() => {
                           openChatInTab(data.chat.id);
                         }}
                       >
@@ -575,6 +568,12 @@ function ChatSidebarTreeInner({
           </ChatSidebarBlockContent>
         )}
       </ChatSidebarBlock>
+      <ChatSearchDialog
+        workspaceId={workspaceId}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSelectChat={navigateToChat}
+      />
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}
         isPending={deleteItemsMutation.isPending}
@@ -606,7 +605,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
   );
 }
 
-function ChatTabsSection({ normalizedSearchQuery }: { normalizedSearchQuery: string }) {
+function ChatTabsSection() {
   const tabs = useWorkspaceStore((s) => s.tabs);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
@@ -626,7 +625,6 @@ function ChatTabsSection({ normalizedSearchQuery }: { normalizedSearchQuery: str
             key={tab.id}
             tab={tab}
             isActive={currentChatId === tab.chatId}
-            normalizedSearchQuery={normalizedSearchQuery}
             onSelect={() => setCurrentChat(tab.chatId)}
             onClose={() => closeTab(tab.id)}
           />
@@ -639,22 +637,16 @@ function ChatTabsSection({ normalizedSearchQuery }: { normalizedSearchQuery: str
 function ChatTabListItem({
   tab,
   isActive,
-  normalizedSearchQuery,
   onSelect,
   onClose,
 }: {
   tab: Tab;
   isActive: boolean;
-  normalizedSearchQuery: string;
   onSelect: () => void;
   onClose: () => void;
 }) {
   const chatQuery = useQuery(getChatQueryOptions(tab.chatId));
   const title = chatQuery.data?.title ?? "Loading…";
-
-  if (normalizedSearchQuery && !title.toLocaleLowerCase().includes(normalizedSearchQuery)) {
-    return null;
-  }
 
   return (
     <div
@@ -679,8 +671,7 @@ function ChatTabListItem({
       </span>
       <span className="min-w-0 flex-1 truncate">{title}</span>
       <Button
-        isIconOnly
-        size="sm"
+        size="icon-xs"
         variant="ghost"
         className={cn(
           SIDEBAR_ICON_BUTTON_CLASS,
@@ -690,8 +681,8 @@ function ChatTabListItem({
         aria-label={`Close ${title} tab`}
         onClick={(e) => {
           e.stopPropagation();
+          onClose();
         }}
-        onPress={onClose}
       >
         <HugeiconsIcon icon={Cancel01Icon} />
       </Button>
@@ -768,15 +759,14 @@ function ChatTreeDisclosureButton({
 
   return (
     <Button
-      isIconOnly
-      size="sm"
+      size="icon-xs"
       variant="ghost"
       className={cn(SIDEBAR_ICON_BUTTON_CLASS, "text-muted-foreground")}
       aria-label={isExpanded ? "Collapse folder" : "Expand folder"}
       onClick={(event) => {
         event.stopPropagation();
+        onToggle();
       }}
-      onPress={onToggle}
     >
       <HugeiconsIcon icon={isExpanded ? ArrowDown01Icon : ArrowRight01Icon} />
     </Button>
@@ -857,36 +847,27 @@ function DeleteTreeItemsDialog({
   const hasFolders = items?.some((item) => item.kind === "folder") ?? false;
 
   return (
-    <AlertDialog isOpen={itemCount > 0} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialog.Backdrop>
-        <AlertDialog.Container>
-          <AlertDialog.Dialog className="sm:max-w-[360px]">
-            <AlertDialog.Header>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Heading>Delete Selected Items</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              <p>
-                {`This will permanently delete ${itemCount} selected ${
-                  itemCount === 1 ? "item" : "items"
-                }.`}
-                {hasFolders
-                  ? " Selected folders will also delete all nested chats and subfolders."
-                  : ""}
-                {" This action cannot be undone."}
-              </p>
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <Button isDisabled={isPending} slot="close" variant="secondary">
-                Cancel
-              </Button>
-              <Button isDisabled={isPending} variant="danger" onPress={onConfirm}>
-                Delete
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
+    <AlertDialog open={itemCount > 0} onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent className="sm:max-w-[360px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Selected Items</AlertDialogTitle>
+          <AlertDialogDescription>
+            {`This will permanently delete ${itemCount} selected ${
+              itemCount === 1 ? "item" : "items"
+            }.`}
+            {hasFolders
+              ? " Selected folders will also delete all nested chats and subfolders."
+              : ""}
+            {" This action cannot be undone."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={isPending} onClick={onConfirm}>
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
     </AlertDialog>
   );
 }

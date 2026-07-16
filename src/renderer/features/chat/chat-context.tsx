@@ -729,10 +729,7 @@ function replaceMessageById(
   return messages.map((message) => (message.id === messageId ? nextMessage : message));
 }
 
-function reconcileMessages(
-  currentMessages: readonly HanokiUiMessage[],
-  nextMessages: readonly HanokiUiMessage[],
-) {
+function reconcileMessages(currentMessages: HanokiUiMessage[], nextMessages: HanokiUiMessage[]) {
   if (currentMessages.length === 0) {
     return [...nextMessages];
   }

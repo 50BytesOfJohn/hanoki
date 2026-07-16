@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Button as HeroButton, Dropdown, Separator, type Key } from "@heroui/react";
 import {
   Add01Icon,
-  CircleIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   Setting07Icon,
@@ -11,12 +9,18 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/menu";
+import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
-import hanokiLogoUrl from "../../../../assets/logo.png";
 import { useChatSidebar } from "./chat-sidebar";
 import { useWorkspaceStore } from "../workspace/store";
-
-const CREATE_WORKSPACE_ACTION_ID = "create-workspace";
 
 export function ChatToolbar() {
   const navigate = useNavigate();
@@ -42,65 +46,43 @@ export function ChatToolbar() {
           />
         </Button>
 
-        <img
-          src={hanokiLogoUrl}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          className="mx-0.5 size-5 shrink-0 select-none"
-        />
-
-        <Dropdown>
-          <HeroButton
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1.5 rounded-md px-2 text-xs font-medium"
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="xs" className="group/orb gap-1.5 px-2 font-medium" />
+            }
           >
-            <span
-              aria-hidden
-              className="size-2 shrink-0 rounded-full"
-              style={{ background: workspace?.color ?? "var(--muted)" }}
-            />
+            <WorkspaceOrb color={workspace?.color} size="xs" />
             <span className="max-w-40 truncate">{workspace?.name ?? "…"}</span>
-          </HeroButton>
-          <Dropdown.Popover placement="bottom start">
-            <Dropdown.Menu
-              onAction={(key: Key) => {
-                if (key === CREATE_WORKSPACE_ACTION_ID) {
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="start">
+            <DropdownMenuGroup>
+              {workspaces.map((ws) => (
+                <DropdownMenuItem
+                  key={ws.id}
+                  className="group/orb"
+                  onClick={() => {
+                    switchWorkspace(ws.id);
+                  }}
+                >
+                  <WorkspaceOrb color={ws.color} size="xs" />
+                  {ws.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem
+                onClick={() => {
                   void navigate({ to: "/settings/workspaces/new" });
-                  return;
-                }
-
-                switchWorkspace(String(key));
-              }}
-            >
-              <Dropdown.Section
-                selectionMode="single"
-                selectedKeys={workspace ? [workspace.id] : []}
+                }}
               >
-                {workspaces.map((ws) => (
-                  <Dropdown.Item key={ws.id} id={ws.id} textValue={ws.name}>
-                    <Dropdown.ItemIndicator type="dot" />
-                    <HugeiconsIcon
-                      icon={CircleIcon}
-                      className="size-3"
-                      color={ws.color ?? "current"}
-                      fill={ws.color ?? "current"}
-                    />
-                    {ws.name}
-                  </Dropdown.Item>
-                ))}
-              </Dropdown.Section>
-              <Separator />
-              <Dropdown.Section>
-                <Dropdown.Item id={CREATE_WORKSPACE_ACTION_ID} textValue="Create Workspace">
-                  <HugeiconsIcon icon={Add01Icon} />
-                  Create Workspace
-                </Dropdown.Item>
-              </Dropdown.Section>
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
+                <HugeiconsIcon icon={Add01Icon} />
+                Create Workspace
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <Button

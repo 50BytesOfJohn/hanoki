@@ -2,48 +2,55 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatEmptyPage } from "@/features/chat/chat-empty-page";
+import {
+  SettingsError,
+  SettingsPageHeader,
+  SettingsPageShell,
+  SettingsRow,
+  SettingsSection,
+} from "@/features/settings/settings-ui";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { getChatQueryOptions } from "@/queries/chats";
 import { useWorkspaceStore } from "@/features/workspace/store";
+import { cn } from "@/lib/utils";
 
 export function ChatSettingsPage() {
   const activeChatId = useWorkspaceStore((state) => state.currentChatId);
 
-  const chatQuery = useQuery(getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }));
-  const updateChatSettings = useUpdateChatSettings();
-  const [systemPrompt, setSystemPrompt] = React.useState("");
-  const [submitError, setSubmitError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    setSystemPrompt(chatQuery.data?.settings.systemPrompt ?? "");
-    setSubmitError(null);
-  }, [chatQuery.data?.id, chatQuery.data?.settings.systemPrompt]);
+  const chatQuery = useQuery(
+    getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }),
+  );
 
   if (!activeChatId) {
     return (
       <ChatEmptyPage
-        title="Chat Settings"
-        description="Open a chat tab to edit its system prompt."
+        title="No chat selected"
+        description="Open a chat to configure how it behaves."
       />
     );
   }
 
   if (chatQuery.isPending) {
-    return <ChatEmptyPage title="Chat Settings" description="Loading chat settings..." />;
+    return (
+      <ChatSettingsShell>
+        <p className="text-[13px] text-muted-foreground">
+          Loading chat settings…
+        </p>
+      </ChatSettingsShell>
+    );
   }
 
   if (chatQuery.error) {
     return (
       <ChatEmptyPage
-        title="Chat Settings"
+        title="Unable to load chat settings"
         description={
           chatQuery.error instanceof Error
             ? chatQuery.error.message
-            : "Failed to load chat settings."
+            : "Something went wrong."
         }
       />
     );
@@ -51,78 +58,121 @@ export function ChatSettingsPage() {
 
   const chat = chatQuery.data;
   if (!chat) {
-    return <ChatEmptyPage title="Chat Settings" description="Chat not found." />;
+    return (
+      <ChatEmptyPage
+        title="Chat not found"
+        description="This chat may have been deleted."
+      />
+    );
   }
 
-  const savedSystemPrompt = chat.settings.systemPrompt ?? "";
-  const isDirty = systemPrompt !== savedSystemPrompt;
+  return (
+    <ChatSettingsShell>
+      <SettingsPageHeader
+        title="Chat Settings"
+        description={
+          <>
+            Applies only to{" "}
+            <span className="text-foreground">{chat.title}</span>, on top of
+            your global defaults.
+          </>
+        }
+      />
+
+      <SettingsSection title="Instructions">
+        <SystemPromptRow
+          key={`${chat.id}:${chat.settings.systemPrompt ?? ""}`}
+          chatId={chat.id}
+          savedPrompt={chat.settings.systemPrompt ?? ""}
+        />
+      </SettingsSection>
+    </ChatSettingsShell>
+  );
+}
+
+function ChatSettingsShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto scrollbar">
+      <SettingsPageShell>{children}</SettingsPageShell>
+    </div>
+  );
+}
+
+function SystemPromptRow({
+  chatId,
+  savedPrompt,
+}: {
+  chatId: string;
+  savedPrompt: string;
+}) {
+  const updateChatSettings = useUpdateChatSettings();
+  const [prompt, setPrompt] = React.useState(savedPrompt);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const isDirty = prompt !== savedPrompt;
 
   async function handleSave() {
-    setSubmitError(null);
-    const nextSystemPrompt = systemPrompt.trim().length === 0 ? null : systemPrompt;
-
+    setError(null);
     try {
       await updateChatSettings.mutateAsync({
-        id: chat.id,
-        input: {
-          systemPrompt: nextSystemPrompt,
-        },
+        id: chatId,
+        input: { systemPrompt: prompt.trim().length === 0 ? null : prompt },
       });
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to update chat settings.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to save the system prompt.",
+      );
     }
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-6">
-      <div className="space-y-1">
-        <h1 className="font-heading text-xl font-semibold tracking-tight">Chat Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure how <span className="text-foreground">{chat.title}</span> behaves.
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>System Prompt</CardTitle>
-          <CardDescription>
-            Sent with every request in this chat to guide the assistant.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Field>
-            <FieldLabel htmlFor="system-prompt">Prompt</FieldLabel>
-            <Textarea
-              id="system-prompt"
-              placeholder="Add instructions for this chat"
-              value={systemPrompt}
-              onChange={(event) => {
-                setSubmitError(null);
-                setSystemPrompt(event.target.value);
-              }}
-            />
-            <FieldDescription>
-              Leave empty to use the default behavior for this chat.
-            </FieldDescription>
-          </Field>
-
-          <div className="flex flex-col gap-2">
-            <Button
-              type="button"
-              className="w-fit"
-              disabled={!isDirty || updateChatSettings.isPending}
-              onClick={() => {
-                void handleSave();
-              }}
-            >
-              {updateChatSettings.isPending ? "Saving..." : "Save Prompt"}
-            </Button>
-            {submitError ? (
-              <p className="text-destructive-foreground text-xs">{submitError}</p>
+    <SettingsRow
+      title="System prompt"
+      htmlFor="chat-system-prompt"
+      description="Sent with every message in this chat to steer the assistant. Leave empty to use the default behavior."
+    >
+      <div className="flex flex-col gap-2.5">
+        <Textarea
+          id="chat-system-prompt"
+          placeholder="e.g. Answer concisely and prefer code examples."
+          className="min-h-28"
+          aria-invalid={error ? true : undefined}
+          value={prompt}
+          onChange={(event) => {
+            setError(null);
+            setPrompt(event.target.value);
+          }}
+        />
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!isDirty || updateChatSettings.isPending}
+            onClick={() => void handleSave()}
+          >
+            {updateChatSettings.isPending ? (
+              <Spinner data-icon="inline-start" />
             ) : null}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+            Save
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn("text-muted-foreground", !isDirty && "invisible")}
+            disabled={updateChatSettings.isPending}
+            onClick={() => {
+              setPrompt(savedPrompt);
+              setError(null);
+            }}
+          >
+            Discard changes
+          </Button>
+        </div>
+        <SettingsError>{error}</SettingsError>
+      </div>
+    </SettingsRow>
   );
 }

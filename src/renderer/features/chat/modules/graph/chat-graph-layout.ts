@@ -1,5 +1,5 @@
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react";
-import dagre from "@dagrejs/dagre";
+import { graphlib, layout } from "@dagrejs/dagre";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 
 export const NODE_WIDTH = 352;
@@ -24,7 +24,7 @@ export function buildChatGraphLayout(
   edges: Edge[];
   nodes: ChatGraphNode[];
 } {
-  const dagreGraph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  const dagreGraph = new graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({
     edgesep: 40,
     marginx: 48,
@@ -79,7 +79,7 @@ export function buildChatGraphLayout(
     });
   }
 
-  dagre.layout(dagreGraph);
+  layout(dagreGraph);
 
   const nodes: ChatGraphNode[] = messages.map((message) => {
     const layoutNode = dagreGraph.node(message.id);

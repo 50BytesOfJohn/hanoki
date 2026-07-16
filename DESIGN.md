@@ -29,18 +29,18 @@ raw hex/oklch color — always a token.
 
 Borders: `--border` for panel outlines, `--separator` for internal hairlines.
 
-## Two component stacks, one palette
+## One component stack: shadcn
 
-- **HeroUI** reads the raw vars (`--accent`, `--surface`, `--muted`…).
-- **shadcn components** (`components/ui/*`) compile from the `@theme inline`
-  bridge (`--color-primary`, `--color-card`, `--color-sidebar…`).
+All UI composes the shadcn components in `components/ui/*` (Base UI
+primitives, hugeicons). Raw palette vars in `index.css` are mapped onto
+Tailwind utilities in the `@theme inline` block — token semantics:
 
-Semantic differences are resolved in the bridge — don't fight it in components:
-
-- `primary` (shadcn) = `--accent` (HeroUI) = the brand moss.
-- `accent` in shadcn utilities means _hover fill_ (`--hover`), not brand.
-- `--color-muted` keeps HeroUI's meaning: a **foreground** gray. Never use
-  `bg-muted`; use `bg-hover` for fills and `text-muted-foreground` for dim text.
+- `primary` = `--accent` = the brand moss.
+- `accent` in utilities means _hover fill_ (`--hover`), not brand.
+- `--color-muted` is a **foreground** gray. Never use `bg-muted`; use
+  `bg-hover` for fills and `text-muted-foreground` for dim text.
+- The layering vars are exposed directly too (`bg-surface`,
+  `bg-surface-secondary`, `border-separator`, `text-danger`, …).
 
 ## Layout
 
@@ -51,7 +51,11 @@ Semantic differences are resolved in the bridge — don't fight it in components
   inset 6px from the window edge.
 - Each panel opens with a slim 36px header (`h-9`, hairline bottom): context on
   the left, icon actions on the right.
-- Settings mirrors the same shell; page columns are `max-w-2xl px-6 py-6`.
+- Settings mirrors the same shell. Pages compose the primitives in
+  `features/settings/settings-ui.tsx`: `SettingsPageShell` (column,
+  `max-w-2xl px-6 pt-10 pb-16`), `SettingsPageHeader`, `SettingsSection`
+  (uppercase label + bordered group with hairline dividers), and
+  `SettingsRow` — title/description left, control right, Zed/Linear style.
 
 ## Type
 
@@ -64,14 +68,12 @@ Semantic differences are resolved in the bridge — don't fight it in components
 
 ## Buttons
 
-Buttons never shout. HeroUI's pill defaults are overridden globally in
-`index.css` (`@layer components`): 7px corners, 28px tall (24px `sm`),
-no pressed-scale transform. The primary action uses a **soft** translucent
-moss fill (`--accent-soft` + `--accent-soft-foreground`), never a solid
-block — same for the shadcn `default` variant. Toolbars (message actions)
-use `tertiary`: transparent, muted icon, `--hover` fill on hover. Inline
-pickers (composer model select) are ghost-styled fields — no border or
-background until hovered.
+Buttons never shout. The `default` Button variant uses a **soft**
+translucent moss fill (`--accent-soft` + `--accent-soft-foreground`),
+never a solid block. Toolbars (message actions) use
+`variant="ghost" className="text-muted-foreground"`: transparent, muted
+icon, `--hover` fill on hover. Inline pickers (composer model select) are
+ghost-styled fields — no border or background until hovered.
 
 ## Shape & motion
 

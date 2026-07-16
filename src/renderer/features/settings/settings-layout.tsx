@@ -2,14 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import {
   Add01Icon,
+  AiMagicIcon,
   ArrowLeft01Icon,
-  CircleIcon,
   PaintBrush02Icon,
   SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { WindowChrome } from "@/components/app/window-chrome";
 import { Button } from "@/components/ui/button";
+import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { getProviderIconById } from "@/lib/provider-icons";
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const globalNavItems = [
     exact: true,
   },
   { to: "/settings/appearance", label: "Appearance", icon: PaintBrush02Icon },
+  { to: "/settings/sumi", label: "Sumi", icon: AiMagicIcon },
 ] as const;
 
 export function SettingsLayout() {
@@ -102,6 +104,7 @@ export function SettingsLayout() {
                     {workspaces.map((workspace) => (
                       <SidebarMenuItem key={workspace.id}>
                         <SidebarMenuButton
+                          className="group/orb"
                           isActive={Boolean(
                             matchRoute({
                               to: "/settings/$workspaceId",
@@ -116,11 +119,7 @@ export function SettingsLayout() {
                             />
                           }
                         >
-                          <HugeiconsIcon
-                            icon={CircleIcon}
-                            color={workspace.color ?? "current"}
-                            fill={workspace.color ?? "current"}
-                          />
+                          <WorkspaceOrb color={workspace.color} size="sm" />
                           <span>{workspace.name}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>

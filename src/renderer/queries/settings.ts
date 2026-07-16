@@ -7,3 +7,9 @@ export const globalChatSettingsQueryOptions = queryOptions({
   queryFn: () => settingsApi.getGlobalChat(),
   staleTime: Number.POSITIVE_INFINITY,
 });
+
+export const sumiSettingsQueryOptions = queryOptions({
+  queryKey: queryKeys.settings.sumi(),
+  queryFn: () => settingsApi.getSumi(),
+  staleTime: Number.POSITIVE_INFINITY,
+});

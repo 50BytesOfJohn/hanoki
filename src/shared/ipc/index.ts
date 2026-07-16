@@ -16,6 +16,8 @@ export const IPC_CHANNELS = {
   settings: {
     getGlobalChat: "settings:getGlobalChat",
     updateGlobalChat: "settings:updateGlobalChat",
+    getSumi: "settings:getSumi",
+    updateSumi: "settings:updateSumi",
   },
   contextMenu: {
     showText: "contextMenu:showText",
@@ -96,6 +98,29 @@ export interface GlobalChatSettings {
 export interface GlobalChatSettingsUpdateInput {
   promptStickyPosition?: boolean;
   formSubmitBehavior?: ChatFormSubmitBehavior;
+}
+
+export interface SumiModelReference {
+  providerId: string;
+  providerModelId: string;
+}
+
+export interface SumiPromptActionsSettings {
+  enabled: boolean;
+  model: SumiModelReference | null;
+}
+
+export interface SumiSettings {
+  promptActions: SumiPromptActionsSettings;
+}
+
+export interface SumiPromptActionsSettingsUpdateInput {
+  enabled?: boolean;
+  model?: SumiModelReference;
+}
+
+export interface SumiSettingsUpdateInput {
+  promptActions?: SumiPromptActionsSettingsUpdateInput;
 }
 
 export interface TextContextMenuInput {
@@ -276,6 +301,8 @@ export interface IpcApi {
   ) => Promise<WorkspaceSettings>;
   getGlobalChatSettings: () => Promise<GlobalChatSettings>;
   updateGlobalChatSettings: (input: GlobalChatSettingsUpdateInput) => Promise<GlobalChatSettings>;
+  getSumiSettings: () => Promise<SumiSettings>;
+  updateSumiSettings: (input: SumiSettingsUpdateInput) => Promise<SumiSettings>;
   showTextContextMenu: (input: TextContextMenuInput) => Promise<void>;
   showMessageContextMenu: (input: TextContextMenuInput) => Promise<MessageContextMenuAction>;
   getChatTree: (workspaceId: string) => Promise<ChatTreeSnapshot>;

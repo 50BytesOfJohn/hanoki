@@ -16,4 +16,10 @@ export const DEFAULT_CONFIG: AppConfig = {
       submitBehavior: "enter",
     },
   },
+  sumi: {
+    promptActions: {
+      initialized: false,
+      enabled: false,
+    },
+  },
 };

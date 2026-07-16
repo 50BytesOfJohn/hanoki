@@ -17,3 +17,7 @@ stickyPosition = true
 [chat.form]
 # Enter submits immediately. Use "mod-enter" to require Cmd/Ctrl + Enter.
 submitBehavior = "enter"
+
+[sumi.promptActions]
+initialized = false
+enabled = false

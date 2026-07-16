@@ -1,10 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Button, Chip } from "@heroui/react";
 import { Settings02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
+import { Button } from "@/components/ui/button";
+import { getProviderIconById } from "@/lib/provider-icons";
 import { listProvidersQueryOptions } from "@/queries/providers";
 import { getSupportedProviderById } from "@shared/providers/catalog";
 import { ProviderConfigModal, ProviderModelsTab } from "./provider-page/tabs";
+import { SettingsPageHeader, SettingsSectionLabel } from "./settings-ui";
 
 interface ProviderPageProps {
   providerId: string;
@@ -14,32 +17,36 @@ export function ProviderPage({ providerId }: ProviderPageProps) {
   const providersQuery = useQuery(listProvidersQueryOptions);
   const provider = providersQuery.data?.find((item) => item.id === providerId);
   const catalogProvider = provider ? getSupportedProviderById(provider.catalogId) : null;
+  const ProviderIcon = provider ? getProviderIconById(provider.catalogId) : null;
 
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
-      <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-6">
-        <div className="flex items-start justify-between gap-4 pb-2 pt-4">
-          <div className="space-y-3">
-            <Chip size="sm" variant="soft">
-              {catalogProvider?.name ?? provider?.catalogId ?? "Provider"}
-            </Chip>
-            <h1 className="font-heading text-xl font-semibold tracking-tight">
-              {provider?.displayName ?? "Provider"}
-            </h1>
-          </div>
+    <main className="flex min-h-0 flex-1 flex-col">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col gap-6 px-6 pt-10 pb-6">
+        <SettingsPageHeader
+          leading={
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-secondary">
+              {ProviderIcon ? <ProviderIcon className="size-5" /> : null}
+            </div>
+          }
+          title={provider?.displayName ?? "Provider"}
+          description={catalogProvider?.name ?? provider?.catalogId ?? ""}
+          actions={
+            <ProviderConfigModal
+              providerId={providerId}
+              trigger={
+                <Button variant="ghost" className="text-muted-foreground">
+                  <HugeiconsIcon icon={Settings02Icon} data-icon="inline-start" />
+                  Configure
+                </Button>
+              }
+            />
+          }
+        />
 
-          <ProviderConfigModal
-            providerId={providerId}
-            trigger={
-              <Button variant="tertiary">
-                <HugeiconsIcon icon={Settings02Icon} />
-                Configure
-              </Button>
-            }
-          />
+        <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+          <SettingsSectionLabel>Models</SettingsSectionLabel>
+          <ProviderModelsTab providerId={providerId} />
         </div>
-
-        <ProviderModelsTab providerId={providerId} />
       </div>
     </main>
   );

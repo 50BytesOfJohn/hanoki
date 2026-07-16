@@ -3,6 +3,15 @@ import "../lib/electron-api";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 
 export const chatTreeApi = {
+  getTree(workspaceId: string) {
+    const parsedWorkspaceId = parseWorkspaceId(workspaceId);
+    if (!parsedWorkspaceId.ok) {
+      throw new Error(parsedWorkspaceId.error);
+    }
+
+    return window.electronAPI.getChatTree(parsedWorkspaceId.value);
+  },
+
   getChildren(workspaceId: string, parentFolderId: string | null) {
     const parsedWorkspaceId = parseWorkspaceId(workspaceId);
     if (!parsedWorkspaceId.ok) {

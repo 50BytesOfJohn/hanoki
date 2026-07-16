@@ -3,6 +3,9 @@ import {
   type ChatFormSubmitBehavior,
   type GlobalChatSettings,
   type GlobalChatSettingsUpdateInput,
+  type SumiModelReference,
+  type SumiSettings,
+  type SumiSettingsUpdateInput,
 } from "@shared/ipc";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -63,6 +66,69 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
   return [parsedInput];
 }
 
+function parseSumiSettingsUpdateInput(args: unknown[]): [SumiSettingsUpdateInput] {
+  expectArgCount(args, 1);
+
+  const rawInput = expectRecord(args[0], "Sumi settings update payload");
+  expectAllowedKeys(rawInput, ["promptActions"]);
+
+  if (rawInput.promptActions === undefined) {
+    return [{}];
+  }
+
+  const rawPromptActions = expectRecord(rawInput.promptActions, "promptActions settings update");
+  expectAllowedKeys(rawPromptActions, ["enabled", "model"]);
+
+  const promptActionsInput: NonNullable<SumiSettingsUpdateInput["promptActions"]> = {};
+
+  if (rawPromptActions.enabled !== undefined) {
+    if (typeof rawPromptActions.enabled !== "boolean") {
+      throw AppError.badRequest("promptActions.enabled must be a boolean.");
+    }
+    promptActionsInput.enabled = rawPromptActions.enabled;
+  }
+
+  if (rawPromptActions.model !== undefined) {
+    promptActionsInput.model = parseSumiModelReference(rawPromptActions.model);
+  }
+
+  return [{ promptActions: promptActionsInput }];
+}
+
+function parseSumiModelReference(value: unknown): SumiModelReference {
+  const model = expectRecord(value, "promptActions.model");
+  expectAllowedKeys(model, ["providerId", "providerModelId"]);
+
+  if (typeof model.providerId !== "string" || model.providerId.trim().length === 0) {
+    throw AppError.badRequest("promptActions.model.providerId must be a non-empty string.");
+  }
+  if (typeof model.providerModelId !== "string" || model.providerModelId.trim().length === 0) {
+    throw AppError.badRequest("promptActions.model.providerModelId must be a non-empty string.");
+  }
+
+  return {
+    providerId: model.providerId.trim(),
+    providerModelId: model.providerModelId.trim(),
+  };
+}
+
+function expectRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw AppError.badRequest(`${label} must be an object.`);
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function expectAllowedKeys(record: Record<string, unknown>, allowedKeys: readonly string[]): void {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) {
+      throw AppError.badRequest(`Unsupported settings update field "${key}".`);
+    }
+  }
+}
+
 export function registerSettingsIpcModule(
   context: IpcHandlerContext,
   registeredChannels: Set<string>,
@@ -85,4 +151,19 @@ export function registerSettingsIpcModule(
       handler: ({ services }, _event, input) => services.settings.updateGlobalChatSettings(input),
     },
   );
+
+  registerInvokeHandler<[], SumiSettings>(context, registeredChannels, {
+    channel: IPC_CHANNELS.settings.getSumi,
+    parseArgs: (args) => {
+      expectArgCount(args, 0);
+      return [];
+    },
+    handler: ({ services }) => services.settings.getSumiSettings(),
+  });
+
+  registerInvokeHandler<[SumiSettingsUpdateInput], SumiSettings>(context, registeredChannels, {
+    channel: IPC_CHANNELS.settings.updateSumi,
+    parseArgs: parseSumiSettingsUpdateInput,
+    handler: ({ services }, _event, input) => services.settings.updateSumiSettings(input),
+  });
 }

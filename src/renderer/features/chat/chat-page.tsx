@@ -3,9 +3,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { Cancel01Icon, SentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Key } from "@heroui/react";
-import { Button, InputGroup, ListBox, Select, TextField, Tooltip } from "@heroui/react";
-
+import { Button } from "@/components/ui/button";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "@/components/ui/combobox";
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   useChatCanStop,
   ChatContextProvider,
@@ -30,9 +40,11 @@ import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
+import type { ProviderModelInfo } from "@shared/ipc";
 import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
+import { SumiPromptAction } from "./sumi-prompt-action";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -354,8 +366,8 @@ function ActiveChatContent() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  isDisabled={!modelId || isInteractionLocked}
-                  onPress={() => {
+                  disabled={!modelId || isInteractionLocked}
+                  onClick={() => {
                     scrollToBottom();
                     void regenerateMessage({ messageId: lastUserMessageId });
                   }}
@@ -371,53 +383,64 @@ function ActiveChatContent() {
                 submitMessage();
               }}
             >
-              <TextField aria-label="Chat message" value={input} onChange={setInput} fullWidth>
-                <InputGroup
-                  variant="secondary"
-                  fullWidth
-                  className="flex flex-col gap-1.5 rounded-xl border border-border bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 focus-within:border-focus/50"
+              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                <InputGroupTextarea
+                  data-chat-composer-input="true"
+                  aria-label="Chat message"
+                  placeholder="Ask anything…"
+                  rows={1}
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  className="w-full resize-none overflow-y-auto px-3 py-1 max-h-[24rem] min-h-0 text-[0.9375rem] [field-sizing:content]"
+                />
+                <InputGroupAddon
+                  align="block-end"
+                  className="flex w-full items-center gap-1.5 px-2 py-0"
                 >
-                  <InputGroup.TextArea
-                    data-chat-composer-input="true"
-                    placeholder="Ask anything…"
-                    rows={1}
-                    className="resize-none w-full px-3 py-1 max-h-[24rem] overflow-y-auto text-[0.9375rem] [field-sizing:content]"
-                  />
-                  <InputGroup.Suffix className="flex w-full items-center gap-1.5 px-2 py-0">
-                    <ModelSelector />
-                    <div className="ml-auto">
-                      {canStop ? (
-                        <Tooltip delay={0}>
-                          <Button
-                            isIconOnly
-                            aria-label="Stop"
-                            variant="primary"
-                            size="sm"
-                            type="button"
-                            onPress={stopGeneration}
-                          >
-                            <HugeiconsIcon icon={Cancel01Icon} />
-                          </Button>
-                          <Tooltip.Content>Stop {STOP_GENERATION_SHORTCUT_LABEL}</Tooltip.Content>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip delay={0}>
-                          <Button
-                            type="submit"
-                            aria-label="Send"
-                            size="sm"
-                            isDisabled={!modelId || !input.trim() || isInteractionLocked}
-                          >
-                            <HugeiconsIcon icon={SentIcon} />
-                            Send
-                          </Button>
-                          <Tooltip.Content>Send</Tooltip.Content>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </InputGroup.Suffix>
-                </InputGroup>
-              </TextField>
+                  <ModelSelector />
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <SumiPromptAction
+                      prompt={input}
+                      isDisabled={isInteractionLocked}
+                      onReplace={setInput}
+                    />
+                    {canStop ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              aria-label="Stop"
+                              size="icon-sm"
+                              type="button"
+                              onClick={stopGeneration}
+                            />
+                          }
+                        >
+                          <HugeiconsIcon icon={Cancel01Icon} />
+                        </TooltipTrigger>
+                        <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              type="submit"
+                              aria-label="Send"
+                              size="sm"
+                              disabled={!modelId || !input.trim() || isInteractionLocked}
+                            />
+                          }
+                        >
+                          <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
+                          Send
+                        </TooltipTrigger>
+                        <TooltipContent>Send</TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                </InputGroupAddon>
+              </InputGroup>
             </form>
           </div>
 
@@ -443,53 +466,58 @@ function ModelSelector() {
   const modelId = useChatModelId();
   const setModelId = useSetChatModelId();
 
+  const selected = enabledModels.find((m) => m.id === modelId) ?? null;
+
   return (
-    <Select
-      aria-label="Select model"
-      placeholder="Select model"
-      variant="secondary"
-      value={modelId ?? ""}
-      onChange={(value: Key | Key[] | null) => setModelId((value as string) || null)}
-      isDisabled={isInteractionLocked}
+    <Combobox
+      items={enabledModels}
+      value={selected}
+      onValueChange={(model) => setModelId(model?.id ?? null)}
+      itemToStringValue={(model) => model.displayName ?? model.providerModelId}
+      isItemEqualToValue={(item, value) => item.id === value.id}
+      disabled={isInteractionLocked}
     >
-      <Select.Trigger className="h-7 min-h-0 rounded-md border-transparent bg-transparent px-2 py-0 text-xs text-muted-foreground shadow-none transition-colors duration-100 hover:bg-hover hover:text-foreground data-[hovered=true]:bg-hover">
-        <Select.Value>
-          {({ isPlaceholder, state }) => {
-            if (isPlaceholder || state.selectedItems.length === 0) {
+      <ComboboxTrigger
+        aria-label="Select model"
+        className="inline-flex h-7 max-w-48 min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 text-[13px] text-muted-foreground shadow-none transition-colors duration-100 hover:bg-hover hover:text-foreground dark:bg-transparent dark:hover:bg-hover"
+      >
+        <ComboboxValue>
+          {(value: ProviderModelInfo | null) => {
+            if (!value) {
               return <span>Select model</span>;
             }
-            const selected = enabledModels.find((m) => m.id === state.selectedItems[0]?.key);
-            const provider = selected
-              ? (providers.find((p) => p.id === selected.providerId) ?? null)
-              : null;
+
+            const provider = providers.find((p) => p.id === value.providerId);
             const ProviderIcon = provider ? getProviderIconById(provider.catalogId) : null;
+
             return (
-              <span className="flex items-center gap-2">
-                {ProviderIcon ? <ProviderIcon className="size-4" /> : null}
-                <span>{selected?.displayName ?? selected?.providerModelId ?? "Select model"}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
+                <span className="truncate">{value.displayName ?? value.providerModelId}</span>
               </span>
             );
           }}
-        </Select.Value>
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover placement="top start">
-        <ListBox>
-          {enabledModels.map((m) => {
-            const provider = providers.find((p) => p.id === m.providerId);
+        </ComboboxValue>
+      </ComboboxTrigger>
+      <ComboboxContent side="top" align="start" className="w-72 min-w-72">
+        <ComboboxInput placeholder="Search models…" showTrigger={false} />
+        <ComboboxEmpty>No models found.</ComboboxEmpty>
+        <ComboboxList>
+          {(model: ProviderModelInfo) => {
+            const provider = providers.find((p) => p.id === model.providerId);
             const ProviderIcon = provider ? getProviderIconById(provider.catalogId) : null;
+
             return (
-              <ListBox.Item key={m.id} id={m.id} textValue={m.displayName ?? m.providerModelId}>
-                <span className="flex items-center gap-2">
-                  {ProviderIcon ? <ProviderIcon className="size-4" /> : null}
-                  <span>{m.displayName ?? m.providerModelId}</span>
+              <ComboboxItem key={model.id} value={model}>
+                {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
+                <span className="min-w-0 flex-1 truncate">
+                  {model.displayName ?? model.providerModelId}
                 </span>
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
+              </ComboboxItem>
             );
-          })}
-        </ListBox>
-      </Select.Popover>
-    </Select>
+          }}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }

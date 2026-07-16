@@ -1,0 +1,90 @@
+/*
+ * Workspace "Liquid Plasma" orb. CSS-only: two blurred, counter-rotating blob
+ * layers on ::before/::after, screen-blended. Static (paused) at rest, animates
+ * on the orb's own hover or on hover of an ancestor marked `group/orb`.
+ * Recoloring is done per-instance via an inline `filter: hue-rotate()` on .orb-plasma.
+ */
+.orb-plasma {
+  --s: var(--orb-size);
+  display: inline-block;
+  width: var(--orb-size);
+  height: var(--orb-size);
+  border-radius: 50%;
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  isolation: isolate;
+  background: #140714;
+  box-shadow:
+    inset 0 calc(var(--s) * 0.02) calc(var(--s) * 0.05) rgba(255, 220, 240, 0.25),
+    inset 0 calc(var(--s) * -0.05) calc(var(--s) * 0.12) rgba(20, 0, 25, 0.6),
+    0 calc(var(--s) * 0.05) calc(var(--s) * 0.14) rgba(60, 10, 60, 0.4);
+}
+
+.orb-plasma::before,
+.orb-plasma::after {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  filter: blur(calc(var(--s) * 0.09)) saturate(1.35);
+  animation-play-state: paused;
+}
+
+.orb-plasma::before {
+  background:
+    radial-gradient(34% 34% at 32% 36%, #ff7a3d, transparent 72%),
+    radial-gradient(40% 40% at 66% 32%, #ff2f8e, transparent 72%),
+    radial-gradient(52% 52% at 44% 66%, #55123f, transparent 82%);
+  animation: orb-plasma-a 13s ease-in-out infinite;
+}
+
+.orb-plasma::after {
+  background:
+    radial-gradient(38% 38% at 58% 68%, #7a2bff, transparent 72%),
+    radial-gradient(30% 30% at 34% 62%, #ff5470, transparent 72%);
+  mix-blend-mode: screen;
+  animation: orb-plasma-b 17s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .orb-plasma:hover::before,
+  .orb-plasma:hover::after,
+  .group\/orb:hover .orb-plasma::before,
+  .group\/orb:hover .orb-plasma::after {
+    animation-play-state: running;
+  }
+}
+
+/* Opt out of the hover animation entirely, e.g. for a picker grid where
+   many orbs would otherwise all start morphing under the cursor. */
+.orb-plasma--static::before,
+.orb-plasma--static::after {
+  animation-play-state: paused;
+}
+
+@keyframes orb-plasma-a {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  30% {
+    transform: rotate(70deg) scale(1.12);
+  }
+  60% {
+    transform: rotate(-30deg) scale(0.94);
+  }
+}
+
+@keyframes orb-plasma-b {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  35% {
+    transform: rotate(-85deg) scale(1.1);
+  }
+  70% {
+    transform: rotate(40deg) scale(0.92);
+  }
+}

@@ -1,11 +1,16 @@
 import { IPC_CHANNELS, type IpcApi } from "@shared/ipc";
 import { invokeIpc } from "../invoke";
 
-type SettingsApi = Pick<IpcApi, "getGlobalChatSettings" | "updateGlobalChatSettings">;
+type SettingsApi = Pick<
+  IpcApi,
+  "getGlobalChatSettings" | "updateGlobalChatSettings" | "getSumiSettings" | "updateSumiSettings"
+>;
 
 export function createSettingsApi(): SettingsApi {
   return {
     getGlobalChatSettings: () => invokeIpc(IPC_CHANNELS.settings.getGlobalChat),
     updateGlobalChatSettings: (input) => invokeIpc(IPC_CHANNELS.settings.updateGlobalChat, input),
+    getSumiSettings: () => invokeIpc(IPC_CHANNELS.settings.getSumi),
+    updateSumiSettings: (input) => invokeIpc(IPC_CHANNELS.settings.updateSumi, input),
   };
 }

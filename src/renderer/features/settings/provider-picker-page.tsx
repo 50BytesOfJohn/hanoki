@@ -1,41 +1,35 @@
 import { Link } from "@tanstack/react-router";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { getProviderIconById } from "@/lib/provider-icons";
 import { SUPPORTED_PROVIDERS } from "@shared/providers/catalog";
+import { SettingsPageHeader, SettingsPageShell, SettingsRow, SettingsSection } from "./settings-ui";
 
 export function ProviderPickerPage() {
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
-      <div className="space-y-2">
-        <h1 className="font-heading text-xl font-semibold tracking-tight">Add Provider</h1>
-        <p className="text-sm text-muted-foreground">
-          Choose a provider to start configuring API access for the app.
-        </p>
-      </div>
+    <SettingsPageShell>
+      <SettingsPageHeader
+        title="Add provider"
+        description="Connect an AI provider to bring its models into chat. Credentials never leave this device."
+      />
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <SettingsSection title="Available providers">
         {SUPPORTED_PROVIDERS.map((provider) => {
           const ProviderIcon = getProviderIconById(provider.id);
 
           return (
-            <Card key={provider.id}>
-              <CardHeader>
-                <div className="mb-2 inline-flex size-10 items-center justify-center rounded-lg border bg-card">
-                  <ProviderIcon className="size-5" />
-                </div>
-                <CardTitle>{provider.name}</CardTitle>
-                <CardDescription>{provider.description}</CardDescription>
-              </CardHeader>
-              <CardFooter className="justify-between gap-2">
-                <span className="text-muted-foreground text-xs">
-                  {provider.isAvailable ? "Available" : "Coming soon"}
-                </span>
-                {provider.isAvailable ? (
+            <SettingsRow
+              key={provider.id}
+              icon={<ProviderIcon className="size-4" />}
+              title={provider.name}
+              description={provider.description}
+              control={
+                provider.isAvailable ? (
                   <Button
                     size="sm"
+                    variant="outline"
                     render={
                       <Link
                         to="/settings/providers/new/$providerId"
@@ -46,12 +40,14 @@ export function ProviderPickerPage() {
                     <HugeiconsIcon icon={Add01Icon} />
                     <span>Add</span>
                   </Button>
-                ) : null}
-              </CardFooter>
-            </Card>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Coming soon</span>
+                )
+              }
+            />
           );
         })}
-      </div>
-    </div>
+      </SettingsSection>
+    </SettingsPageShell>
   );
 }

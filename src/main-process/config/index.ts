@@ -16,13 +16,13 @@ function resolveConfigPath(): string {
 }
 
 // Singleton — created once at module load time.
-let _store: ConfigStore | null = null;
+let configStore: ConfigStore | null = null;
 
 function getStore(): ConfigStore {
-  if (!_store) {
-    _store = new ConfigStore(resolveConfigPath());
+  if (!configStore) {
+    configStore = new ConfigStore(resolveConfigPath());
   }
-  return _store;
+  return configStore;
 }
 
 /** Returns the current in-memory config (merged with defaults). */

@@ -2183,11 +2183,11 @@ The `ViewTransitionOptions` type accepts an object with a single property:
 ### `types` property
 
 - Type: `Array<string> | ((locationChangeInfo: {
-  fromLocation?: ParsedLocation
-  toLocation: ParsedLocation
-  pathChanged: boolean
-  hrefChanged: boolean
-  hashChanged: boolean
+fromLocation?: ParsedLocation
+toLocation: ParsedLocation
+pathChanged: boolean
+hrefChanged: boolean
+hashChanged: boolean
 }) => (Array<string> | false))`
 - Required
 - Either one of:
@@ -8795,12 +8795,10 @@ type ToOptions<
   to: string;
   // `params` is either an object of path params to interpolate into the `to` option or a function that supplies the previous params and allows you to return new ones. This is the only way to interpolate dynamic parameters into the final URL. Depending on the `from` and `to` route, you may need to supply none, some or all of the path params. TypeScript will notify you of the required params if there are any.
   params:
-    | Record<string, unknown>
-    | ((prevParams: Record<string, unknown>) => Record<string, unknown>);
+    Record<string, unknown> | ((prevParams: Record<string, unknown>) => Record<string, unknown>);
   // `search` is either an object of query params or a function that supplies the previous search and allows you to return new ones. Depending on the `from` and `to` route, you may need to supply none, some or all of the query params. TypeScript will notify you of the required search params if there are any.
   search:
-    | Record<string, unknown>
-    | ((prevSearch: Record<string, unknown>) => Record<string, unknown>);
+    Record<string, unknown> | ((prevSearch: Record<string, unknown>) => Record<string, unknown>);
   // `hash` is either a string or a function that supplies the previous hash and allows you to return a new one.
   hash?: string | ((prevHash: string) => string);
   // `state` is either an object of state or a function that supplies the previous state and allows you to return a new one. State is stored in the history API and can be useful for passing data between routes that you do not want to permanently store in URL search params.
@@ -8815,11 +8813,9 @@ type ToMaskOptions<TRouteTree extends AnyRoute = AnyRoute> = {
   from?: string;
   to: string;
   params:
-    | Record<string, unknown>
-    | ((prevParams: Record<string, unknown>) => Record<string, unknown>);
+    Record<string, unknown> | ((prevParams: Record<string, unknown>) => Record<string, unknown>);
   search:
-    | Record<string, unknown>
-    | ((prevSearch: Record<string, unknown>) => Record<string, unknown>);
+    Record<string, unknown> | ((prevSearch: Record<string, unknown>) => Record<string, unknown>);
   hash?: string | ((prevHash: string) => string);
   state?: Record<string, any> | ((prevState: Record<string, unknown>) => Record<string, unknown>);
   // If true, the URL will unmask on page reload.
@@ -15370,7 +15366,7 @@ const routeTree = rootRoute.addChildren([
   filesRoute.addChildren([
     fileRoute,
   ]),
-])
+]);
 /* prettier-ignore-end */
 ```
 

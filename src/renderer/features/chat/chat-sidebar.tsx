@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Drawer } from "@heroui/react";
 
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -125,18 +125,18 @@ export function ChatSidebar({ children }: { children: React.ReactNode }) {
 
   if (isMobile) {
     return (
-      <Drawer isOpen={openMobile} onOpenChange={setOpenMobile}>
-        <Drawer.Backdrop variant="blur">
-          <Drawer.Content className="w-[min(18rem,calc(100vw-1rem))]" placement="left">
-            <Drawer.Dialog className="h-full min-h-0 outline-hidden">
-              <Drawer.Header className="sr-only">
-                <Drawer.Heading>Chat Sidebar</Drawer.Heading>
-              </Drawer.Header>
-              <Drawer.Body className="h-full min-h-0 p-0">{children}</Drawer.Body>
-            </Drawer.Dialog>
-          </Drawer.Content>
-        </Drawer.Backdrop>
-      </Drawer>
+      <Sheet open={openMobile} onOpenChange={setOpenMobile}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="w-[min(18rem,calc(100vw-1rem))] gap-0 p-0"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Chat Sidebar</SheetTitle>
+          </SheetHeader>
+          <div className="h-full min-h-0">{children}</div>
+        </SheetContent>
+      </Sheet>
     );
   }
 

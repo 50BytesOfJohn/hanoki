@@ -1,13 +1,13 @@
 import type { ProviderCredentialTestResult } from "@shared/ipc";
 import type { SupportedProviderDefinition } from "@shared/providers/catalog";
 import { Link } from "@tanstack/react-router";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SettingsRow, SettingsSection } from "../../settings-ui";
 
-interface ProviderSetupConfigTabProps {
+interface ProviderSetupConfigFormProps {
   provider: SupportedProviderDefinition;
   configValues: Record<string, unknown>;
   hasRequiredFields: boolean;
@@ -22,7 +22,7 @@ interface ProviderSetupConfigTabProps {
   onSave: () => void;
 }
 
-export function ProviderSetupConfigTab({
+export function ProviderSetupConfigForm({
   provider,
   configValues,
   hasRequiredFields,
@@ -35,35 +35,35 @@ export function ProviderSetupConfigTab({
   onFieldChange,
   onTest,
   onSave,
-}: ProviderSetupConfigTabProps) {
+}: ProviderSetupConfigFormProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Config</CardTitle>
-        <CardDescription>Configure the required fields for {provider.name}.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-8">
+      <SettingsSection
+        title="Configuration"
+        description="Credentials are encrypted and stored securely on this device."
+      >
         {Object.entries(provider.configFields).map(([key, field]) => {
           switch (field.type) {
             case "secret":
               return (
-                <Field key={key} className="max-w-xl">
-                  <FieldLabel htmlFor={`${provider.id}-${key}`}>{field.label}</FieldLabel>
+                <SettingsRow
+                  key={key}
+                  title={field.label}
+                  htmlFor={`${provider.id}-${key}`}
+                  description={field.description}
+                >
                   <Input
                     id={`${provider.id}-${key}`}
                     type="password"
                     autoComplete="off"
+                    className="max-w-md"
                     placeholder={field.placeholder}
                     value={typeof configValues[key] === "string" ? configValues[key] : ""}
                     onChange={(event) => {
                       onFieldChange(key, event.target.value);
                     }}
                   />
-                  <FieldDescription>
-                    {field.description}
-                    {" Your value is encrypted and stored securely on this device."}
-                  </FieldDescription>
-                </Field>
+                </SettingsRow>
               );
             case "host+port": {
               const hostPortValue = getHostPortInputValue(
@@ -73,9 +73,13 @@ export function ProviderSetupConfigTab({
               );
 
               return (
-                <Field key={key} className="max-w-xl">
-                  <FieldLabel>{field.label}</FieldLabel>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                <SettingsRow
+                  key={key}
+                  title={field.label}
+                  htmlFor={`${provider.id}-${key}-host`}
+                  description={field.description}
+                >
+                  <div className="grid max-w-md gap-3 sm:grid-cols-[1fr_8rem]">
                     <Input
                       id={`${provider.id}-${key}-host`}
                       type="text"
@@ -106,60 +110,67 @@ export function ProviderSetupConfigTab({
                       }}
                     />
                   </div>
-                  <FieldDescription>{field.description}</FieldDescription>
-                </Field>
+                </SettingsRow>
               );
             }
           }
         })}
+      </SettingsSection>
 
-        {!provider.supportsCredentialTest ? (
-          <Alert variant="default">
-            <AlertTitle>Credential test unavailable</AlertTitle>
-            <AlertDescription>
-              This provider does not expose a supported validation endpoint yet.
-            </AlertDescription>
-          </Alert>
-        ) : null}
+      {!provider.supportsCredentialTest ? (
+        <Alert variant="default">
+          <AlertTitle>Credential test unavailable</AlertTitle>
+          <AlertDescription>
+            This provider does not expose a supported validation endpoint yet.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-        {testError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Test request failed</AlertTitle>
-            <AlertDescription>{testError}</AlertDescription>
-          </Alert>
-        ) : null}
+      {testError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Test request failed</AlertTitle>
+          <AlertDescription>{testError}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {testResult ? (
-          <Alert variant={testResult.ok ? "default" : "destructive"}>
-            <AlertTitle>{testResult.ok ? "Credentials valid" : "Credentials rejected"}</AlertTitle>
-            <AlertDescription>{testResult.message}</AlertDescription>
-          </Alert>
-        ) : null}
+      {testResult ? (
+        <Alert variant={testResult.ok ? "default" : "destructive"}>
+          <AlertTitle>{testResult.ok ? "Credentials valid" : "Credentials rejected"}</AlertTitle>
+          <AlertDescription>{testResult.message}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {saveError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Failed to save provider</AlertTitle>
-            <AlertDescription>{saveError}</AlertDescription>
-          </Alert>
-        ) : null}
+      {saveError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Failed to save provider</AlertTitle>
+          <AlertDescription>{saveError}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" render={<Link to="/settings/providers/new" />}>
-            <span>Back</span>
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!canSubmitCredentialTest || isTestingCredentials || isSaving}
-            onClick={onTest}
-          >
-            <span>{isTestingCredentials ? "Testing..." : "Test"}</span>
-          </Button>
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="ghost" render={<Link to="/settings/providers/new" />}>
+          <span>Back</span>
+        </Button>
+        <div className="flex items-center gap-2">
+          {provider.supportsCredentialTest ? (
+            <Button
+              variant="outline"
+              disabled={!canSubmitCredentialTest || isTestingCredentials || isSaving}
+              onClick={onTest}
+            >
+              <span>{isTestingCredentials ? "Testing…" : "Test connection"}</span>
+            </Button>
+          ) : null}
           <Button disabled={!hasRequiredFields || isSaving} onClick={onSave}>
-            <span>{isSaving ? "Saving..." : "Save"}</span>
+            <span>{isSaving ? "Saving…" : "Save provider"}</span>
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        After saving, {provider.name} models sync in the background and appear on the provider page.
+      </p>
+    </div>
   );
 }
 

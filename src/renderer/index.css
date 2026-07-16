@@ -4,8 +4,10 @@
 @import "@fontsource-variable/outfit";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@heroui/styles";
 @plugin "@tailwindcss/typography";
+
+/* Dark-only app: index.html sets class="dark" on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
 @source "../../node_modules/streamdown/dist/*.js";
 
 /*
@@ -104,12 +106,31 @@
 }
 
 /*
- * Bridge for shadcn-style utilities (bg-card, text-muted-foreground,
- * bg-sidebar, …). Placed after @heroui/styles so overrides win.
- * Note: for shadcn utilities `accent` means hover-fill, `primary`
- * carries the brand — HeroUI components keep reading raw --accent.
+ * Tailwind theme: maps the Hanoki palette above onto utility tokens.
+ * shadcn semantics: `primary` carries the brand accent, `accent` is the
+ * hover-fill, `muted` stays a *foreground* gray (use bg-hover for fills).
  */
 @theme inline {
+  /* ── Neutrals & layering ── */
+  --color-background: var(--background);
+  --color-background-secondary: var(--background-secondary);
+  --color-background-tertiary: var(--background-tertiary);
+  --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-secondary-foreground: var(--surface-secondary-foreground);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-tertiary-foreground: var(--surface-tertiary-foreground);
+  --color-overlay: var(--overlay);
+  --color-overlay-foreground: var(--overlay-foreground);
+
+  --color-border: var(--border);
+  --color-separator: var(--separator);
+  --color-hover: var(--hover);
+
+  /* ── shadcn semantic tokens ── */
   --color-card: var(--surface);
   --color-card-foreground: var(--foreground);
   --color-popover: var(--overlay);
@@ -120,18 +141,27 @@
   --color-secondary: var(--default);
   --color-secondary-foreground: var(--foreground);
 
-  /* NB: --color-muted keeps HeroUI's meaning (a *foreground* gray).
-     shadcn components in components/ui use bg-hover for fills instead. */
+  --color-muted: var(--muted);
   --color-muted-foreground: var(--muted);
   --color-accent: var(--hover);
   --color-accent-foreground: var(--foreground);
-  --color-hover: var(--hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
+  --color-accent-soft-hover: var(--accent-soft-hover);
 
   --color-destructive: var(--danger);
   --color-destructive-foreground: var(--danger-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
 
   --color-input: var(--field-background);
   --color-ring: var(--focus);
+  --color-focus: var(--focus);
+  --color-link: var(--link);
 
   --color-sidebar: var(--background);
   --color-sidebar-foreground: var(--foreground);
@@ -142,139 +172,24 @@
   --color-sidebar-primary: var(--accent);
   --color-sidebar-primary-foreground: var(--accent-foreground);
 
+  /* ── Radius scale, derived from the compact --radius ── */
+  --radius-xs: calc(var(--radius) * 0.25);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+
   --font-heading: var(--font-heading);
 }
 
-/*
- * ── Hanoki tuning for HeroUI buttons ──
- * HeroUI ships tall rounded-3xl pills; Hanoki buttons are compact,
- * squared to --radius, and subtle — the accent appears as a soft
- * translucent fill, never a loud solid. Selectors mirror
- * @heroui/styles/dist/components/button(-group).css and live in the
- * same `components` layer, later in source order — so they win over
- * HeroUI while per-instance Tailwind utilities still win over them.
- */
-@layer components {
-  .button {
-    border-radius: calc(var(--radius) + 1px);
-    height: 1.75rem;
-    padding-inline: 0.625rem;
-    font-size: 0.8125rem;
-    gap: 0.375rem;
-  }
-
-  .button svg:not([data-slot="spinner"] svg, [data-slot="link-icon"] svg) {
-    width: 0.875rem;
-    height: 0.875rem;
-  }
-
-  .button--sm {
-    height: 1.5rem;
-    padding-inline: 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .button--lg {
-    height: 2rem;
-    font-size: 0.8125rem;
-  }
-
-  .button--icon-only {
-    width: 1.75rem;
-    padding: 0;
-  }
-
-  .button--icon-only.button--sm {
-    width: 1.5rem;
-  }
-
-  .button--icon-only.button--lg {
-    width: 2rem;
-  }
-
-  /* Primary: soft moss fill instead of a solid block */
-  .button--primary {
-    --button-bg: var(--accent-soft);
-    --button-bg-hover: var(--accent-soft-hover);
-    --button-bg-pressed: var(--accent-soft-hover);
-    --button-fg: var(--accent-soft-foreground);
-  }
-
-  /* Tertiary (message toolbars): quiet until hovered */
-  .button--tertiary {
-    --button-bg: transparent;
-    --button-bg-hover: var(--hover);
-    --button-bg-pressed: var(--hover);
-    --button-fg: var(--muted);
-  }
-
-  .button--ghost {
-    --button-bg-hover: var(--hover);
-    --button-bg-pressed: var(--hover);
-  }
-
-  /* Pressed scale reads as lag in a daily tool */
-  .button:active,
-  .button[data-pressed="true"] {
-    transform: none;
-  }
-
-  .button-group .button {
-    border-radius: 0;
-  }
-
-  .button-group--horizontal .button:first-child {
-    border-start-start-radius: calc(var(--radius) + 1px);
-    border-end-start-radius: calc(var(--radius) + 1px);
-  }
-
-  .button-group--horizontal .button:last-child {
-    border-start-end-radius: calc(var(--radius) + 1px);
-    border-end-end-radius: calc(var(--radius) + 1px);
-  }
-
-  .button-group--vertical .button:first-child {
-    border-start-start-radius: calc(var(--radius) + 1px);
-    border-start-end-radius: calc(var(--radius) + 1px);
-  }
-
-  .button-group--vertical .button:last-child {
-    border-end-start-radius: calc(var(--radius) + 1px);
-    border-end-end-radius: calc(var(--radius) + 1px);
-  }
-
-  .button-group--horizontal .button:first-child:last-child,
-  .button-group--vertical .button:first-child:last-child {
-    border-radius: calc(var(--radius) + 1px);
-  }
-
-  /* Overlays: HeroUI defaults to 24–32px corners; Hanoki menus are 8px */
-  .popover,
-  .dropdown__popover,
-  .select__popover,
-  .autocomplete__popover,
-  .combobox__popover {
-    border-radius: 0.5rem;
-  }
-
-  .tooltip {
-    border-radius: calc(var(--radius) + 1px);
-  }
-
-  .modal__dialog {
-    border-radius: 0.75rem;
-  }
-
-  .chip {
-    border-radius: var(--radius);
-  }
-
-  .card {
-    border-radius: 0.75rem;
-  }
-}
-
 @layer base {
+  /* shadcn/Tailwind v4 requirement: v4 preflight defaults border-color to
+     currentColor, which reads as white on this dark theme. */
+  * {
+    @apply border-border outline-ring/50;
+  }
+
   html,
   body,
   #root {

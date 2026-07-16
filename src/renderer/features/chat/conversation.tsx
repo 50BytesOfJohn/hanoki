@@ -11,9 +11,7 @@ import {
   useChatModelId,
   useChatEditingMessageId,
 } from "@/features/chat/chat-context";
-import { cn } from "@/lib/utils";
 
-import hanokiLogoUrl from "../../../../assets/logo.png";
 import { ChatMessage } from "./message";
 
 export function Conversation() {
@@ -31,20 +29,9 @@ export function Conversation() {
     continuingMessageId ?? (isBusy && lastMessage?.role === "assistant" ? lastMessage.id : null);
 
   return (
-    <div
-      className={cn(
-        "mx-auto flex min-h-0 w-full max-w-3xl flex-col gap-8 px-6",
-        messages.length === 0 ? "flex-1 items-center justify-center" : "pt-8",
-      )}
-    >
+    <div className="min-h-0 flex flex-col gap-8 w-full max-w-3xl mx-auto px-6 pt-8">
       {messages.length === 0 ? (
-        <img
-          src={hanokiLogoUrl}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          className="size-72 shrink-0 select-none"
-        />
+        <p className="text-sm text-muted-foreground">Send a message to start chatting.</p>
       ) : (
         messages.map((message) => (
           <ChatMessage

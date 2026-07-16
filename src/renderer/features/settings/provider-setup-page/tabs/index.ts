@@ -1,2 +1,1 @@
-export { ProviderSetupConfigTab } from "./config-tab";
-export { ProviderSetupModelsTab } from "./models-tab";
+export { ProviderSetupConfigForm } from "./config-tab";

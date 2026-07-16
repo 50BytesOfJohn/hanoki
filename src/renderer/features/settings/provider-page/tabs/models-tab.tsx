@@ -1,8 +1,32 @@
-import { FilterHorizontalIcon, MoreIcon } from "@hugeicons/core-free-icons";
+import {
+  Alert01Icon,
+  Cancel01Icon,
+  FilterHorizontalIcon,
+  MoreIcon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
-import { Alert, Button, Card, Dropdown, Label, SearchField, Spinner } from "@heroui/react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/menu";
+import { Spinner } from "@/components/ui/spinner";
 import { useSetProviderModelsEnabled, useUpdateProviderModel } from "@/mutations/models";
 import { listProviderModelsQueryOptions } from "@/queries/providers";
 import { ProviderModelsTable } from "./models/provider-models-table";
@@ -39,178 +63,163 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
   const areAllModelsDisabled = models.length > 0 && models.every((model) => !model.isEnabled);
   const isBatchMutating = setProviderModelsEnabledMutation.isPending;
   const isModelMutating = isBatchMutating || updateModelMutation.isPending;
-  const filterSelection = new Set([showEnabledOnly ? "enabled" : "all"]);
-  const disabledBatchActions = [
-    ...(isModelMutating || areAllModelsEnabled ? ["enable-all"] : []),
-    ...(isModelMutating || areAllModelsDisabled ? ["disable-all"] : []),
-  ];
 
   return (
-    <Card variant="secondary" className="flex min-h-0 flex-1 flex-col">
-      <Card.Content className="flex min-h-0 flex-1 flex-col">
-        {modelsQuery.isPending ? (
-          <Alert>
-            <Alert.Indicator>
-              <Spinner size="sm" />
-            </Alert.Indicator>
-            <Alert.Content>
-              <Alert.Title>Loading models...</Alert.Title>
-            </Alert.Content>
-          </Alert>
-        ) : modelsQuery.isError ? (
-          <Alert status="danger">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>Failed to load models</Alert.Title>
-              <Alert.Description>{getErrorMessage(modelsQuery.error)}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        ) : models.length === 0 ? (
-          <Alert>
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>No models found</Alert.Title>
-              <Alert.Description>This provider has no synced models yet.</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        ) : (
-          <div className="flex h-full min-h-0 flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <SearchField
+    <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border p-3">
+      {modelsQuery.isPending ? (
+        <Alert>
+          <Spinner />
+          <AlertTitle>Loading models...</AlertTitle>
+        </Alert>
+      ) : modelsQuery.isError ? (
+        <Alert variant="destructive">
+          <HugeiconsIcon icon={Alert01Icon} />
+          <AlertTitle>Failed to load models</AlertTitle>
+          <AlertDescription>{getErrorMessage(modelsQuery.error)}</AlertDescription>
+        </Alert>
+      ) : models.length === 0 ? (
+        <Alert>
+          <HugeiconsIcon icon={Alert01Icon} />
+          <AlertTitle>No models found</AlertTitle>
+          <AlertDescription>This provider has no synced models yet.</AlertDescription>
+        </Alert>
+      ) : (
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <InputGroup>
+              <InputGroupAddon>
+                <HugeiconsIcon icon={Search01Icon} />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
                 aria-label="Search provider models"
-                fullWidth
+                placeholder="Search models"
                 value={modelSearchQuery}
-                variant="secondary"
-                onChange={setModelSearchQuery}
-              >
-                <SearchField.Group>
-                  <SearchField.SearchIcon />
-                  <SearchField.Input placeholder="Search models" />
-                  <SearchField.ClearButton />
-                </SearchField.Group>
-              </SearchField>
-
-              <Dropdown>
-                <Button
-                  className="shrink-0"
-                  isIconOnly
-                  aria-label="Filter models"
-                  variant="tertiary"
-                >
-                  <HugeiconsIcon icon={FilterHorizontalIcon} />
-                </Button>
-                <Dropdown.Popover>
-                  <Dropdown.Menu
-                    selectedKeys={filterSelection}
-                    selectionMode="single"
-                    onAction={(key) => setShowEnabledOnly(key === "enabled")}
+                onChange={(event) => setModelSearchQuery(event.target.value)}
+              />
+              {modelSearchQuery ? (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    aria-label="Clear search"
+                    onClick={() => setModelSearchQuery("")}
                   >
-                    <Dropdown.Item id="all" textValue="All models">
-                      <Dropdown.ItemIndicator />
-                      <Label>All models</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="enabled" textValue="Enabled only">
-                      <Dropdown.ItemIndicator />
-                      <Label>Enabled only</Label>
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
+                    <HugeiconsIcon icon={Cancel01Icon} />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
 
-              <Dropdown>
-                <Button
-                  isIconOnly
-                  className="shrink-0"
-                  aria-label="Model batch actions"
-                  variant="tertiary"
-                  isPending={isBatchMutating}
-                  isDisabled={isModelMutating}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="shrink-0 text-muted-foreground"
+                    size="icon"
+                    aria-label="Filter models"
+                    variant="ghost"
+                  />
+                }
+              >
+                <HugeiconsIcon icon={FilterHorizontalIcon} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuRadioGroup
+                  value={showEnabledOnly ? "enabled" : "all"}
+                  onValueChange={(value) => setShowEnabledOnly(value === "enabled")}
                 >
-                  <HugeiconsIcon icon={MoreIcon} />
-                </Button>
-                <Dropdown.Popover>
-                  <Dropdown.Menu
-                    disabledKeys={disabledBatchActions}
-                    onAction={(key) => {
-                      if (key === "enable-all") {
-                        setProviderModelsEnabledMutation.mutate({
-                          providerId,
-                          isEnabled: true,
-                        });
-                        return;
-                      }
+                  <DropdownMenuRadioItem value="all">All models</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="enabled">Enabled only</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-                      if (key === "disable-all") {
-                        setProviderModelsEnabledMutation.mutate({
-                          providerId,
-                          isEnabled: false,
-                        });
-                      }
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="shrink-0 text-muted-foreground"
+                    size="icon"
+                    aria-label="Model batch actions"
+                    variant="ghost"
+                    disabled={isModelMutating}
+                  />
+                }
+              >
+                {isBatchMutating ? <Spinner /> : <HugeiconsIcon icon={MoreIcon} />}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    disabled={isModelMutating || areAllModelsEnabled}
+                    onClick={() => {
+                      setProviderModelsEnabledMutation.mutate({
+                        providerId,
+                        isEnabled: true,
+                      });
                     }}
                   >
-                    <Dropdown.Item id="enable-all" textValue="Enable all">
-                      <Label>Enable all</Label>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="disable-all" textValue="Disable all">
-                      <Label>Disable all</Label>
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
-              {isBatchMutating ? <Spinner size="sm" /> : null}
-            </div>
-
-            {updateModelMutation.isError ? (
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>Failed to update model</Alert.Title>
-                  <Alert.Description>
-                    {getErrorMessage(updateModelMutation.error)}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : null}
-
-            {setProviderModelsEnabledMutation.isError ? (
-              <Alert status="danger">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>Failed to update provider models</Alert.Title>
-                  <Alert.Description>
-                    {getErrorMessage(setProviderModelsEnabledMutation.error)}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : null}
-
-            {filteredModels.length === 0 ? (
-              <Alert>
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>No matching models</Alert.Title>
-                  <Alert.Description>
-                    Try a different search term or disable the enabled-only filter.
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            ) : (
-              <ProviderModelsTable
-                models={filteredModels}
-                areSwitchesDisabled={isModelMutating}
-                onModelEnabledChange={(modelId, isEnabled) => {
-                  updateModelMutation.mutate({
-                    providerId,
-                    modelId,
-                    input: { isEnabled },
-                  });
-                }}
-              />
-            )}
+                    Enable all
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isModelMutating || areAllModelsDisabled}
+                    onClick={() => {
+                      setProviderModelsEnabledMutation.mutate({
+                        providerId,
+                        isEnabled: false,
+                      });
+                    }}
+                  >
+                    Disable all
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {isBatchMutating ? <Spinner /> : null}
           </div>
-        )}
-      </Card.Content>
-    </Card>
+
+          {updateModelMutation.isError ? (
+            <Alert variant="destructive">
+              <HugeiconsIcon icon={Alert01Icon} />
+              <AlertTitle>Failed to update model</AlertTitle>
+              <AlertDescription>{getErrorMessage(updateModelMutation.error)}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          {setProviderModelsEnabledMutation.isError ? (
+            <Alert variant="destructive">
+              <HugeiconsIcon icon={Alert01Icon} />
+              <AlertTitle>Failed to update provider models</AlertTitle>
+              <AlertDescription>
+                {getErrorMessage(setProviderModelsEnabledMutation.error)}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {filteredModels.length === 0 ? (
+            <Alert>
+              <HugeiconsIcon icon={Alert01Icon} />
+              <AlertTitle>No matching models</AlertTitle>
+              <AlertDescription>
+                Try a different search term or disable the enabled-only filter.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <ProviderModelsTable
+              models={filteredModels}
+              areSwitchesDisabled={isModelMutating}
+              onModelEnabledChange={(modelId, isEnabled) => {
+                updateModelMutation.mutate({
+                  providerId,
+                  modelId,
+                  input: { isEnabled },
+                });
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

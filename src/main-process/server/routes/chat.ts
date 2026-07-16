@@ -147,6 +147,7 @@ export function createChatRoute() {
     return result.toUIMessageStreamResponse({
       consumeSseStream: consumeStream,
       originalMessages: messages,
+      sendReasoning: true,
 
       generateMessageId:
         mode === "continue-message" && continuationTargetMessage
@@ -168,7 +169,7 @@ export function createChatRoute() {
         }
         return undefined;
       },
-      onFinish: ({ responseMessage }) => {
+      onEnd: ({ responseMessage }) => {
         if (responseMessage.role !== "assistant") {
           return;
         }

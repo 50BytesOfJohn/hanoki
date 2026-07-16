@@ -32,4 +32,12 @@ export interface AppConfig {
       submitBehavior: ChatFormSubmitBehavior;
     };
   };
+  sumi: {
+    promptActions: {
+      initialized: boolean;
+      enabled: boolean;
+      providerId?: string;
+      providerModelId?: string;
+    };
+  };
 }

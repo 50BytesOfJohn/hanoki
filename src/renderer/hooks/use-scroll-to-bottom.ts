@@ -23,12 +23,10 @@ function isContainerAtBottom(container: HTMLDivElement): boolean {
 
 function captureScrollPosition(container: HTMLDivElement): ChatScrollPosition {
   const containerRect = container.getBoundingClientRect();
-  const anchor = getMessageElements(container).find(
-    (message) => {
-      const rect = message.getBoundingClientRect();
-      return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
-    },
-  );
+  const anchor = getMessageElements(container).find((message) => {
+    const rect = message.getBoundingClientRect();
+    return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+  });
 
   return {
     anchorMessageId: anchor?.dataset.chatMessageId ?? null,
@@ -40,10 +38,7 @@ function captureScrollPosition(container: HTMLDivElement): ChatScrollPosition {
   };
 }
 
-function restoreScrollPosition(
-  container: HTMLDivElement,
-  position: ChatScrollPosition,
-): boolean {
+function restoreScrollPosition(container: HTMLDivElement, position: ChatScrollPosition): boolean {
   const messages = getMessageElements(container);
   const anchor = position.anchorMessageId
     ? messages.find((message) => message.dataset.chatMessageId === position.anchorMessageId)
@@ -68,7 +63,10 @@ function restoreScrollPosition(
  * The saved position uses a visible message as an anchor so delayed rendering
  * and messages prepended by future infinite loading do not shift the viewport.
  */
-export function useScrollToBottom(chatId: string, isStreaming: boolean): {
+export function useScrollToBottom(
+  chatId: string,
+  isStreaming: boolean,
+): {
   containerRef: React.RefObject<HTMLDivElement | null>;
   anchorRef: React.RefObject<HTMLDivElement | null>;
   scrollToBottom: () => void;

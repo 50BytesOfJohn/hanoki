@@ -7,7 +7,7 @@ import {
   ArrowUp03Icon,
   Chatting01Icon,
   PinIcon,
-  Setting07Icon,
+  SlidersHorizontalIcon,
   WorkflowSquare03Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -58,7 +58,7 @@ const CHAT_VIEWS = [
   { to: "/chat", label: "Conversation", icon: Chatting01Icon, exact: true },
   { to: "/chat/graph", label: "Graph", icon: WorkflowSquare03Icon },
   { to: "/chat/pinned-branches", label: "Pinned branches", icon: PinIcon },
-  { to: "/chat/settings", label: "Chat settings", icon: Setting07Icon },
+  { to: "/chat/settings", label: "Chat settings", icon: SlidersHorizontalIcon },
 ] as const;
 
 function ChatPanelHeader() {
