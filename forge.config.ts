@@ -3,8 +3,8 @@ import { access, rename } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ForgeConfig, ForgeMakeResult } from "@electron-forge/shared-types";
+import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
-import { MakerZIP } from "@electron-forge/maker-zip";
 import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { VitePlugin } from "@electron-forge/plugin-vite";
@@ -209,7 +209,14 @@ const config: ForgeConfig = {
     new MakerSquirrel({
       setupIcon: WINDOWS_ICON_PATH,
     }),
-    new MakerZIP({}, ["darwin"]),
+    new MakerDMG(
+      {
+        icon: MACOS_LEGACY_ICON_PATH,
+        iconSize: 96,
+        title: `Install ${APP_NAME}`,
+      },
+      ["darwin"],
+    ),
     new MakerRpm({
       options: {
         homepage: APP_WEBSITE,
