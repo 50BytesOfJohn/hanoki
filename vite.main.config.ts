@@ -14,6 +14,9 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "src/shared"),
     },
   },
+  ssr: {
+    noExternal: true,
+  },
   build: {
     ssr: true,
     rolldownOptions: {

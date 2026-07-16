@@ -1,4 +1,4 @@
-import { execFile as execFileCallback } from "node:child_process";
+import { execFile as execFileCallback, execFileSync } from "node:child_process";
 import { access, rename } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -16,6 +16,8 @@ const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = "com.hanoki.app";
 const APP_WEBSITE = "https://hanoki.app";
 const ICON_BASE_PATH = path.resolve(__dirname, "assets/icons/icon");
+const MACOS_LEGACY_ICON_PATH = `${ICON_BASE_PATH}.icns`;
+const MACOS_ICON_COMPOSER_PATH = path.resolve(__dirname, "assets/icons/icon-composer.icon");
 const WINDOWS_ICON_PATH = `${ICON_BASE_PATH}.ico`;
 const LINUX_ICON_PATH = `${ICON_BASE_PATH}.png`;
 const APPLE_CODESIGN_IDENTITY = process.env.APPLE_CODESIGN_IDENTITY;
@@ -33,6 +35,34 @@ const hasMacDeveloperSigningIdentity = Boolean(APPLE_CODESIGN_IDENTITY);
 const shouldNotarizeMacApp =
   hasMacDeveloperSigningIdentity &&
   Boolean(APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID);
+
+const findActoolPath = () => {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  try {
+    return execFileSync("xcrun", ["--find", "actool"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+};
+
+const actoolPath = findActoolPath();
+
+if (actoolPath) {
+  process.env.PATH = `${path.dirname(actoolPath)}:${process.env.PATH ?? ""}`;
+}
+
+const packagerIcon =
+  process.platform === "darwin"
+    ? actoolPath
+      ? [MACOS_LEGACY_ICON_PATH, MACOS_ICON_COMPOSER_PATH]
+      : MACOS_LEGACY_ICON_PATH
+    : ICON_BASE_PATH;
 
 const macPackagerConfig = hasMacDeveloperSigningIdentity
   ? {
@@ -128,7 +158,7 @@ const config: ForgeConfig = {
     appCategoryType: "public.app-category.productivity",
     extraResource: ["src/main-process/db/migrations"],
     executableName: APP_NAME,
-    icon: ICON_BASE_PATH,
+    icon: packagerIcon,
     name: APP_NAME,
     ...macPackagerConfig,
     win32metadata: {

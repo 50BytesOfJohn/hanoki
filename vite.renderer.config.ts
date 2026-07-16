@@ -5,7 +5,7 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  root: "src/renderer",
+  root: path.resolve(__dirname, "src/renderer"),
   plugins: [
     TanStackRouterVite({
       target: "react",
@@ -22,6 +22,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src/renderer"),
       "@shared": path.resolve(__dirname, "src/shared"),
     },
+  },
+  build: {
+    emptyOutDir: true,
+    outDir: path.resolve(__dirname, ".vite/renderer/main_window"),
   },
   server: {
     port: 5173,

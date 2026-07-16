@@ -24,6 +24,7 @@ function getMainWindowIconPath(): string | undefined {
 
 export function createMainWindow(options: CreateMainWindowOptions): BrowserWindow {
   const isMac = process.platform === "darwin";
+  const windowIconPath = getMainWindowIconPath();
   const windowState = createPersistentWindowState({
     windowId: "main",
     defaultSize: {
@@ -34,7 +35,7 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
 
   const mainWindow = new BrowserWindow({
     ...windowState.browserWindowOptions,
-    icon: getMainWindowIconPath(),
+    ...(windowIconPath ? { icon: windowIconPath } : {}),
     ...(isMac
       ? {
           titleBarStyle: "hiddenInset" as const,

@@ -51,7 +51,7 @@ jobs:
             artifact_name: linux-binaries
           - os: windows-2022
             artifact_name: windows-binaries
-          - os: macos-15
+          - os: macos-26
             artifact_name: macos-binaries
     runs-on: ${{ matrix.os }}
     steps:
