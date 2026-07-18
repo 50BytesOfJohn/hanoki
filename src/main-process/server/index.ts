@@ -16,6 +16,10 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
   const app = new Hono();
 
   app.use("*", cors({ origin: "*" }));
+  app.onError((error, c) => {
+    console.error(`[ai-server] ${c.req.method} ${c.req.path} failed.`, error);
+    return c.json({ error: "Internal server error" }, 500);
+  });
   app.route("/", createChatRoute({ onChatTitleUpdated: options?.onChatTitleUpdated }));
   app.route("/", createSumiRoute({ onChatTitleUpdated: options?.onChatTitleUpdated }));
 

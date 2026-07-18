@@ -15,36 +15,77 @@ const providerAdapters: Partial<Record<ProviderId, ProviderMetadataAdapter>> = {
 };
 
 /**
- * Build response metadata from AI SDK usage data merged with any provider-specific extras.
- * First populates fields from LanguageModelUsage, then merges the provider adapter's result
- * which may add or override fields for provider-specific data not covered by the AI SDK.
+ * Build response metadata from known request details and any available AI SDK usage data.
  */
 export function buildResponseMetadata(
-  usage: LanguageModelUsage,
+  usage: LanguageModelUsage | undefined,
   providerId: ProviderId,
   model: ModelTableRow,
   generationTimeMs: number,
-  finishReason: string,
+  finishReason?: string,
 ): Omit<ChatMessageMetadata, "parentId"> {
-  const providerExtras = providerAdapters[providerId]?.(usage) ?? {};
-  const cost = calculateUsageCost(model.metadata, usage);
+  const providerExtras = usage ? (providerAdapters[providerId]?.(usage) ?? {}) : {};
+  const cost = usage ? calculateUsageCost(model.metadata, usage) : undefined;
 
   return {
-    usage,
-    tokens: {
-      input: usage.inputTokens,
-      output: usage.outputTokens,
-      total: usage.totalTokens,
-      cached: usage.inputTokenDetails?.cacheReadTokens,
-      cacheWrite: usage.inputTokenDetails?.cacheWriteTokens,
-      reasoning: usage.outputTokenDetails?.reasoningTokens,
-    },
+    ...(usage
+      ? {
+          usage,
+          tokens: {
+            input: usage.inputTokens,
+            output: usage.outputTokens,
+            total: usage.totalTokens,
+            cached: usage.inputTokenDetails?.cacheReadTokens,
+            cacheWrite: usage.inputTokenDetails?.cacheWriteTokens,
+            reasoning: usage.outputTokenDetails?.reasoningTokens,
+          },
+        }
+      : {}),
     ...(cost ? { cost } : {}),
     times: { generation: generationTimeMs },
     provider: providerId,
     model: model.id,
-    finishReason,
+    ...(finishReason ? { finishReason } : {}),
     ...providerExtras,
+  };
+}
+
+export function mergeLanguageModelUsage(
+  current: LanguageModelUsage | undefined,
+  next: LanguageModelUsage,
+): LanguageModelUsage {
+  if (!current) {
+    return next;
+  }
+
+  return {
+    inputTokens: addTokenCounts(current.inputTokens, next.inputTokens),
+    inputTokenDetails: {
+      noCacheTokens: addTokenCounts(
+        current.inputTokenDetails.noCacheTokens,
+        next.inputTokenDetails.noCacheTokens,
+      ),
+      cacheReadTokens: addTokenCounts(
+        current.inputTokenDetails.cacheReadTokens,
+        next.inputTokenDetails.cacheReadTokens,
+      ),
+      cacheWriteTokens: addTokenCounts(
+        current.inputTokenDetails.cacheWriteTokens,
+        next.inputTokenDetails.cacheWriteTokens,
+      ),
+    },
+    outputTokens: addTokenCounts(current.outputTokens, next.outputTokens),
+    outputTokenDetails: {
+      textTokens: addTokenCounts(
+        current.outputTokenDetails.textTokens,
+        next.outputTokenDetails.textTokens,
+      ),
+      reasoningTokens: addTokenCounts(
+        current.outputTokenDetails.reasoningTokens,
+        next.outputTokenDetails.reasoningTokens,
+      ),
+    },
+    totalTokens: addTokenCounts(current.totalTokens, next.totalTokens),
   };
 }
 
@@ -116,4 +157,12 @@ function addCosts(...values: Array<number | undefined>) {
   }
 
   return knownValues.reduce((sum, value) => sum + value, 0);
+}
+
+function addTokenCounts(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+
+  return (left ?? 0) + (right ?? 0);
 }

@@ -1,6 +1,15 @@
 import * as React from "react";
 import { getToolName, isToolUIPart, type DynamicToolUIPart, type ToolUIPart } from "ai";
-import { AlertCircleIcon, GlobalSearchIcon, Globe02Icon } from "@hugeicons/core-free-icons";
+import {
+  AlertCircleIcon,
+  Database02Icon,
+  DatabaseSearchIcon,
+  Edit02Icon,
+  FolderAddIcon,
+  FolderTransferIcon,
+  GlobalSearchIcon,
+  Globe02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
@@ -12,7 +21,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
+import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
+import { queryKeys } from "@/queries/keys";
 
 export { isToolUIPart };
 
@@ -33,6 +44,12 @@ function getStringField(input: unknown, field: string): string | null {
 
   const value = (input as Record<string, unknown>)[field];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getArrayLength(input: unknown, field: string): number {
+  if (typeof input !== "object" || input === null) return 0;
+  const value = (input as Record<string, unknown>)[field];
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function getHostname(url: string | null): string | null {
@@ -178,6 +195,76 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Web fetch failed",
     Details: WebFetchDetails,
   },
+  hanokiBrowseItems: {
+    icon: Database02Icon,
+    pendingLabel: () => "Browsing Hanoki…",
+    doneLabel: () => "Browsed Hanoki",
+    errorLabel: "Hanoki browse failed",
+    Details: GenericToolDetails,
+  },
+  hanokiSearchChats: {
+    icon: DatabaseSearchIcon,
+    pendingLabel: (input) => {
+      const query = getStringField(input, "query");
+      return query ? `Searching Hanoki for “${query}”…` : "Searching Hanoki…";
+    },
+    doneLabel: (input) => {
+      const query = getStringField(input, "query");
+      return query ? `Searched Hanoki for “${query}”` : "Searched Hanoki";
+    },
+    errorLabel: "Hanoki search failed",
+    Details: GenericToolDetails,
+  },
+  hanokiGetChatContent: {
+    icon: Database02Icon,
+    pendingLabel: () => "Reading a Hanoki chat…",
+    doneLabel: () => "Read a Hanoki chat",
+    errorLabel: "Reading Hanoki chat failed",
+    Details: GenericToolDetails,
+  },
+  hanokiCreateFolder: {
+    icon: FolderAddIcon,
+    pendingLabel: (input) => {
+      const name = getStringField(input, "name");
+      return name ? `Creating folder “${name}”…` : "Creating a Hanoki folder…";
+    },
+    doneLabel: (input) => {
+      const name = getStringField(input, "name");
+      return name ? `Created folder “${name}”` : "Created a Hanoki folder";
+    },
+    errorLabel: "Creating Hanoki folder failed",
+    Details: GenericToolDetails,
+  },
+  hanokiMoveItems: {
+    icon: FolderTransferIcon,
+    pendingLabel: (input) => {
+      const count = getArrayLength(input, "items");
+      return count > 0
+        ? `Moving ${count} Hanoki ${count === 1 ? "item" : "items"}…`
+        : "Moving Hanoki items…";
+    },
+    doneLabel: (input) => {
+      const count = getArrayLength(input, "items");
+      return count > 0
+        ? `Organized ${count} Hanoki ${count === 1 ? "item" : "items"}`
+        : "Organized Hanoki items";
+    },
+    errorLabel: "Moving Hanoki items failed",
+    Details: GenericToolDetails,
+  },
+  hanokiRenameItem: {
+    icon: Edit02Icon,
+    pendingLabel: (input) => {
+      const name = getStringField(input, "newName");
+      return name ? `Renaming to “${name}”…` : "Renaming Hanoki item…";
+    },
+    doneLabel: (input) => {
+      const name = getStringField(input, "newName");
+      return name ? `Renamed to “${name}”` : "Renamed Hanoki item";
+    },
+    errorLabel: "Renaming Hanoki item failed",
+    Details: GenericToolDetails,
+  },
 };
 
 function getToolConfig(toolName: string): ToolMarkerConfig {
@@ -199,6 +286,23 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
 }) {
   const toolName = part.type === "dynamic-tool" ? part.toolName : getToolName(part);
   const config = getToolConfig(toolName);
+
+  React.useEffect(() => {
+    if (
+      part.state !== "output-available" ||
+      (toolName !== "hanokiCreateFolder" &&
+        toolName !== "hanokiMoveItems" &&
+        toolName !== "hanokiRenameItem")
+    ) {
+      return;
+    }
+
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.chats.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.folders.all }),
+    ]);
+  }, [part.state, part.toolCallId, toolName]);
 
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (

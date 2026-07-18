@@ -32,7 +32,8 @@
     "fmt:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ."
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.15",
@@ -64,6 +65,18 @@
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-virtual": "^3.14.6",
+    "@tiptap/core": "3.28.0",
+    "@tiptap/extension-document": "3.28.0",
+    "@tiptap/extension-hard-break": "3.28.0",
+    "@tiptap/extension-mention": "3.28.0",
+    "@tiptap/extension-paragraph": "3.28.0",
+    "@tiptap/extension-text": "3.28.0",
+    "@tiptap/markdown": "3.28.0",
+    "@tiptap/pm": "3.28.0",
+    "@tiptap/react": "3.28.0",
+    "@tiptap/starter-kit": "3.28.0",
+    "@tiptap/static-renderer": "3.28.0",
+    "@tiptap/suggestion": "3.28.0",
     "@xyflow/react": "^12.11.2",
     "ai": "^7.0.28",
     "ai-sdk-ollama": "^4.0.0",
@@ -115,7 +128,8 @@
     "shadcn": "^4.13.0",
     "tailwindcss": "^4.3.2",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4"
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=22"

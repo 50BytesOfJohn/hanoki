@@ -216,6 +216,22 @@
   color: var(--foreground);
 }
 
+.tiptap-tool-mention {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.35rem;
+  background: var(--accent-soft);
+  color: var(--accent-soft-foreground);
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 0.05rem 0.3rem;
+  white-space: nowrap;
+}
+
+.ProseMirror-selectednode.tiptap-tool-mention {
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
 @layer utilities {
   .scrollbar {
     scrollbar-color: color-mix(in oklch, var(--scrollbar) 55%, transparent) transparent;

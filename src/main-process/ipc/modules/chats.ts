@@ -66,7 +66,7 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
   }
 
   const inputRecord = rawInput as Record<string, unknown>;
-  const allowedKeys = new Set(["modelId", "systemPrompt", "webEnabled"]);
+  const allowedKeys = new Set(["modelId", "systemPrompt", "webEnabled", "hanokiEnabled"]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
       throw AppError.badRequest(`Unsupported chat settings update field "${key}".`);
@@ -100,6 +100,14 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     parsedInput.webEnabled = inputRecord.webEnabled;
+  }
+
+  if (inputRecord.hanokiEnabled !== undefined) {
+    if (typeof inputRecord.hanokiEnabled !== "boolean") {
+      throw AppError.badRequest("hanokiEnabled must be a boolean.");
+    }
+
+    parsedInput.hanokiEnabled = inputRecord.hanokiEnabled;
   }
 
   return [chatId, parsedInput];

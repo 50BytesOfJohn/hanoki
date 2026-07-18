@@ -1,5 +1,12 @@
 import { Hono } from "hono";
-import { consumeStream, convertToModelMessages, isStepCount, smoothStream, streamText } from "ai";
+import {
+  consumeStream,
+  convertToModelMessages,
+  isStepCount,
+  smoothStream,
+  ToolLoopAgent,
+  type LanguageModelUsage,
+} from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
 import type { ChatTitleUpdatedEvent } from "@shared/events";
 import {
@@ -18,11 +25,22 @@ import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
-import { buildResponseMetadata } from "../providers/metadata-extractor";
+import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings } from "../../services/settings-service";
 import { generateSumiChatTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
+import { createHanokiTools, HANOKI_TOOL_NAMES } from "../assistant/hanoki-tools";
+import {
+  isHanokiToolEnabledForRequest,
+  isWebToolEnabledForRequest,
+  parseTiptapDocument,
+  validateTiptapMessageParts,
+} from "@shared/tiptap/document";
+import {
+  getTiptapMessageDisplayText,
+  normalizeAssistantTiptapParts,
+} from "@shared/tiptap/extensions";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -43,6 +61,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const targetMessageId =
       typeof body.targetMessageId === "string" ? body.targetMessageId : undefined;
     const parsedChatId = parseChatId(requestChatId);
+
+    for (const message of messages) {
+      const error = validateTiptapMessageParts(message);
+      if (error) {
+        return c.json({ error }, 400);
+      }
+    }
 
     if (!modelId) {
       return c.json({ error: "modelId is required" }, 400);
@@ -75,7 +100,12 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         providerRuntime,
         providerModelId: model.providerModelId,
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        "[ai] Model initialization failed.",
+        { chatId: chat.id, modelId: model.id, providerId: provider.id },
+        error,
+      );
       return c.json({ error: "Model not found or not enabled" }, 400);
     }
 
@@ -150,6 +180,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     const startTime = Date.now();
     let capturedResponseMetadata: Omit<ChatMessageMetadata, "parentId"> | undefined;
+    let completedStepUsage: LanguageModelUsage | undefined;
     const modelInputMessages =
       mode === "continue-message"
         ? [
@@ -164,21 +195,115 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             } satisfies HanokiUiMessage,
           ]
         : messages;
-
-    const result = streamText({
-      abortSignal: c.req.raw.signal,
+    const latestUserMessage = findLatestUserMessage(messages);
+    const isWebEnabledForRequest = isWebToolEnabledForRequest(
+      Boolean(chat.settings.webEnabled),
+      latestUserMessage,
+    );
+    const isHanokiEnabledForRequest = isHanokiToolEnabledForRequest(
+      Boolean(chat.settings.hanokiEnabled),
+      latestUserMessage,
+    );
+    const tools = { ...webTools, ...createHanokiTools(chat.workspaceId) };
+    const activeTools: (keyof typeof tools)[] = [];
+    if (isWebEnabledForRequest) activeTools.push("webSearch", "webFetch");
+    if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
+    let currentCallId: string | null = null;
+    const loggedErrors = new WeakSet<object>();
+    const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
+      if (typeof error === "object" && error !== null) {
+        if (loggedErrors.has(error)) return;
+        loggedErrors.add(error);
+      }
+      console.error(message, { chatId: chat.id, ...details }, error);
+    };
+    const agent = new ToolLoopAgent({
       model: languageModel,
-      experimental_transform: smoothStream({ chunking: "line" }),
       instructions: chat.settings.systemPrompt?.trim() || undefined,
-      messages: await convertToModelMessages(modelInputMessages),
-      tools: chat.settings.webEnabled ? webTools : undefined,
-      stopWhen: chat.settings.webEnabled ? isStepCount(5) : undefined,
+      tools,
+      activeTools,
+      stopWhen: isStepCount(100),
+      onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
+        currentCallId = startedCallId;
+        console.info("[ai] Request started.", {
+          callId: currentCallId,
+          chatId: chat.id,
+          workspaceId: chat.workspaceId,
+          provider: sdkProvider,
+          modelId: sdkModelId,
+          activeTools,
+        });
+      },
+      onToolExecutionStart: ({ callId: generationCallId, toolCall }) => {
+        console.info("[ai] Tool started.", {
+          callId: generationCallId,
+          chatId: chat.id,
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          input: toolCall.input,
+        });
+      },
+      onToolExecutionEnd: ({ callId: generationCallId, toolCall, toolExecutionMs, toolOutput }) => {
+        const details = {
+          callId: generationCallId,
+          toolCallId: toolCall.toolCallId,
+          toolName: toolCall.toolName,
+          durationMs: toolExecutionMs,
+        };
+        if (toolOutput.type === "tool-error") {
+          logError("[ai] Tool failed.", details, toolOutput.error);
+          return;
+        }
+        console.info("[ai] Tool completed.", { chatId: chat.id, ...details });
+      },
+      onStepEnd: ({ usage }) => {
+        completedStepUsage = mergeLanguageModelUsage(completedStepUsage, usage);
+      },
+      onEnd: ({ callId: endedCallId, stepNumber, finishReason, usage, warnings }) => {
+        console.info("[ai] Request completed.", {
+          callId: endedCallId,
+          chatId: chat.id,
+          steps: stepNumber + 1,
+          finishReason,
+          durationMs: Date.now() - startTime,
+          totalTokens: usage.totalTokens,
+          warningCount: warnings?.length ?? 0,
+        });
+      },
+    });
+
+    const result = await agent.stream({
+      abortSignal: c.req.raw.signal,
+      experimental_transform: smoothStream({ chunking: "line" }),
+      messages: await convertToModelMessages<HanokiUiMessage>(modelInputMessages, {
+        convertDataPart: (part) => {
+          if (part.type !== "data-tiptap") {
+            return undefined;
+          }
+          const parsed = parseTiptapDocument(part.data);
+          if (!parsed.ok) {
+            throw new Error(parsed.error);
+          }
+          return { type: "text", text: parsed.value.modelText };
+        },
+      }),
     });
 
     return result.toUIMessageStreamResponse({
       consumeSseStream: consumeStream,
       originalMessages: messages,
       sendReasoning: true,
+      onError: (error) => {
+        capturedResponseMetadata = buildResponseMetadata(
+          completedStepUsage,
+          provider.catalogId as ProviderId,
+          model,
+          Date.now() - startTime,
+          "error",
+        );
+        logError("[ai] Response stream failed.", { callId: currentCallId }, error);
+        return "An error occurred.";
+      },
 
       generateMessageId:
         mode === "continue-message" && continuationTargetMessage
@@ -186,7 +311,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           : createUuidV7,
       messageMetadata: ({ part }) => {
         if (part.type === "start") {
-          return { parentId: responseParentId };
+          capturedResponseMetadata = {
+            provider: provider.catalogId,
+            model: model.id,
+          };
+          return { parentId: responseParentId, ...capturedResponseMetadata };
         }
         if (part.type === "finish") {
           capturedResponseMetadata = buildResponseMetadata(
@@ -200,7 +329,17 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         }
         return undefined;
       },
-      onEnd: ({ responseMessage }) => {
+      onEnd: ({ isAborted, responseMessage }) => {
+        if (isAborted) {
+          capturedResponseMetadata = buildResponseMetadata(
+            completedStepUsage,
+            provider.catalogId as ProviderId,
+            model,
+            Date.now() - startTime,
+            "abort",
+          );
+        }
+
         if (responseMessage.role !== "assistant") {
           return;
         }
@@ -209,10 +348,12 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           return;
         }
 
+        const normalizedResponseParts = normalizeAssistantTiptapParts(responseMessage.parts);
+
         if (mode === "continue-message" && continuationTargetMessage) {
           const mergedParts = mergeContinuationParts(
             continuationTargetMessage.parts as HanokiUiMessage["parts"],
-            responseMessage.parts,
+            normalizedResponseParts,
           );
 
           upsertMessage({
@@ -246,7 +387,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           chatId: chat.id,
           parentId,
           role: "assistant",
-          parts: responseMessage.parts,
+          parts: normalizedResponseParts,
           metadata: { parentId, ...capturedResponseMetadata },
         });
 
@@ -263,16 +404,19 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 }
 
 function extractUiMessageText(message: HanokiUiMessage): string | null {
-  const text = message.parts
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        part.type === "text" && typeof part.text === "string",
-    )
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
+  const text = getTiptapMessageDisplayText(message).trim();
 
   return text || null;
+}
+
+function findLatestUserMessage(messages: HanokiUiMessage[]): HanokiUiMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 function mergeContinuationParts(

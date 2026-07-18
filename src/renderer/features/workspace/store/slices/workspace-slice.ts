@@ -1,6 +1,7 @@
 import { syncWorkspaceSettingsStateToSqlite } from "../storage/sqlite-storage";
 import type { WorkspaceSlice, WorkspaceSliceCreator } from "../types";
 import { workspaceApi } from "@/api/workspaces";
+import { parseTiptapDocument } from "@shared/tiptap/document";
 
 export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set) => ({
   state: "idle",
@@ -18,7 +19,8 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
 
   setChatDraft: (chatId, draft) => {
     set((state) => {
-      if (draft.trim()) {
+      const parsed = parseTiptapDocument(draft);
+      if (parsed.ok && parsed.value.displayText.trim()) {
         state.chatDrafts[chatId] = draft;
       } else {
         delete state.chatDrafts[chatId];

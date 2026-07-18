@@ -1,5 +1,7 @@
 import { generateText } from "ai";
 import { CHAT_TITLE_MAX_LENGTH, parseChatTitle } from "@shared/chat/chat-title";
+import type { HanokiUiMessage } from "@shared/chat/message-metadata";
+import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import type { ChatTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
 import { getChatById, updateChatTitle } from "../../chat-tree/repository";
@@ -119,16 +121,10 @@ function buildChatTitleSource(messages: MessageRow[]): string | null {
 }
 
 function extractMessageText(message: MessageRow): string {
-  return message.parts
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        typeof part === "object" &&
-        part !== null &&
-        (part as Record<string, unknown>).type === "text" &&
-        typeof (part as Record<string, unknown>).text === "string",
-    )
-    .map((part) => part.text)
-    .join("\n");
+  return getTiptapMessageDisplayText({
+    parts: message.parts as HanokiUiMessage["parts"],
+    role: message.role,
+  });
 }
 
 function normalizeGeneratedChatTitle(input: string): string {

@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import { chatMessageMetadataSchema, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
+import { normalizeAssistantTiptapParts } from "@shared/tiptap/extensions";
 
 interface ChatStoreState {
   chatEntries: Map<string, Chat<HanokiUiMessage>>;
@@ -28,11 +29,22 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     const existing = get().chatEntries.get(chatId);
     if (existing) return existing;
 
-    const chat = new Chat<HanokiUiMessage>({
+    let chat: Chat<HanokiUiMessage>;
+    chat = new Chat<HanokiUiMessage>({
       id: chatId,
       generateId: createUuidV7,
       transport: createChatTransport(apiUrl, chatId),
       messageMetadataSchema: chatMessageMetadataSchema,
+      onFinish: ({ message, messages }) => {
+        if (message.role !== "assistant") {
+          return;
+        }
+        chat.messages = messages.map((candidate) =>
+          candidate.id === message.id
+            ? { ...candidate, parts: normalizeAssistantTiptapParts(candidate.parts) }
+            : candidate,
+        );
+      },
     });
 
     set((state) => {

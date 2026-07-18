@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
-import { chats, folders } from "../db/schema";
+import { chats, folders, messages } from "../db/schema";
 import { getWorkspaceById } from "../workspaces/repository";
 import { listAllMessagesByChatId, upsertMessage } from "../messages/repository";
 
@@ -12,6 +12,7 @@ type ChatSettings = {
   modelId?: string | null;
   systemPrompt?: string | null;
   webEnabled?: boolean;
+  hanokiEnabled?: boolean;
 };
 type ChatSettingsPatch = Partial<ChatSettings>;
 
@@ -74,6 +75,13 @@ export interface DeleteChatTreeItemsResult {
   deletedFolderIds: string[];
 }
 
+export interface MoveChatTreeItemsResult {
+  workspaceId: string;
+  movedItems: { kind: "chat" | "folder"; id: string }[];
+  unchangedItems: { kind: "chat" | "folder"; id: string }[];
+  skippedItems: { kind: "chat" | "folder"; id: string; reason: string }[];
+}
+
 function toFolderRow(row: FolderTableRow): FolderRow {
   return {
     id: row.id,
@@ -106,6 +114,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   const modelId = record.modelId;
   const systemPrompt = record.systemPrompt;
   const webEnabled = record.webEnabled;
+  const hanokiEnabled = record.hanokiEnabled;
   const normalizedSettings: ChatSettings = {};
 
   if (typeof modelId === "string") {
@@ -122,6 +131,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
 
   if (typeof webEnabled === "boolean") {
     normalizedSettings.webEnabled = webEnabled;
+  }
+
+  if (typeof hanokiEnabled === "boolean") {
+    normalizedSettings.hanokiEnabled = hanokiEnabled;
   }
 
   return normalizedSettings;
@@ -146,6 +159,10 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
 
   if ("webEnabled" in settingsPatch) {
     nextSettings.webEnabled = settingsPatch.webEnabled ?? false;
+  }
+
+  if ("hanokiEnabled" in settingsPatch) {
+    nextSettings.hanokiEnabled = settingsPatch.hanokiEnabled ?? false;
   }
 
   return nextSettings;
@@ -504,6 +521,37 @@ export function listWorkspaceChatIds(workspaceId: string, ids: readonly string[]
     .map((row) => row.id);
 }
 
+export function searchWorkspaceChats(
+  workspaceId: string,
+  query: string,
+  limit: number,
+  offset: number,
+): ChatRow[] {
+  requireWorkspaceExists(workspaceId);
+
+  return getAppDatabase()
+    .select()
+    .from(chats)
+    .where(
+      and(
+        eq(chats.workspaceId, workspaceId),
+        sql`(
+          instr(lower(${chats.title}), lower(${query})) > 0
+          or exists (
+            select 1 from ${messages}
+            where ${messages.chatId} = ${chats.id}
+              and instr(lower(cast(${messages.parts} as text)), lower(${query})) > 0
+          )
+        )`,
+      ),
+    )
+    .orderBy(desc(chats.updatedAt), asc(chats.id))
+    .limit(limit)
+    .offset(offset)
+    .all()
+    .map(toChatRow);
+}
+
 export function createFolder(input: {
   workspaceId: string;
   name: string;
@@ -722,6 +770,133 @@ export function deleteChatTreeItems(
       deletedChatIds: sortedDeletedChatIds,
       deletedFolderIds: sortedDeletedFolderIds,
     };
+  });
+}
+
+export function moveChatTreeItems(
+  workspaceId: string,
+  items: readonly { kind: "chat" | "folder"; id: string }[],
+  destinationFolderId: string | null,
+): MoveChatTreeItemsResult {
+  requireWorkspaceExists(workspaceId);
+
+  return getAppDatabase().transaction((tx) => {
+    const workspaceFolders = tx
+      .select()
+      .from(folders)
+      .where(eq(folders.workspaceId, workspaceId))
+      .all();
+    const workspaceChats = tx.select().from(chats).where(eq(chats.workspaceId, workspaceId)).all();
+    const foldersById = new Map(workspaceFolders.map((folder) => [folder.id, folder] as const));
+    const chatsById = new Map(workspaceChats.map((chat) => [chat.id, chat] as const));
+
+    if (destinationFolderId !== null && !foldersById.has(destinationFolderId)) {
+      throw new Error(
+        `Destination folder "${destinationFolderId}" does not exist in this workspace.`,
+      );
+    }
+
+    const uniqueItems: { kind: "chat" | "folder"; id: string }[] = [];
+    const seenItems = new Set<string>();
+    for (const item of items) {
+      const key = `${item.kind}:${item.id}`;
+      if (!seenItems.has(key)) {
+        seenItems.add(key);
+        uniqueItems.push(item);
+      }
+    }
+
+    for (const item of uniqueItems) {
+      const exists = item.kind === "folder" ? foldersById.has(item.id) : chatsById.has(item.id);
+      if (!exists) {
+        throw new Error(
+          `${item.kind === "folder" ? "Folder" : "Chat"} "${item.id}" does not exist in this workspace.`,
+        );
+      }
+    }
+
+    const selectedFolderIds = new Set(
+      uniqueItems.filter((item) => item.kind === "folder").map((item) => item.id),
+    );
+    const coveredFolderIds = new Set<string>();
+
+    for (const folderId of selectedFolderIds) {
+      if (
+        destinationFolderId !== null &&
+        wouldFolderParentCreateCycle(folderId, destinationFolderId, foldersById)
+      ) {
+        throw new Error(
+          `Folder "${folderId}" cannot be moved into itself or one of its descendants.`,
+        );
+      }
+
+      let parentId = foldersById.get(folderId)?.parentId ?? null;
+      while (parentId !== null) {
+        if (selectedFolderIds.has(parentId)) {
+          coveredFolderIds.add(folderId);
+          break;
+        }
+        parentId = foldersById.get(parentId)?.parentId ?? null;
+      }
+    }
+
+    const movedItems: { kind: "chat" | "folder"; id: string }[] = [];
+    const unchangedItems: { kind: "chat" | "folder"; id: string }[] = [];
+    const skippedItems: { kind: "chat" | "folder"; id: string; reason: string }[] = [];
+    const movedFolderIds: string[] = [];
+    const movedChatIds: string[] = [];
+
+    for (const item of uniqueItems) {
+      if (item.kind === "folder") {
+        if (coveredFolderIds.has(item.id)) {
+          skippedItems.push({ ...item, reason: "Moved with its selected parent folder." });
+          continue;
+        }
+
+        if (foldersById.get(item.id)?.parentId === destinationFolderId) {
+          unchangedItems.push(item);
+        } else {
+          movedItems.push(item);
+          movedFolderIds.push(item.id);
+        }
+        continue;
+      }
+
+      let folderId = chatsById.get(item.id)?.folderId ?? null;
+      let coveredBySelectedFolder = false;
+      while (folderId !== null) {
+        if (selectedFolderIds.has(folderId)) {
+          coveredBySelectedFolder = true;
+          break;
+        }
+        folderId = foldersById.get(folderId)?.parentId ?? null;
+      }
+
+      if (coveredBySelectedFolder) {
+        skippedItems.push({ ...item, reason: "Moved with its selected parent folder." });
+      } else if (chatsById.get(item.id)?.folderId === destinationFolderId) {
+        unchangedItems.push(item);
+      } else {
+        movedItems.push(item);
+        movedChatIds.push(item.id);
+      }
+    }
+
+    const updatedAt = Date.now();
+    if (movedFolderIds.length > 0) {
+      tx.update(folders)
+        .set({ parentId: destinationFolderId, updatedAt })
+        .where(inArray(folders.id, movedFolderIds))
+        .run();
+    }
+    if (movedChatIds.length > 0) {
+      tx.update(chats)
+        .set({ folderId: destinationFolderId, updatedAt })
+        .where(inArray(chats.id, movedChatIds))
+        .run();
+    }
+
+    return { workspaceId, movedItems, unchangedItems, skippedItems };
   });
 }
 

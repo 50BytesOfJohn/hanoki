@@ -24,8 +24,8 @@ export function createMessagesApi(): MessagesApi {
     listAllChatMessages: (chatId) => invokeIpc(IPC_CHANNELS.messages.listAllByChat, chatId),
     switchChatBranch: (chatId, branchId) =>
       invokeIpc(IPC_CHANNELS.messages.switchBranch, chatId, branchId),
-    editMessage: (messageId, text, behavior: EditMessageBehavior) =>
-      invokeIpc(IPC_CHANNELS.messages.edit, messageId, text, behavior),
+    editMessage: (messageId, content, behavior: EditMessageBehavior) =>
+      invokeIpc(IPC_CHANNELS.messages.edit, messageId, content, behavior),
     deleteMessage: (messageId, scope: DeleteMessageScope) =>
       invokeIpc(IPC_CHANNELS.messages.delete, messageId, scope),
     setMessagePinned: (messageId, pinned) =>

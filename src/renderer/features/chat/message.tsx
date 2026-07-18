@@ -1,7 +1,7 @@
 import * as React from "react";
-import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Streamdown } from "streamdown";
 
 import {
   AlertDialog,
@@ -64,7 +64,18 @@ import { cn } from "@/lib/utils";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  createTiptapDocumentFromText,
+  parseTiptapDocument,
+  type TiptapDocument,
+} from "@shared/tiptap/document";
+import {
+  getTiptapMessageDisplayText,
+  parseMarkdownToTiptap,
+  serializeTiptapToMarkdown,
+} from "@shared/tiptap/extensions";
+import { MessageTiptapEditor } from "./tiptap-editor";
+import { TiptapMessageContent } from "./tiptap-message-content";
 
 const STREAMDOWN_PLUGINS = { code };
 const USER_MESSAGE_CARD_CLASS_NAME =
@@ -125,38 +136,30 @@ function usePinMessage(chatId: string) {
 // --- Text parts ---
 
 interface UserMessageTextPartProps {
-  text: string;
+  document: TiptapDocument;
 }
 
 const UserMessageTextPart = React.memo(function UserMessageTextPart({
-  text,
+  document,
 }: UserMessageTextPartProps) {
-  return (
-    <Streamdown
-      mode="static"
-      plugins={STREAMDOWN_PLUGINS}
-      className="text-[0.9375rem] leading-[1.65]"
-    >
-      {text}
-    </Streamdown>
-  );
+  return <TiptapMessageContent document={document} className="leading-[1.65]" />;
 });
 
 interface AssistantMessageTextPartProps {
-  text: string;
   isAnimating: boolean;
+  text: string;
 }
 
 const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
-  text,
   isAnimating,
+  text,
 }: AssistantMessageTextPartProps) {
   return (
     <Streamdown
       mode={isAnimating ? "streaming" : "static"}
       plugins={STREAMDOWN_PLUGINS}
       isAnimating={isAnimating}
-      className="text-[0.9375rem] text-foreground/90 leading-[1.7]"
+      className="text-[0.9375rem] leading-[1.7] text-foreground/90"
     >
       {text}
     </Streamdown>
@@ -554,17 +557,18 @@ function BranchSwitcherButtonGroup({
 
 interface AssistantMessageToolsProps {
   chatId: string;
-  draft: string;
+  draft: TiptapDocument;
   isEditing: boolean;
   isInteractionLocked: boolean;
   message: HanokiUiMessage;
+  messageDocument: TiptapDocument;
   messageText: string;
-  onDraftChange: (value: string) => void;
+  onDraftChange: (value: TiptapDocument) => void;
   startEditingMessage: (messageId: string) => void;
   stopEditingMessage: () => void;
   submitEditedMessage: (
     messageId: string,
-    text: string,
+    document: TiptapDocument,
     behavior: EditMessageBehavior,
   ) => Promise<void>;
 }
@@ -575,6 +579,7 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
   isEditing,
   isInteractionLocked,
   message,
+  messageDocument,
   messageText,
   onDraftChange,
   startEditingMessage,
@@ -595,10 +600,10 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
   if (isEditing) {
     return (
       <EditableMessageTools
-        canSave={draft.trim().length > 0}
+        canSave={hasDocumentText(draft)}
         draft={draft}
         messageId={message.id}
-        messageText={messageText}
+        originalDocument={messageDocument}
         onDraftChange={onDraftChange}
         stopEditingMessage={stopEditingMessage}
         submitEditedMessage={submitEditedMessage}
@@ -684,14 +689,14 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
 
 interface EditableMessageToolsProps {
   canSave: boolean;
-  draft: string;
+  draft: TiptapDocument;
   messageId: string;
-  messageText: string;
-  onDraftChange: (value: string) => void;
+  originalDocument: TiptapDocument;
+  onDraftChange: (value: TiptapDocument) => void;
   stopEditingMessage: () => void;
   submitEditedMessage: (
     messageId: string,
-    text: string,
+    document: TiptapDocument,
     behavior: EditMessageBehavior,
   ) => Promise<void>;
 }
@@ -700,7 +705,7 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
   canSave,
   draft,
   messageId,
-  messageText,
+  originalDocument,
   onDraftChange,
   stopEditingMessage,
   submitEditedMessage,
@@ -733,7 +738,7 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
           variant="ghost"
           className={TOOLBAR_BUTTON_CLASS}
           onClick={() => {
-            onDraftChange(messageText);
+            onDraftChange(originalDocument);
             stopEditingMessage();
           }}
         >
@@ -746,18 +751,19 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
 
 interface UserMessageToolsProps {
   chatId: string;
-  draft: string;
+  draft: TiptapDocument;
   isEditing: boolean;
   isInteractionLocked: boolean;
   message: HanokiUiMessage;
+  messageDocument: TiptapDocument;
   messageText: string;
   modelId: string | null;
-  onDraftChange: (value: string) => void;
+  onDraftChange: (value: TiptapDocument) => void;
   startEditingMessage: (messageId: string) => void;
   stopEditingMessage: () => void;
   submitEditedMessage: (
     messageId: string,
-    text: string,
+    document: TiptapDocument,
     behavior: EditMessageBehavior,
   ) => Promise<void>;
 }
@@ -768,6 +774,7 @@ const UserMessageTools = React.memo(function UserMessageTools({
   isEditing,
   isInteractionLocked,
   message,
+  messageDocument,
   messageText,
   modelId,
   onDraftChange,
@@ -786,10 +793,10 @@ const UserMessageTools = React.memo(function UserMessageTools({
   if (isEditing) {
     return (
       <EditableMessageTools
-        canSave={Boolean(modelId) && draft.trim().length > 0}
+        canSave={Boolean(modelId) && hasDocumentText(draft)}
         draft={draft}
         messageId={message.id}
-        messageText={messageText}
+        originalDocument={messageDocument}
         onDraftChange={onDraftChange}
         stopEditingMessage={stopEditingMessage}
         submitEditedMessage={submitEditedMessage}
@@ -865,27 +872,32 @@ const UserMessage = React.memo(function UserMessage({
   const startEditingMessage = useChatStartEditingMessage();
   const stopEditingMessage = useChatStopEditingMessage();
   const submitEditedMessage = useChatSubmitEditedMessage();
-  const messageText = React.useMemo(() => getMessageText(message), [message]);
-  const [draft, setDraft] = React.useState(messageText);
+  const messageText = React.useMemo(() => getTiptapMessageDisplayText(message), [message]);
+  const messageDocument = React.useMemo(() => getEditableMessageDocument(message), [message]);
+  const [draft, setDraft] = React.useState(messageDocument);
 
   React.useEffect(() => {
     if (!isEditing) {
-      setDraft(messageText);
+      setDraft(messageDocument);
     }
-  }, [isEditing, messageText]);
+  }, [isEditing, messageDocument]);
 
   return (
     <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
       <div className={USER_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
         {isEditing ? (
-          <Textarea
-            className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.6]"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+          <MessageTiptapEditor
+            className="text-[0.9375rem] leading-[1.6]"
+            document={draft}
+            onChange={setDraft}
           />
         ) : (
           message.parts.map((part, i) =>
-            part.type === "text" ? <UserMessageTextPart key={i} text={part.text} /> : null,
+            part.type === "text" ? (
+              <UserMessageTextPart key={i} document={createTiptapDocumentFromText(part.text)} />
+            ) : part.type === "data-tiptap" ? (
+              <UserMessageTextPart key={i} document={part.data} />
+            ) : null,
           )
         )}
       </div>
@@ -896,6 +908,7 @@ const UserMessage = React.memo(function UserMessage({
         isEditing={isEditing}
         isInteractionLocked={isInteractionLocked}
         message={message}
+        messageDocument={messageDocument}
         messageText={messageText}
         modelId={modelId}
         onDraftChange={setDraft}
@@ -926,15 +939,16 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const stopEditingMessage = useChatStopEditingMessage();
   const submitEditedMessage = useChatSubmitEditedMessage();
   const onContextMenu = useMessageContextMenu(message.id);
-  const messageText = React.useMemo(() => getMessageText(message), [message]);
+  const messageText = React.useMemo(() => getTiptapMessageDisplayText(message), [message]);
+  const messageDocument = React.useMemo(() => getEditableMessageDocument(message), [message]);
   const isThinking = isAnimating && (message.parts.length === 0 || hasStreamingReasoning(message));
-  const [draft, setDraft] = React.useState(messageText);
+  const [draft, setDraft] = React.useState(messageDocument);
 
   React.useEffect(() => {
     if (!isEditing) {
-      setDraft(messageText);
+      setDraft(messageDocument);
     }
-  }, [isEditing, messageText]);
+  }, [isEditing, messageDocument]);
 
   return (
     <div
@@ -943,10 +957,10 @@ const AssistantMessage = React.memo(function AssistantMessage({
     >
       <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
         {isEditing ? (
-          <Textarea
-            className="border-0 bg-transparent p-0 min-h-0 rounded-none shadow-none focus-visible:ring-0 text-[0.9375rem] leading-[1.7] text-foreground/90"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+          <MessageTiptapEditor
+            className="text-[0.9375rem] leading-[1.7] text-foreground/90"
+            document={draft}
+            onChange={setDraft}
           />
         ) : (
           <>
@@ -954,6 +968,15 @@ const AssistantMessage = React.memo(function AssistantMessage({
               if (part.type === "text") {
                 return (
                   <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
+                );
+              }
+              if (part.type === "data-tiptap") {
+                return (
+                  <AssistantMessageTextPart
+                    key={i}
+                    text={serializeTiptapToMarkdown(part.data)}
+                    isAnimating={isAnimating}
+                  />
                 );
               }
               if (isToolUIPart(part)) {
@@ -973,6 +996,7 @@ const AssistantMessage = React.memo(function AssistantMessage({
           isEditing={isEditing}
           isInteractionLocked={isInteractionLocked}
           message={message}
+          messageDocument={messageDocument}
           messageText={messageText}
           onDraftChange={setDraft}
           startEditingMessage={startEditingMessage}
@@ -1026,14 +1050,26 @@ export const ChatMessage = React.memo(function ChatMessage({
   );
 });
 
-function getMessageText(message: HanokiUiMessage): string {
-  return message.parts
-    .filter(
-      (part): part is Extract<HanokiUiMessage["parts"][number], { type: "text" }> =>
-        part.type === "text",
-    )
-    .map((part) => part.text)
-    .join("\n");
+function getEditableMessageDocument(message: HanokiUiMessage): TiptapDocument {
+  const contentParts = message.parts.filter(
+    (part) => part.type === "text" || part.type === "data-tiptap",
+  );
+  if (contentParts.length === 1 && contentParts[0]?.type === "data-tiptap") {
+    return contentParts[0].data;
+  }
+
+  const text = getTiptapMessageDisplayText(message);
+  const hasLegacyAssistantMarkdown = contentParts.some(
+    (part) => part.type === "text" && part.state !== "done",
+  );
+  return message.role === "assistant" && hasLegacyAssistantMarkdown
+    ? parseMarkdownToTiptap(text)
+    : createTiptapDocumentFromText(text);
+}
+
+function hasDocumentText(document: TiptapDocument): boolean {
+  const parsed = parseTiptapDocument(document);
+  return parsed.ok && parsed.value.displayText.trim().length > 0;
 }
 
 interface MessageInfoNames {

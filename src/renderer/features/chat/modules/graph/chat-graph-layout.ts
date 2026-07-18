@@ -1,6 +1,7 @@
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react";
 import { graphlib, layout } from "@dagrejs/dagre";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
+import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 
 export const NODE_WIDTH = 352;
 export const NODE_HEIGHT = 288;
@@ -115,16 +116,7 @@ export function buildChatGraphLayout(
 }
 
 function getMessagePreview(message: HanokiUiMessage): string {
-  const text = message.parts
-    .filter(
-      (part): part is Extract<HanokiUiMessage["parts"][number], { type: "text" }> =>
-        part.type === "text",
-    )
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join("\n")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = getTiptapMessageDisplayText(message).replace(/\s+/g, " ").trim();
 
   if (!text) {
     return message.role === "assistant" ? "Assistant response" : "Message";

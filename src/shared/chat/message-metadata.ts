@@ -1,5 +1,6 @@
 import type { LanguageModelUsage, UIMessage } from "ai";
 import { type } from "arktype";
+import type { TiptapDocument } from "../tiptap/document";
 
 export interface ChatMessageMetadata {
   parentId: string | null;
@@ -31,7 +32,7 @@ export interface ChatMessageMetadata {
   siblingIndex?: number;
 }
 
-export type HanokiUiMessage = UIMessage<ChatMessageMetadata>;
+export type HanokiUiMessage = UIMessage<ChatMessageMetadata, { tiptap: TiptapDocument }>;
 
 export const chatMessageMetadataSchema = type({
   parentId: "string|null",

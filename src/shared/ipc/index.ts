@@ -1,6 +1,7 @@
 import type { ProviderId } from "../providers/catalog";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
+import type { TiptapDocument } from "../tiptap/document";
 
 export const IPC_CHANNELS = {
   workspaces: {
@@ -173,12 +174,14 @@ export interface ChatSettings {
   modelId?: string | null;
   systemPrompt?: string | null;
   webEnabled?: boolean;
+  hanokiEnabled?: boolean;
 }
 
 export interface ChatSettingsUpdateInput {
   modelId?: string | null;
   systemPrompt?: string | null;
   webEnabled?: boolean;
+  hanokiEnabled?: boolean;
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {
@@ -237,8 +240,8 @@ export interface WorkspaceSettings {
   tabs?: TabStateItem[];
   currentChatId?: string | null;
   sidebarViewMode?: ChatSidebarViewMode;
-  /** Unsent composer text per chat id. */
-  chatDrafts?: Record<string, string>;
+  /** Unsent composer documents per chat id. Strings are legacy drafts. */
+  chatDrafts?: Record<string, TiptapDocument | string>;
   /** Last-used chat panel view (route path) per chat id; absent = conversation. */
   chatViews?: Record<string, string>;
 }
@@ -356,7 +359,7 @@ export interface IpcApi {
   switchChatBranch: (chatId: string, branchId: string) => Promise<HanokiUiMessage[]>;
   editMessage: (
     messageId: string,
-    text: string,
+    content: TiptapDocument | string,
     behavior: EditMessageBehavior,
   ) => Promise<HanokiUiMessage[]>;
   deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<HanokiUiMessage[]>;

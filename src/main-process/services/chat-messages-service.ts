@@ -1,6 +1,13 @@
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
 import { type DeleteMessageScope, type EditMessageBehavior } from "@shared/ipc";
+import {
+  createTiptapDocumentFromText,
+  createTiptapMessageParts,
+  parseTiptapDocument,
+  type TiptapDocument,
+} from "@shared/tiptap/document";
+import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import { createUuidV7 } from "../db/uuidv7";
 import { getChatById, getChatCurrentBranchId, setChatCurrentBranch } from "../chat-tree/repository";
 import {
@@ -18,7 +25,11 @@ export interface ChatMessagesService {
   listChatMessages(chatId: string, branchId?: string | null): HanokiUiMessage[];
   listAllChatMessages(chatId: string): HanokiUiMessage[];
   switchChatBranch(chatId: string, branchId: string): HanokiUiMessage[];
-  editMessage(messageId: string, text: string, behavior: EditMessageBehavior): HanokiUiMessage[];
+  editMessage(
+    messageId: string,
+    content: TiptapDocument | string,
+    behavior: EditMessageBehavior,
+  ): HanokiUiMessage[];
   deleteMessage(messageId: string, scope: DeleteMessageScope): HanokiUiMessage[];
   setMessagePinned(messageId: string, pinned: boolean): void;
   listPinnedBranches(): PinnedBranchSummary[];
@@ -70,9 +81,15 @@ export function createChatMessagesService(): ChatMessagesService {
       return this.listChatMessages(chatId, branchId);
     },
 
-    editMessage(messageId: string, text: string, behavior: EditMessageBehavior): HanokiUiMessage[] {
-      const trimmedText = text.trim();
-      if (!trimmedText) {
+    editMessage(
+      messageId: string,
+      content: TiptapDocument | string,
+      behavior: EditMessageBehavior,
+    ): HanokiUiMessage[] {
+      const document =
+        typeof content === "string" ? createTiptapDocumentFromText(content) : content;
+      const parsedDocument = parseTiptapDocument(document);
+      if (!parsedDocument.ok || !parsedDocument.value.displayText.trim()) {
         throw new Error("Message text cannot be empty.");
       }
 
@@ -90,18 +107,18 @@ export function createChatMessagesService(): ChatMessagesService {
         throw new Error(`Message "${messageId}" is not editable.`);
       }
 
+      const nextContentParts = createTiptapMessageParts(parsedDocument.value.document);
+      if (originalMessage.role === "assistant" && nextContentParts[0]?.type === "text") {
+        nextContentParts[0] = { ...nextContentParts[0], state: "done" };
+      }
+
       if (behavior === "overwrite") {
         upsertMessage({
           id: originalMessage.id,
           chatId: chat.id,
           parentId: originalMessage.parentId,
           role: originalMessage.role,
-          parts: [
-            {
-              type: "text",
-              text: trimmedText,
-            },
-          ],
+          parts: replaceTextContentParts(originalMessage.parts, nextContentParts),
           metadata: {
             ...originalMessage.metadata,
             parentId: originalMessage.parentId,
@@ -120,12 +137,7 @@ export function createChatMessagesService(): ChatMessagesService {
         chatId: chat.id,
         parentId,
         role: originalMessage.role,
-        parts: [
-          {
-            type: "text",
-            text: trimmedText,
-          },
-        ],
+        parts: replaceTextContentParts(originalMessage.parts, nextContentParts),
         metadata: { parentId },
       });
 
@@ -189,15 +201,40 @@ export function createChatMessagesService(): ChatMessagesService {
 }
 
 function extractTextPreview(row: MessageRow): string {
-  const parts = Array.isArray(row.parts) ? row.parts : [];
-  const text = parts
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        typeof part === "object" &&
-        part !== null &&
-        (part as Record<string, unknown>).type === "text",
-    )
-    .map((part) => part.text)
-    .join("\n");
+  const text = getTiptapMessageDisplayText({
+    parts: row.parts as HanokiUiMessage["parts"],
+    role: row.role,
+  });
   return text.length > 200 ? text.slice(0, 200) + "…" : text;
+}
+
+function replaceTextContentParts(
+  originalParts: unknown[],
+  nextContentParts: HanokiUiMessage["parts"],
+): unknown[] {
+  const nextPart = nextContentParts[0];
+  if (!nextPart) {
+    return originalParts;
+  }
+
+  const result: unknown[] = [];
+  let didInsert = false;
+  for (const part of originalParts) {
+    const isTextContent =
+      typeof part === "object" &&
+      part !== null &&
+      ((part as Record<string, unknown>).type === "text" ||
+        (part as Record<string, unknown>).type === "data-tiptap");
+
+    if (!isTextContent) {
+      result.push(part);
+      continue;
+    }
+    if (!didInsert) {
+      result.push(nextPart);
+      didInsert = true;
+    }
+  }
+
+  return didInsert ? result : [nextPart, ...result];
 }

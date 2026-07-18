@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 
 import { DEFAULT_WORKSPACE_ID } from "@shared/workspace/workspace-id";
 import type { WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
+import { parseTiptapDocument } from "@shared/tiptap/document";
 import { getAppDatabase } from "../db/database";
 import { workspaces } from "../db/schema";
 
@@ -112,10 +113,19 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     typeof entry === "object" &&
     entry !== null &&
     !Array.isArray(entry) &&
-    Object.values(entry).every((value) => typeof value === "string");
+    Object.values(entry).every((recordValue) => typeof recordValue === "string");
 
-  if (record.chatDrafts !== undefined && !isStringRecord(record.chatDrafts)) {
-    return false;
+  if (record.chatDrafts !== undefined) {
+    if (
+      typeof record.chatDrafts !== "object" ||
+      record.chatDrafts === null ||
+      Array.isArray(record.chatDrafts) ||
+      !Object.values(record.chatDrafts).every(
+        (draft) => typeof draft === "string" || parseTiptapDocument(draft).ok,
+      )
+    ) {
+      return false;
+    }
   }
 
   if (record.chatViews !== undefined && !isStringRecord(record.chatViews)) {

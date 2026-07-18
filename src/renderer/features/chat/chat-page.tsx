@@ -2,7 +2,13 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useDebouncedCallback } from "@tanstack/react-pacer";
-import { Add01Icon, AiWebBrowsingIcon, Cancel01Icon, SentIcon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  AiWebBrowsingIcon,
+  Cancel01Icon,
+  Database02Icon,
+  SentIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +21,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox";
-import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -50,10 +56,18 @@ import { listProvidersQueryOptions } from "@/queries/providers";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
 import type { ProviderModelInfo } from "@shared/ipc";
+import {
+  createEmptyTiptapDocument,
+  createTiptapDocumentFromText,
+  createTiptapMessageParts,
+  parseTiptapDocument,
+  type TiptapDocument,
+} from "@shared/tiptap/document";
 import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
 import { SumiPromptAction } from "./sumi-prompt-action";
+import { ChatComposerEditor } from "./tiptap-editor";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -146,28 +160,33 @@ function ActiveChatView({ chatId }: { chatId: string }) {
 
 function ActiveChatContent() {
   const chatId = useChatId();
-  const [input, setInput] = React.useState(
-    () => useWorkspaceStore.getState().chatDrafts[chatId] ?? "",
-  );
+  const [input, setInput] = React.useState<TiptapDocument>(() => {
+    const draft = useWorkspaceStore.getState().chatDrafts[chatId];
+    if (typeof draft === "string") {
+      return createTiptapDocumentFromText(draft);
+    }
+    const parsed = parseTiptapDocument(draft);
+    return parsed.ok ? parsed.value.document : createEmptyTiptapDocument();
+  });
   const inputRef = React.useRef(input);
   const saveDraft = useDebouncedCallback(
-    (text: string) => useWorkspaceStore.getState().setChatDraft(chatId, text),
+    (document: TiptapDocument) => useWorkspaceStore.getState().setChatDraft(chatId, document),
     { wait: 500 },
   );
   const updateInput = React.useCallback(
-    (text: string) => {
-      inputRef.current = text;
-      setInput(text);
-      saveDraft(text);
+    (document: TiptapDocument) => {
+      inputRef.current = document;
+      setInput(document);
+      saveDraft(document);
     },
     [saveDraft],
   );
 
-  // Flush the draft on unmount so fast chat switches don't lose it to the debounce.
-  React.useEffect(
-    () => () => useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current),
-    [chatId],
-  );
+  // Convert legacy string drafts on load and flush on unmount so fast chat switches keep edits.
+  React.useEffect(() => {
+    useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current);
+    return () => useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current);
+  }, [chatId]);
   const modelId = useChatModelId();
   const messages = useChatMessages();
   const sendMessage = useChatSendMessage();
@@ -257,6 +276,9 @@ function ActiveChatContent() {
 
   const promptStickyPosition = globalChatSettings?.promptStickyPosition ?? true;
   const submitBehavior = globalChatSettings?.formSubmitBehavior ?? "enter";
+  const parsedInput = React.useMemo(() => parseTiptapDocument(input), [input]);
+  const inputText = parsedInput.ok ? parsedInput.value.displayText : "";
+  const inputIsTextOnly = parsedInput.ok && parsedInput.value.isTextOnly;
 
   const stopGeneration = React.useCallback(() => {
     if (!canStop) {
@@ -267,71 +289,33 @@ function ActiveChatContent() {
   }, [canStop, stopChat]);
 
   const submitMessage = React.useCallback(() => {
-    if (!modelId || !input.trim() || isInteractionLocked) {
+    if (
+      !modelId ||
+      !parsedInput.ok ||
+      !parsedInput.value.displayText.trim() ||
+      isInteractionLocked
+    ) {
       return false;
     }
 
     scrollToBottom();
     void sendMessage({
-      text: input,
+      parts: createTiptapMessageParts(parsedInput.value.document),
       metadata: {
         parentId: messages.at(-1)?.id ?? null,
       },
     });
-    updateInput("");
+    updateInput(createEmptyTiptapDocument());
     return true;
-  }, [input, isInteractionLocked, messages, modelId, scrollToBottom, sendMessage, updateInput]);
-
-  useHotkey(
-    "Enter",
-    (event) => {
-      if (!isComposerInputEvent(event)) {
-        return;
-      }
-
-      if (submitBehavior !== "enter" || event.isComposing) {
-        return;
-      }
-
-      if (submitMessage()) {
-        event.preventDefault();
-      }
-    },
-    {
-      enabled: !isInteractionLocked,
-      ignoreInputs: false,
-      preventDefault: false,
-      stopPropagation: false,
-      requireReset: true,
-    },
-  );
-
-  useHotkey(
-    {
-      key: "Enter",
-      mod: true,
-    },
-    (event) => {
-      if (!isComposerInputEvent(event)) {
-        return;
-      }
-
-      if (submitBehavior !== "mod-enter" || event.isComposing) {
-        return;
-      }
-
-      if (submitMessage()) {
-        event.preventDefault();
-      }
-    },
-    {
-      enabled: !isInteractionLocked,
-      ignoreInputs: false,
-      preventDefault: false,
-      stopPropagation: false,
-      requireReset: true,
-    },
-  );
+  }, [
+    isInteractionLocked,
+    messages,
+    modelId,
+    parsedInput,
+    scrollToBottom,
+    sendMessage,
+    updateInput,
+  ]);
 
   useHotkey(
     STOP_GENERATION_HOTKEY,
@@ -417,26 +401,24 @@ function ActiveChatContent() {
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
               <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-                <InputGroupTextarea
-                  data-chat-composer-input="true"
-                  aria-label="Chat message"
-                  placeholder="Ask anything…"
-                  rows={1}
-                  value={input}
-                  onChange={(event) => updateInput(event.target.value)}
-                  className="w-full resize-none overflow-y-auto px-3 py-1 max-h-[24rem] min-h-0 text-[0.9375rem] [field-sizing:content]"
+                <ChatComposerEditor
+                  document={input}
+                  disabled={isInteractionLocked}
+                  submitBehavior={submitBehavior}
+                  onChange={updateInput}
+                  onSubmit={submitMessage}
                 />
                 <InputGroupAddon
                   align="block-end"
                   className="flex w-full items-center gap-1.5 px-2 py-0"
                 >
-                  <WebToolsMenu />
+                  <ChatToolsMenu />
                   <ModelSelector />
                   <div className="ml-auto flex items-center gap-1.5">
                     <SumiPromptAction
-                      prompt={input}
-                      isDisabled={isInteractionLocked}
-                      onReplace={updateInput}
+                      prompt={inputText}
+                      isDisabled={isInteractionLocked || !inputIsTextOnly}
+                      onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
                     />
                     {canStop ? (
                       <Tooltip>
@@ -462,7 +444,7 @@ function ActiveChatContent() {
                               type="submit"
                               aria-label="Send"
                               size="sm"
-                              disabled={!modelId || !input.trim() || isInteractionLocked}
+                              disabled={!modelId || !inputText.trim() || isInteractionLocked}
                             />
                           }
                         >
@@ -485,12 +467,13 @@ function ActiveChatContent() {
   );
 }
 
-function WebToolsMenu() {
+function ChatToolsMenu() {
   const chatId = useChatId();
   const isInteractionLocked = useChatIsInteractionLocked();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const updateChatSettings = useUpdateChatSettings();
   const webEnabled = chat?.settings.webEnabled ?? false;
+  const hanokiEnabled = chat?.settings.hanokiEnabled ?? false;
 
   return (
     <DropdownMenu>
@@ -502,7 +485,7 @@ function WebToolsMenu() {
             size="icon-sm"
             className="text-foreground"
             aria-label="Chat tools"
-            aria-pressed={webEnabled}
+            aria-pressed={webEnabled || hanokiEnabled}
             disabled={isInteractionLocked}
           />
         }
@@ -527,18 +510,26 @@ function WebToolsMenu() {
               Web
             </span>
           </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            variant="switch"
+            checked={hanokiEnabled}
+            disabled={updateChatSettings.isPending}
+            onCheckedChange={(checked) => {
+              updateChatSettings.mutate({
+                id: chatId,
+                input: { hanokiEnabled: checked },
+              });
+            }}
+          >
+            <span className="flex items-center gap-2">
+              <HugeiconsIcon icon={Database02Icon} />
+              Hanoki
+            </span>
+          </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function isComposerInputEvent(event: KeyboardEvent): boolean {
-  if (!(event.target instanceof HTMLElement)) {
-    return false;
-  }
-
-  return event.target.closest("[data-chat-composer-input='true']") !== null;
 }
 
 function ModelSelector() {

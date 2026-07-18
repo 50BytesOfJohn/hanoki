@@ -1,6 +1,7 @@
 import { ChatSidebarViewMode, WorkspaceInfo } from "@shared/ipc";
 import type { StateCreator } from "zustand";
 import "zustand/middleware/immer";
+import type { TiptapDocument } from "@shared/tiptap/document";
 
 export type TabType = "chat";
 
@@ -23,8 +24,8 @@ export interface WorkspaceSliceValue {
   currentChatId: string | null;
   /** Per-workspace override of the global sidebar view mode; null = use global default. */
   sidebarViewMode: ChatSidebarViewMode | null;
-  /** Unsent composer text per chat id. */
-  chatDrafts: Record<string, string>;
+  /** Unsent composer documents per chat id. Strings are legacy drafts. */
+  chatDrafts: Record<string, TiptapDocument | string>;
   /** Last-used chat panel view (route path) per chat id; absent = conversation. */
   chatViews: Record<string, string>;
 }
@@ -33,7 +34,7 @@ export interface WorkspaceSlice extends WorkspaceSliceValue {
   switchWorkspace: (id: string) => Promise<void>;
   setCurrentChat: (chatId: string | null) => void;
   setSidebarViewMode: (mode: ChatSidebarViewMode) => void;
-  setChatDraft: (chatId: string, draft: string) => void;
+  setChatDraft: (chatId: string, draft: TiptapDocument) => void;
   setChatView: (chatId: string, view: string) => void;
 }
 

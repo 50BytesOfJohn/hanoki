@@ -9,6 +9,7 @@ import { messagesApi } from "@/api/messages";
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
+import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
 
 type ChatSendMessage = Chat<HanokiUiMessage>["sendMessage"];
 type ChatRegenerate = Chat<HanokiUiMessage>["regenerate"];
@@ -30,7 +31,7 @@ type ChatContextState = {
   stopEditingMessage: () => void;
   submitEditedMessage: (
     messageId: string,
-    text: string,
+    document: TiptapDocument,
     behavior: EditMessageBehavior,
   ) => Promise<void>;
   deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<void>;
@@ -351,10 +352,13 @@ function createChatContextStore({
           editingMessageId: null,
         };
       }),
-    submitEditedMessage: async (messageId, text, behavior) => {
-      const trimmedText = text.trim();
-
-      if (!trimmedText || !transportRefs.setMessages) {
+    submitEditedMessage: async (messageId, document, behavior) => {
+      const parsedDocument = parseTiptapDocument(document);
+      if (
+        !parsedDocument.ok ||
+        !parsedDocument.value.displayText.trim() ||
+        !transportRefs.setMessages
+      ) {
         return;
       }
 
@@ -380,7 +384,7 @@ function createChatContextStore({
         editingMessageId: null,
       }));
 
-      const persistedMessages = await messagesApi.editMessage(messageId, trimmedText, behavior);
+      const persistedMessages = await messagesApi.editMessage(messageId, document, behavior);
       transportRefs.setMessages(persistedMessages);
 
       if (message.role === "assistant" || behavior !== "branch") {

@@ -5,6 +5,11 @@ import { IPC_CHANNELS, type DeleteMessageScope, type EditMessageBehavior } from 
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
+import {
+  createTiptapDocumentFromText,
+  parseTiptapDocument,
+  type TiptapDocument,
+} from "@shared/tiptap/document";
 
 function expectArgCount(args: unknown[], min: number, max = min): void {
   if (args.length < min || args.length > max) {
@@ -51,12 +56,13 @@ function parseValidBranchId(input: unknown): string {
   return input;
 }
 
-function parseNonEmptyText(input: unknown, label: string): string {
-  if (typeof input !== "string" || input.trim().length === 0) {
-    throw AppError.badRequest(`${label} must be a non-empty string.`);
+function parseMessageContent(input: unknown): TiptapDocument {
+  const document = typeof input === "string" ? createTiptapDocumentFromText(input) : input;
+  const parsed = parseTiptapDocument(document);
+  if (!parsed.ok || parsed.value.displayText.trim().length === 0) {
+    throw AppError.badRequest(parsed.ok ? "Message content cannot be empty." : parsed.error);
   }
-
-  return input;
+  return parsed.value.document;
 }
 
 function parseEditMessageBehavior(input: unknown): EditMessageBehavior {
@@ -118,11 +124,11 @@ export function registerMessagesIpcModule(
 
   registerInvokeHandler(context, registeredChannels, {
     channel: IPC_CHANNELS.messages.edit,
-    parseArgs: (args): [string, string, EditMessageBehavior] => {
+    parseArgs: (args): [string, TiptapDocument, EditMessageBehavior] => {
       expectArgCount(args, 3);
       return [
         parseValidMessageId(args[0]),
-        parseNonEmptyText(args[1], "text"),
+        parseMessageContent(args[1]),
         parseEditMessageBehavior(args[2]),
       ];
     },
