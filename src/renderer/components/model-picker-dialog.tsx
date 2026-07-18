@@ -67,8 +67,7 @@ export function ModelPickerDialog({
   const visibleModels = React.useMemo(
     () =>
       (modelsQuery.data ?? []).filter(
-        (model) =>
-          model.status === "active" && (includeDisabledModels || model.isEnabled),
+        (model) => model.status === "active" && (includeDisabledModels || model.isEnabled),
       ),
     [includeDisabledModels, modelsQuery.data],
   );

@@ -8,7 +8,7 @@ import { messagesApi } from "@/api/messages";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
-import type { EditMessageBehavior } from "@shared/ipc";
+import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
 
 type ChatSendMessage = Chat<HanokiUiMessage>["sendMessage"];
 type ChatRegenerate = Chat<HanokiUiMessage>["regenerate"];
@@ -33,6 +33,7 @@ type ChatContextState = {
     text: string,
     behavior: EditMessageBehavior,
   ) => Promise<void>;
+  deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<void>;
 };
 
 type ChatTransportRefs = {
@@ -388,6 +389,16 @@ function createChatContextStore({
 
       await get().regenerateMessage();
     },
+    deleteMessage: async (messageId, scope) => {
+      const { editingMessageId, continuingMessageId } = get();
+      if (editingMessageId !== null || continuingMessageId !== null) {
+        return;
+      }
+
+      if (!transportRefs.setMessages) return;
+      const newMessages = await messagesApi.deleteMessage(messageId, scope);
+      transportRefs.setMessages(newMessages);
+    },
   }));
 }
 
@@ -711,6 +722,10 @@ export function useChatStopEditingMessage() {
 
 export function useChatSubmitEditedMessage() {
   return useChatContext((state) => state.submitEditedMessage);
+}
+
+export function useChatDeleteMessage() {
+  return useChatContext((state) => state.deleteMessage);
 }
 
 export function resolveModelId(enabledModelIds: readonly string[], currentModelId: string | null) {

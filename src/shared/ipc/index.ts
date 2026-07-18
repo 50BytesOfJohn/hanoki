@@ -51,6 +51,7 @@ export const IPC_CHANNELS = {
     listAllByChat: "messages:listAllByChat",
     switchBranch: "messages:switchBranch",
     edit: "messages:edit",
+    delete: "messages:delete",
     setPinned: "messages:setPinned",
     listPinned: "messages:listPinned",
   },
@@ -90,14 +91,18 @@ export interface WorkspaceUpdateInput {
 
 export type ChatFormSubmitBehavior = "enter" | "mod-enter";
 
+export type ChatSidebarViewMode = "tree" | "activity";
+
 export interface GlobalChatSettings {
   promptStickyPosition: boolean;
   formSubmitBehavior: ChatFormSubmitBehavior;
+  sidebarViewMode: ChatSidebarViewMode;
 }
 
 export interface GlobalChatSettingsUpdateInput {
   promptStickyPosition?: boolean;
   formSubmitBehavior?: ChatFormSubmitBehavior;
+  sidebarViewMode?: ChatSidebarViewMode;
 }
 
 export interface SumiModelReference {
@@ -231,6 +236,11 @@ export interface WorkspaceSettings {
   chatTreeExpandedFolderIds?: string[];
   tabs?: TabStateItem[];
   currentChatId?: string | null;
+  sidebarViewMode?: ChatSidebarViewMode;
+  /** Unsent composer text per chat id. */
+  chatDrafts?: Record<string, string>;
+  /** Last-used chat panel view (route path) per chat id; absent = conversation. */
+  chatViews?: Record<string, string>;
 }
 
 export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;
@@ -303,6 +313,9 @@ export interface SetProviderModelsEnabledResult {
 
 export type EditMessageBehavior = "branch" | "overwrite";
 
+/** "message": the message and its descendants. "branch": all siblings (same parentId) and their descendants. */
+export type DeleteMessageScope = "message" | "branch";
+
 export interface IpcApi {
   onSystemEvent: (callback: (event: import("../events").SystemEvent) => void) => () => void;
   getSystemState: () => Promise<import("../events").SystemState>;
@@ -346,6 +359,7 @@ export interface IpcApi {
     text: string,
     behavior: EditMessageBehavior,
   ) => Promise<HanokiUiMessage[]>;
+  deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<HanokiUiMessage[]>;
   setMessagePinned: (messageId: string, pinned: boolean) => Promise<void>;
   listPinnedBranches: () => Promise<PinnedBranchSummary[]>;
   createFolder: (

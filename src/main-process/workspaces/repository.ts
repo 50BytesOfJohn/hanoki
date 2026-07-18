@@ -45,6 +45,9 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     "chatTreeExpandedFolderIds",
     "tabs",
     "currentChatId",
+    "sidebarViewMode",
+    "chatDrafts",
+    "chatViews",
   ]);
 
   for (const key of Object.keys(record)) {
@@ -94,6 +97,28 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     record.currentChatId !== null &&
     typeof record.currentChatId !== "string"
   ) {
+    return false;
+  }
+
+  if (
+    record.sidebarViewMode !== undefined &&
+    record.sidebarViewMode !== "tree" &&
+    record.sidebarViewMode !== "activity"
+  ) {
+    return false;
+  }
+
+  const isStringRecord = (entry: unknown): boolean =>
+    typeof entry === "object" &&
+    entry !== null &&
+    !Array.isArray(entry) &&
+    Object.values(entry).every((value) => typeof value === "string");
+
+  if (record.chatDrafts !== undefined && !isStringRecord(record.chatDrafts)) {
+    return false;
+  }
+
+  if (record.chatViews !== undefined && !isStringRecord(record.chatViews)) {
     return false;
   }
 

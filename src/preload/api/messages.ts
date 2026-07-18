@@ -1,4 +1,9 @@
-import { IPC_CHANNELS, type EditMessageBehavior, type IpcApi } from "@shared/ipc";
+import {
+  IPC_CHANNELS,
+  type DeleteMessageScope,
+  type EditMessageBehavior,
+  type IpcApi,
+} from "@shared/ipc";
 import { invokeIpc } from "../invoke";
 
 type MessagesApi = Pick<
@@ -7,6 +12,7 @@ type MessagesApi = Pick<
   | "listAllChatMessages"
   | "switchChatBranch"
   | "editMessage"
+  | "deleteMessage"
   | "setMessagePinned"
   | "listPinnedBranches"
 >;
@@ -20,6 +26,8 @@ export function createMessagesApi(): MessagesApi {
       invokeIpc(IPC_CHANNELS.messages.switchBranch, chatId, branchId),
     editMessage: (messageId, text, behavior: EditMessageBehavior) =>
       invokeIpc(IPC_CHANNELS.messages.edit, messageId, text, behavior),
+    deleteMessage: (messageId, scope: DeleteMessageScope) =>
+      invokeIpc(IPC_CHANNELS.messages.delete, messageId, scope),
     setMessagePinned: (messageId, pinned) =>
       invokeIpc(IPC_CHANNELS.messages.setPinned, messageId, pinned),
     listPinnedBranches: () => invokeIpc(IPC_CHANNELS.messages.listPinned),

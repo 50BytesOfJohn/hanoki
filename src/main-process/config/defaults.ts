@@ -15,6 +15,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     form: {
       submitBehavior: "enter",
     },
+    sidebar: {
+      viewMode: "tree",
+    },
   },
   sumi: {
     promptActions: {

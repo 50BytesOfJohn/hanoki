@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, useMatchRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -34,6 +34,7 @@ import { ChatToolbar } from "@/features/chat/chat-toolbar";
 import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
 import { getChatQueryOptions } from "@/queries/chats";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
+import { ChatViewRestore, useOpenChatView } from "@/features/chat/use-chat-view";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
@@ -54,6 +55,7 @@ function ChatLayoutFrame() {
     <ChatScrollActionsProvider>
       <div className="flex h-full w-full">
         <ChatViewHotkeys />
+        <ChatViewRestore />
         <ChatSidebarTree />
         <div className="min-w-0 flex-1 p-1.5 pt-0">
           <div className="relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-surface">
@@ -75,7 +77,7 @@ const CHAT_VIEWS = [
 
 function ChatPanelHeader() {
   const matchRoute = useMatchRoute();
-  const navigate = useNavigate();
+  const openChatView = useOpenChatView();
   const { scrollActions } = useChatScrollActions();
   const port = useSystemStore(selectAiServerPort);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
@@ -173,7 +175,7 @@ function ChatPanelHeader() {
               icon={view.icon}
               isActive={isActive}
               onClick={() => {
-                void navigate({ to: view.to });
+                openChatView(view.to);
               }}
             />
           );

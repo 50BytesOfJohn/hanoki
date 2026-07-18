@@ -1,26 +1,26 @@
 import { useHotkey } from "@tanstack/react-hotkeys";
-import { useNavigate } from "@tanstack/react-router";
 import { useWorkspaceStore } from "../workspace/store";
+import { useOpenChatView } from "./use-chat-view";
 
 export function ChatViewHotkeys() {
-  const navigate = useNavigate();
+  const openChatView = useOpenChatView();
   const tabs = useWorkspaceStore((s) => s.tabs);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
 
   useHotkey("Mod+Shift+C", (event) => {
     event.preventDefault();
-    void navigate({ to: "/chat" });
+    openChatView("/chat");
   });
 
   useHotkey("Mod+Shift+G", (event) => {
     event.preventDefault();
-    void navigate({ to: "/chat/graph" });
+    openChatView("/chat/graph");
   });
 
   useHotkey("Mod+Shift+S", (event) => {
     event.preventDefault();
-    void navigate({ to: "/chat/settings" });
+    openChatView("/chat/settings");
   });
 
   useHotkey(

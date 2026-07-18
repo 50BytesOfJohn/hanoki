@@ -1,7 +1,7 @@
 import { type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
 import { parseChatId } from "@shared/chat/chat-id";
-import { IPC_CHANNELS, type EditMessageBehavior } from "@shared/ipc";
+import { IPC_CHANNELS, type DeleteMessageScope, type EditMessageBehavior } from "@shared/ipc";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -67,6 +67,14 @@ function parseEditMessageBehavior(input: unknown): EditMessageBehavior {
   throw AppError.badRequest('behavior must be either "branch" or "overwrite".');
 }
 
+function parseDeleteMessageScope(input: unknown): DeleteMessageScope {
+  if (input === "message" || input === "branch") {
+    return input;
+  }
+
+  throw AppError.badRequest('scope must be either "message" or "branch".');
+}
+
 function parseBoolean(input: unknown, label: string): boolean {
   if (typeof input !== "boolean") {
     throw AppError.badRequest(`${label} must be a boolean.`);
@@ -121,6 +129,20 @@ export function registerMessagesIpcModule(
     handler: ({ services }, _event, messageId, text, behavior) =>
       services.chatMessages.editMessage(messageId, text, behavior),
   });
+
+  registerInvokeHandler<[string, DeleteMessageScope], HanokiUiMessage[]>(
+    context,
+    registeredChannels,
+    {
+      channel: IPC_CHANNELS.messages.delete,
+      parseArgs: (args): [string, DeleteMessageScope] => {
+        expectArgCount(args, 2);
+        return [parseValidMessageId(args[0]), parseDeleteMessageScope(args[1])];
+      },
+      handler: ({ services }, _event, messageId, scope) =>
+        services.chatMessages.deleteMessage(messageId, scope),
+    },
+  );
 
   registerInvokeHandler<[string, boolean], void>(context, registeredChannels, {
     channel: IPC_CHANNELS.messages.setPinned,

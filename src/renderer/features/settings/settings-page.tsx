@@ -58,6 +58,11 @@ const SUBMIT_BEHAVIORS = [
   { id: "mod-enter", label: "Cmd/Ctrl + Enter" },
 ] as const;
 
+const SIDEBAR_VIEW_MODES = [
+  { id: "tree", label: "Folder tree" },
+  { id: "activity", label: "Recent activity" },
+] as const;
+
 function GeneralSettings() {
   const { data: globalChatSettings, isPending: isLoadingSettings } = useQuery(
     globalChatSettingsQueryOptions,
@@ -68,6 +73,7 @@ function GeneralSettings() {
   const isPending = isLoadingSettings || updateGlobalChatSettings.isPending;
   const promptStickyPosition = globalChatSettings?.promptStickyPosition ?? true;
   const submitBehavior = globalChatSettings?.formSubmitBehavior ?? "enter";
+  const sidebarViewMode = globalChatSettings?.sidebarViewMode ?? "tree";
 
   function updateSettings(input: GlobalChatSettingsUpdateInput) {
     setUpdateError(null);
@@ -104,6 +110,7 @@ function GeneralSettings() {
           control={
             <Select
               value={submitBehavior}
+              items={Object.fromEntries(SUBMIT_BEHAVIORS.map((b) => [b.id, b.label]))}
               disabled={isPending}
               onValueChange={(value) => {
                 if (value === "enter" || value === "mod-enter") {
@@ -119,6 +126,38 @@ function GeneralSettings() {
                   {SUBMIT_BEHAVIORS.map((behavior) => (
                     <SelectItem key={behavior.id} value={behavior.id}>
                       {behavior.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Sidebar">
+        <SettingsRow
+          title="Default chat list view"
+          description="Workspaces can override this from the sidebar options menu."
+          control={
+            <Select
+              value={sidebarViewMode}
+              items={Object.fromEntries(SIDEBAR_VIEW_MODES.map((m) => [m.id, m.label]))}
+              disabled={isPending}
+              onValueChange={(value) => {
+                if (value === "tree" || value === "activity") {
+                  updateSettings({ sidebarViewMode: value });
+                }
+              }}
+            >
+              <SelectTrigger aria-label="Default chat list view" className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {SIDEBAR_VIEW_MODES.map((mode) => (
+                    <SelectItem key={mode.id} value={mode.id}>
+                      {mode.label}
                     </SelectItem>
                   ))}
                 </SelectGroup>

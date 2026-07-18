@@ -3,9 +3,20 @@ import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,9 +29,10 @@ import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "@/components/
 import { Separator } from "@/components/ui/separator";
 
 import type { ChatMessageMetadata, HanokiUiMessage } from "@shared/chat/message-metadata";
-import type { EditMessageBehavior, ProviderModelInfo } from "@shared/ipc";
+import type { EditMessageBehavior } from "@shared/ipc";
 import {
   useChatContinueMessage,
+  useChatDeleteMessage,
   useChatRegenerateMessage,
   useChatStartEditingMessage,
   useChatStopEditingMessage,
@@ -33,13 +45,14 @@ import { messagesApi } from "@/api/messages";
 import { queryKeys } from "@/queries/keys";
 import { CURRENT_BRANCH_QUERY_KEY } from "@/queries/chats";
 import { useChatStore } from "@/stores/chat-store";
-import { listProviderModelsQueryOptions } from "@/queries/providers";
+import { listProviderModelsQueryOptions, listProvidersQueryOptions } from "@/queries/providers";
 
 import "streamdown/styles.css";
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Copy01Icon,
+  Delete02Icon,
   Edit01Icon,
   InformationCircleIcon,
   PinIcon,
@@ -226,6 +239,104 @@ const CopyMessageButton = React.memo(function CopyMessageButton({ text }: CopyMe
   );
 });
 
+interface DeleteMessageButtonProps {
+  isInteractionLocked: boolean;
+  message: HanokiUiMessage;
+}
+
+const DeleteMessageButton = React.memo(function DeleteMessageButton({
+  isInteractionLocked,
+  message,
+}: DeleteMessageButtonProps) {
+  const deleteMessage = useChatDeleteMessage();
+  const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [deleteAllVersions, setDeleteAllVersions] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  const siblingCount = message.metadata?.siblings?.length ?? 0;
+  const hasSiblings = siblingCount > 1;
+
+  const handleOpenChange = (open: boolean) => {
+    if (isDeleting) {
+      return;
+    }
+    setIsOpen(open);
+    if (!open) {
+      setDeleteAllVersions(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteMessage(message.id, deleteAllVersions ? "branch" : "message");
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.chats.pinnedBranches(),
+      });
+      setIsOpen(false);
+      setDeleteAllVersions(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className={cn(TOOLBAR_BUTTON_CLASS, "hover:text-destructive")}
+        aria-label="Delete message"
+        disabled={isInteractionLocked}
+        onClick={() => setIsOpen(true)}
+      >
+        <HugeiconsIcon icon={Delete02Icon} />
+      </Button>
+
+      <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
+        <AlertDialogContent className="sm:max-w-[420px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes this message and every reply that follows it in this branch.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {hasSiblings && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-surface-secondary px-3 py-2.5">
+              <Checkbox
+                checked={deleteAllVersions}
+                onCheckedChange={(checked) => setDeleteAllVersions(checked === true)}
+                disabled={isDeleting}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col gap-0.5 text-sm">
+                <span className="font-medium">Delete all {siblingCount} versions</span>
+                <span className="text-xs text-muted-foreground">
+                  Also removes the other branches of this message and all of their replies.
+                </span>
+              </span>
+            </label>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={() => void handleConfirm()}
+            >
+              {deleteAllVersions ? "Delete all versions" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+});
+
 interface AssistantMessageInfoButtonProps {
   message: HanokiUiMessage;
 }
@@ -236,22 +347,30 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
   const [isOpen, setIsOpen] = React.useState(false);
   const modelId = message.metadata?.model;
   const providerId = message.metadata?.provider;
-  const { data: providerModels = [] } = useQuery({
-    ...listProviderModelsQueryOptions(providerId ?? ""),
-    enabled: Boolean(modelId && providerId),
+  const { data: providers = [] } = useQuery({
+    ...listProvidersQueryOptions,
+    enabled: Boolean(providerId),
   });
-  const modelName = React.useMemo(
-    () => resolveModelDisplayName(modelId, providerModels),
-    [providerModels, modelId],
+  // ponytail: metadata.provider stores the catalog id, not the provider row id
+  const providerRecord = providers.find(
+    (item) => item.catalogId === providerId || item.id === providerId,
   );
-  const summary = React.useMemo(
-    () => getMessageInfoSummary(message, modelName),
-    [message, modelName],
-  );
-  const details = React.useMemo(
-    () => getMessageInfoDetails(message, modelName),
-    [message, modelName],
-  );
+  const { data: providerModels = [] } = useQuery({
+    ...listProviderModelsQueryOptions(providerRecord?.id ?? ""),
+    enabled: Boolean(modelId && providerRecord),
+  });
+  const names = React.useMemo<MessageInfoNames>(() => {
+    const modelRecord = providerModels.find((item) => item.id === modelId);
+    return {
+      modelName: modelRecord
+        ? formatKnownValue(modelRecord.displayName ?? modelRecord.providerModelId)
+        : formatKnownValue(modelId),
+      modelApiId: formatKnownValue(modelRecord?.providerModelId),
+      providerName: providerRecord?.displayName ?? formatKnownValue(providerId),
+    };
+  }, [providerModels, modelId, providerRecord, providerId]);
+  const summary = React.useMemo(() => getMessageInfoSummary(message, names), [message, names]);
+  const details = React.useMemo(() => getMessageInfoDetails(message, names), [message, names]);
 
   return (
     <>
@@ -331,7 +450,9 @@ function AssistantMessageInfoTooltip({ summary }: AssistantMessageInfoTooltipPro
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{summary.model}</p>
-          <p className="truncate text-xs text-muted-foreground">{summary.provider}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {summary.provider} · {summary.modelApiId}
+          </p>
         </div>
         <Badge variant="secondary">{summary.totalTokens}</Badge>
       </div>
@@ -544,6 +665,8 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
         >
           <HugeiconsIcon icon={message.metadata?.pinned ? PinOffIcon : PinIcon} />
         </Button>
+
+        <DeleteMessageButton isInteractionLocked={isInteractionLocked} message={message} />
       </MessageButtonGroup>
 
       {hasSiblings && (
@@ -714,6 +837,8 @@ const UserMessageTools = React.memo(function UserMessageTools({
         >
           <HugeiconsIcon icon={message.metadata?.pinned ? PinOffIcon : PinIcon} />
         </Button>
+
+        <DeleteMessageButton isInteractionLocked={isInteractionLocked} message={message} />
       </MessageButtonGroup>
     </MessageTools>
   );
@@ -911,8 +1036,15 @@ function getMessageText(message: HanokiUiMessage): string {
     .join("\n");
 }
 
+interface MessageInfoNames {
+  modelName: string;
+  modelApiId: string;
+  providerName: string;
+}
+
 interface MessageInfoSummary {
   model: string;
+  modelApiId: string;
   provider: string;
   createdAt: string;
   generationTime: string;
@@ -928,27 +1060,17 @@ interface MessageInfoDetails {
   branch: MessageInfoFieldProps[];
 }
 
-function resolveModelDisplayName(
-  modelId: string | null | undefined,
-  models: ProviderModelInfo[],
-): string {
-  const fallback = formatKnownValue(modelId);
-  const model = models.find((item) => item.id === modelId);
-
-  if (!model) {
-    return fallback;
-  }
-
-  return formatKnownValue(model.displayName ?? model.providerModelId);
-}
-
-function getMessageInfoSummary(message: HanokiUiMessage, modelName: string): MessageInfoSummary {
+function getMessageInfoSummary(
+  message: HanokiUiMessage,
+  names: MessageInfoNames,
+): MessageInfoSummary {
   const metadata = message.metadata;
   const tokens = metadata?.tokens;
 
   return {
-    model: modelName,
-    provider: formatKnownValue(metadata?.provider),
+    model: names.modelName,
+    modelApiId: names.modelApiId,
+    provider: names.providerName,
     createdAt: formatTimestamp(metadata?.createdAt),
     generationTime: formatDuration(metadata?.times?.generation),
     inputTokens: formatNumber(tokens?.input),
@@ -958,7 +1080,10 @@ function getMessageInfoSummary(message: HanokiUiMessage, modelName: string): Mes
   };
 }
 
-function getMessageInfoDetails(message: HanokiUiMessage, modelName: string): MessageInfoDetails {
+function getMessageInfoDetails(
+  message: HanokiUiMessage,
+  names: MessageInfoNames,
+): MessageInfoDetails {
   const metadata = message.metadata;
   const tokens = metadata?.tokens;
   const siblings = metadata?.siblings ?? [];
@@ -967,8 +1092,9 @@ function getMessageInfoDetails(message: HanokiUiMessage, modelName: string): Mes
     primary: [
       { label: "Message ID", value: message.id },
       { label: "Role", value: message.role },
-      { label: "Model", value: modelName },
-      { label: "Provider", value: formatKnownValue(metadata?.provider) },
+      { label: "Model", value: names.modelName },
+      { label: "Model ID", value: names.modelApiId },
+      { label: "Provider", value: names.providerName },
       { label: "Created", value: formatTimestamp(metadata?.createdAt) },
       { label: "Updated", value: formatTimestamp(metadata?.updatedAt) },
       {

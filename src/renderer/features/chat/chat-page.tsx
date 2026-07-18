@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
+import { useDebouncedCallback } from "@tanstack/react-pacer";
 import { Add01Icon, AiWebBrowsingIcon, Cancel01Icon, SentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
@@ -144,8 +145,29 @@ function ActiveChatView({ chatId }: { chatId: string }) {
 }
 
 function ActiveChatContent() {
-  const [input, setInput] = React.useState("");
   const chatId = useChatId();
+  const [input, setInput] = React.useState(
+    () => useWorkspaceStore.getState().chatDrafts[chatId] ?? "",
+  );
+  const inputRef = React.useRef(input);
+  const saveDraft = useDebouncedCallback(
+    (text: string) => useWorkspaceStore.getState().setChatDraft(chatId, text),
+    { wait: 500 },
+  );
+  const updateInput = React.useCallback(
+    (text: string) => {
+      inputRef.current = text;
+      setInput(text);
+      saveDraft(text);
+    },
+    [saveDraft],
+  );
+
+  // Flush the draft on unmount so fast chat switches don't lose it to the debounce.
+  React.useEffect(
+    () => () => useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current),
+    [chatId],
+  );
   const modelId = useChatModelId();
   const messages = useChatMessages();
   const sendMessage = useChatSendMessage();
@@ -256,9 +278,9 @@ function ActiveChatContent() {
         parentId: messages.at(-1)?.id ?? null,
       },
     });
-    setInput("");
+    updateInput("");
     return true;
-  }, [input, isInteractionLocked, messages, modelId, scrollToBottom, sendMessage]);
+  }, [input, isInteractionLocked, messages, modelId, scrollToBottom, sendMessage, updateInput]);
 
   useHotkey(
     "Enter",
@@ -401,7 +423,7 @@ function ActiveChatContent() {
                   placeholder="Ask anything…"
                   rows={1}
                   value={input}
-                  onChange={(event) => setInput(event.target.value)}
+                  onChange={(event) => updateInput(event.target.value)}
                   className="w-full resize-none overflow-y-auto px-3 py-1 max-h-[24rem] min-h-0 text-[0.9375rem] [field-sizing:content]"
                 />
                 <InputGroupAddon
@@ -414,7 +436,7 @@ function ActiveChatContent() {
                     <SumiPromptAction
                       prompt={input}
                       isDisabled={isInteractionLocked}
-                      onReplace={setInput}
+                      onReplace={updateInput}
                     />
                     {canStop ? (
                       <Tooltip>
@@ -520,11 +542,13 @@ function isComposerInputEvent(event: KeyboardEvent): boolean {
 }
 
 function ModelSelector() {
+  const chatId = useChatId();
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
   const { data: providers = [] } = useQuery(listProvidersQueryOptions);
   const isInteractionLocked = useChatIsInteractionLocked();
   const modelId = useChatModelId();
   const setModelId = useSetChatModelId();
+  const updateChatSettings = useUpdateChatSettings();
 
   const selected = enabledModels.find((m) => m.id === modelId) ?? null;
 
@@ -532,7 +556,13 @@ function ModelSelector() {
     <Combobox
       items={enabledModels}
       value={selected}
-      onValueChange={(model) => setModelId(model?.id ?? null)}
+      onValueChange={(model) => {
+        const nextModelId = model?.id ?? null;
+        setModelId(nextModelId);
+        // Persist per chat so the selection survives tab switches (the
+        // chat store is recreated from chat.settings.modelId on remount).
+        updateChatSettings.mutate({ id: chatId, input: { modelId: nextModelId } });
+      }}
       itemToStringValue={(model) => model.displayName ?? model.providerModelId}
       isItemEqualToValue={(item, value) => item.id === value.id}
       disabled={isInteractionLocked}

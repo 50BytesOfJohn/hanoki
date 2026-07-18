@@ -1,4 +1,4 @@
-import { WorkspaceInfo } from "@shared/ipc";
+import { ChatSidebarViewMode, WorkspaceInfo } from "@shared/ipc";
 import type { StateCreator } from "zustand";
 import "zustand/middleware/immer";
 
@@ -21,11 +21,20 @@ export interface WorkspaceSliceValue {
   state: WorkspaceState;
   workspace: WorkspaceInfo | null;
   currentChatId: string | null;
+  /** Per-workspace override of the global sidebar view mode; null = use global default. */
+  sidebarViewMode: ChatSidebarViewMode | null;
+  /** Unsent composer text per chat id. */
+  chatDrafts: Record<string, string>;
+  /** Last-used chat panel view (route path) per chat id; absent = conversation. */
+  chatViews: Record<string, string>;
 }
 
 export interface WorkspaceSlice extends WorkspaceSliceValue {
   switchWorkspace: (id: string) => Promise<void>;
   setCurrentChat: (chatId: string | null) => void;
+  setSidebarViewMode: (mode: ChatSidebarViewMode) => void;
+  setChatDraft: (chatId: string, draft: string) => void;
+  setChatView: (chatId: string, view: string) => void;
 }
 
 export interface TabsSliceValue {

@@ -52,7 +52,8 @@ export function ChatSearchDialog({
 }) {
   const { data: chats = [], isPending } = useQuery({
     queryKey: queryKeys.chatTree.snapshot(workspaceId),
-    queryFn: async () => flattenSnapshot(await chatTreeApi.getTree(workspaceId)),
+    queryFn: () => chatTreeApi.getTree(workspaceId),
+    select: flattenSnapshot,
     enabled: open,
   });
 

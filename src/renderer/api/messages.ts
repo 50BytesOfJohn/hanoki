@@ -1,7 +1,7 @@
 import "../lib/electron-api";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
-import type { EditMessageBehavior } from "@shared/ipc";
+import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
 
 export const messagesApi = {
   listMessages(chatId: string, branchId?: string | null): Promise<HanokiUiMessage[]> {
@@ -22,6 +22,10 @@ export const messagesApi = {
     behavior: EditMessageBehavior,
   ): Promise<HanokiUiMessage[]> {
     return window.electronAPI.editMessage(messageId, text, behavior);
+  },
+
+  deleteMessage(messageId: string, scope: DeleteMessageScope): Promise<HanokiUiMessage[]> {
+    return window.electronAPI.deleteMessage(messageId, scope);
   },
 
   setMessagePinned(messageId: string, pinned: boolean): Promise<void> {

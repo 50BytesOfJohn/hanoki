@@ -48,6 +48,11 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
     const deletedChatIds = new Set(chatIds);
 
     set((state) => {
+      for (const chatId of deletedChatIds) {
+        delete state.chatDrafts[chatId];
+        delete state.chatViews[chatId];
+      }
+
       const nextTabs = state.tabs.filter(
         (tab) => tab.type !== "chat" || !deletedChatIds.has(tab.chatId),
       );

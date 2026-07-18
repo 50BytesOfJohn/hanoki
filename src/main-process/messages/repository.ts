@@ -1,4 +1,4 @@
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { getAppDatabase } from "../db/database";
 import { messages } from "../db/schema";
@@ -160,6 +160,57 @@ export function upsertMessage(input: UpsertMessageInput): MessageRow {
   }
 
   return toMessageRow(saved);
+}
+
+export interface DeleteMessageSubtreeResult {
+  chatId: string;
+  parentId: string | null;
+  deletedIds: Set<string>;
+}
+
+/**
+ * Deletes a message subtree.
+ *
+ * scope "message": the message itself plus all of its descendants.
+ * scope "branch": every sibling sharing the message's parentId (including the
+ * message itself) plus all of their descendants.
+ */
+export function deleteMessageSubtree(
+  messageId: string,
+  scope: "message" | "branch",
+): DeleteMessageSubtreeResult {
+  const db = getAppDatabase();
+  const target = db.select().from(messages).where(eq(messages.id, messageId)).get();
+  if (!target) {
+    throw new Error(`Message "${messageId}" does not exist.`);
+  }
+
+  const allMessages = loadAllMessagesByChatId(target.chatId);
+  const { childrenByParentId } = buildMessageIndexes(allMessages);
+
+  const rootIds =
+    scope === "branch"
+      ? (childrenByParentId.get(target.parentId) ?? [target]).map((message) => message.id)
+      : [target.id];
+
+  const deletedIds = new Set<string>();
+  const stack = [...rootIds];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (deletedIds.has(id)) {
+      continue;
+    }
+    deletedIds.add(id);
+    for (const child of childrenByParentId.get(id) ?? []) {
+      stack.push(child.id);
+    }
+  }
+
+  db.delete(messages)
+    .where(inArray(messages.id, [...deletedIds]))
+    .run();
+
+  return { chatId: target.chatId, parentId: target.parentId, deletedIds };
 }
 
 /**

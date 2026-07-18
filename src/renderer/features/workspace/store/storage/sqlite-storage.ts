@@ -16,6 +16,11 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
       })),
 
       chatTreeExpandedFolderIds: state.expandedTreeNodes,
+      chatDrafts: state.chatDrafts,
+      chatViews: state.chatViews,
+
+      // ponytail: null = no override; skip the key so the stored value survives
+      ...(state.sidebarViewMode ? { sidebarViewMode: state.sidebarViewMode } : {}),
     });
   },
   {
@@ -28,6 +33,14 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
     },
   },
 );
+
+/**
+ * Flush any pending debounced sync on quit so recent state (drafts, tabs, views)
+ * isn't lost to the 5s debounce window.
+ */
+window.addEventListener("beforeunload", () => {
+  void syncWorkspaceSettingsStateToSqlite.flush();
+});
 
 export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
   getItem: async (_name: string) => {
@@ -62,6 +75,9 @@ export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
             })) ?? [],
 
           expandedTreeNodes: settings?.chatTreeExpandedFolderIds ?? [],
+          sidebarViewMode: settings?.sidebarViewMode ?? null,
+          chatDrafts: settings?.chatDrafts ?? {},
+          chatViews: settings?.chatViews ?? {},
         } satisfies WorkspaceStoreValues,
       };
     } catch (e) {

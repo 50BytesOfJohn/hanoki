@@ -27,6 +27,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
               workspace: state.workspace,
 
               currentChatId: state.currentChatId,
+              sidebarViewMode: state.sidebarViewMode,
+              chatDrafts: state.chatDrafts,
+              chatViews: state.chatViews,
               tabs: state.tabs,
 
               expandedTreeNodes: state.expandedTreeNodes,

@@ -150,7 +150,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     const startTime = Date.now();
     let capturedResponseMetadata: Omit<ChatMessageMetadata, "parentId"> | undefined;
-    const modelInputMessages = prependSystemPrompt(
+    const modelInputMessages =
       mode === "continue-message"
         ? [
             ...messages,
@@ -163,15 +163,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
               },
             } satisfies HanokiUiMessage,
           ]
-        : messages,
-      chat.id,
-      chat.settings.systemPrompt,
-    );
+        : messages;
 
     const result = streamText({
       abortSignal: c.req.raw.signal,
       model: languageModel,
       experimental_transform: smoothStream({ chunking: "line" }),
+      instructions: chat.settings.systemPrompt?.trim() || undefined,
       messages: await convertToModelMessages(modelInputMessages),
       tools: chat.settings.webEnabled ? webTools : undefined,
       stopWhen: chat.settings.webEnabled ? isStepCount(5) : undefined,
@@ -275,28 +273,6 @@ function extractUiMessageText(message: HanokiUiMessage): string | null {
     .trim();
 
   return text || null;
-}
-
-function prependSystemPrompt(
-  messages: HanokiUiMessage[],
-  chatId: string,
-  systemPrompt: string | null | undefined,
-) {
-  if (typeof systemPrompt !== "string" || systemPrompt.trim().length === 0) {
-    return messages;
-  }
-
-  return [
-    {
-      id: `system-prompt:${chatId}`,
-      role: "system" as const,
-      parts: [{ type: "text" as const, text: systemPrompt }],
-      metadata: {
-        parentId: null,
-      },
-    } satisfies HanokiUiMessage,
-    ...messages,
-  ];
 }
 
 function mergeContinuationParts(

@@ -1,9 +1,10 @@
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { PinnedBranchSummary } from "@shared/chat/pinned-branch";
-import { type EditMessageBehavior } from "@shared/ipc";
+import { type DeleteMessageScope, type EditMessageBehavior } from "@shared/ipc";
 import { createUuidV7 } from "../db/uuidv7";
 import { getChatById, getChatCurrentBranchId, setChatCurrentBranch } from "../chat-tree/repository";
 import {
+  deleteMessageSubtree,
   getMessageById,
   listAllMessagesByChatId,
   listMessagesByChatId,
@@ -18,6 +19,7 @@ export interface ChatMessagesService {
   listAllChatMessages(chatId: string): HanokiUiMessage[];
   switchChatBranch(chatId: string, branchId: string): HanokiUiMessage[];
   editMessage(messageId: string, text: string, behavior: EditMessageBehavior): HanokiUiMessage[];
+  deleteMessage(messageId: string, scope: DeleteMessageScope): HanokiUiMessage[];
   setMessagePinned(messageId: string, pinned: boolean): void;
   listPinnedBranches(): PinnedBranchSummary[];
 }
@@ -130,6 +132,19 @@ export function createChatMessagesService(): ChatMessagesService {
       setChatCurrentBranch(chat.id, nextMessageId);
 
       return this.listChatMessages(chat.id, nextMessageId);
+    },
+
+    deleteMessage(messageId: string, scope: DeleteMessageScope): HanokiUiMessage[] {
+      const { chatId, parentId, deletedIds } = deleteMessageSubtree(messageId, scope);
+
+      // If the current branch pointer was deleted, fall back to the deleted
+      // message's parent so history resolution keeps working.
+      const currentBranchId = getChatCurrentBranchId(chatId);
+      if (currentBranchId !== null && deletedIds.has(currentBranchId)) {
+        setChatCurrentBranch(chatId, parentId);
+      }
+
+      return this.listChatMessages(chatId);
     },
 
     setMessagePinned(messageId: string, pinned: boolean): void {

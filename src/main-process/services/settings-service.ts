@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG } from "../config/defaults";
 import { getConfig, updateConfig } from "../config";
 import type {
   ChatFormSubmitBehavior,
+  ChatSidebarViewMode,
   GlobalChatSettings,
   GlobalChatSettingsUpdateInput,
   SumiModelReference,
@@ -13,8 +14,10 @@ import { getModelById } from "../models/repository";
 import { AppError } from "../ipc/core/errors";
 
 const CHAT_FORM_SUBMIT_BEHAVIORS: readonly ChatFormSubmitBehavior[] = ["enter", "mod-enter"];
+const CHAT_SIDEBAR_VIEW_MODES: readonly ChatSidebarViewMode[] = ["tree", "activity"];
 const DEFAULT_PROMPT_STICKY_POSITION = DEFAULT_CONFIG.chat.prompt.stickyPosition;
 const DEFAULT_FORM_SUBMIT_BEHAVIOR = DEFAULT_CONFIG.chat.form.submitBehavior;
+const DEFAULT_SIDEBAR_VIEW_MODE = DEFAULT_CONFIG.chat.sidebar.viewMode;
 const DEFAULT_SUMI_OPENROUTER_MODEL_ID = "~anthropic/claude-haiku-latest";
 
 export interface SettingsService {
@@ -34,6 +37,7 @@ export function createSettingsService(): SettingsService {
       const next: GlobalChatSettings = {
         promptStickyPosition: input.promptStickyPosition ?? current.promptStickyPosition,
         formSubmitBehavior: input.formSubmitBehavior ?? current.formSubmitBehavior,
+        sidebarViewMode: input.sidebarViewMode ?? current.sidebarViewMode,
       };
 
       updateConfig({
@@ -43,6 +47,9 @@ export function createSettingsService(): SettingsService {
           },
           form: {
             submitBehavior: next.formSubmitBehavior,
+          },
+          sidebar: {
+            viewMode: next.sidebarViewMode,
           },
         },
       });
@@ -203,7 +210,19 @@ function readGlobalChatSettings(): GlobalChatSettings {
         ? config.chat.prompt.stickyPosition
         : DEFAULT_PROMPT_STICKY_POSITION,
     formSubmitBehavior: resolveChatFormSubmitBehavior(config.chat.form.submitBehavior),
+    sidebarViewMode: resolveChatSidebarViewMode(config.chat.sidebar?.viewMode),
   };
+}
+
+function resolveChatSidebarViewMode(rawValue: unknown): ChatSidebarViewMode {
+  if (
+    typeof rawValue === "string" &&
+    CHAT_SIDEBAR_VIEW_MODES.includes(rawValue as ChatSidebarViewMode)
+  ) {
+    return rawValue as ChatSidebarViewMode;
+  }
+
+  return DEFAULT_SIDEBAR_VIEW_MODE;
 }
 
 function resolveChatFormSubmitBehavior(rawValue: unknown): ChatFormSubmitBehavior {

@@ -6,10 +6,40 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
   state: "idle",
   workspace: null,
   currentChatId: null,
+  sidebarViewMode: null,
+  chatDrafts: {},
+  chatViews: {},
 
   setCurrentChat: (chatId) => {
     set((state) => {
       state.currentChatId = chatId;
+    });
+  },
+
+  setChatDraft: (chatId, draft) => {
+    set((state) => {
+      if (draft.trim()) {
+        state.chatDrafts[chatId] = draft;
+      } else {
+        delete state.chatDrafts[chatId];
+      }
+    });
+  },
+
+  setChatView: (chatId, view) => {
+    set((state) => {
+      // "/chat" is the default view — no need to store it.
+      if (view === "/chat") {
+        delete state.chatViews[chatId];
+      } else {
+        state.chatViews[chatId] = view;
+      }
+    });
+  },
+
+  setSidebarViewMode: (mode) => {
+    set((state) => {
+      state.sidebarViewMode = mode;
     });
   },
 
@@ -46,6 +76,9 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
         })) ?? [];
 
       state.expandedTreeNodes = newSettings.chatTreeExpandedFolderIds ?? [];
+      state.sidebarViewMode = newSettings.sidebarViewMode ?? null;
+      state.chatDrafts = newSettings.chatDrafts ?? {};
+      state.chatViews = newSettings.chatViews ?? {};
     });
 
     /**

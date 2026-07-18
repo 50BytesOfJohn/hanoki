@@ -1,7 +1,7 @@
 import * as React from "react";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useTree } from "@headless-tree/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
@@ -11,13 +11,14 @@ import {
 } from "@headless-tree/core";
 import type { ItemInstance } from "@headless-tree/core";
 import {
-  Add01Icon,
   AddSquareIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
   Cancel01Icon,
   Chat01Icon,
+  ChatAdd01Icon,
   FolderAddIcon,
+  MoreHorizontalIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -35,11 +36,21 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/menu";
 
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { getChatQueryOptions } from "@/queries/chats";
+import { globalChatSettingsQueryOptions } from "@/queries/settings";
+import { queryKeys } from "@/queries/keys";
 import {
   useDeleteChatTreeItems,
   useMoveChat,
@@ -50,7 +61,14 @@ import {
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 
-import type { ChatInfo, ChatTreeFolderListItem, ChatTreeItemRef } from "@shared/ipc";
+import type {
+  ChatInfo,
+  ChatSidebarViewMode,
+  ChatTreeFolderListItem,
+  ChatTreeFolderNode,
+  ChatTreeItemRef,
+  ChatTreeSnapshot,
+} from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
 import {
   ChatSidebar,
@@ -76,7 +94,11 @@ export function ChatSidebarTree() {
   const workspaceState = useWorkspaceStore((s) => s.state);
   const workspace = useWorkspaceStore((s) => s.workspace);
   const expandedTreeNodes = useWorkspaceStore((s) => s.expandedTreeNodes);
+  const workspaceViewMode = useWorkspaceStore((s) => s.sidebarViewMode);
+  const { data: globalChatSettings } = useQuery(globalChatSettingsQueryOptions);
 
+  const viewMode: ChatSidebarViewMode =
+    workspaceViewMode ?? globalChatSettings?.sidebarViewMode ?? "tree";
   const workspaceId = workspace?.id;
 
   return (
@@ -84,7 +106,9 @@ export function ChatSidebarTree() {
       <ChatSidebarPanel>
         {!workspaceId ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">Select a workspace.</p>
-        ) : workspaceState === "loading" ? null : (
+        ) : workspaceState === "loading" ? null : viewMode === "activity" ? (
+          <ChatSidebarActivity key={`activity:${workspaceId}`} workspaceId={workspaceId} />
+        ) : (
           <ChatSidebarTreeInner
             key={workspaceId}
             workspaceId={workspaceId}
@@ -93,6 +117,41 @@ export function ChatSidebarTree() {
         )}
       </ChatSidebarPanel>
     </ChatSidebar>
+  );
+}
+
+function ChatSidebarViewModeMenu({ viewMode }: { viewMode: ChatSidebarViewMode }) {
+  const setSidebarViewMode = useWorkspaceStore((s) => s.setSidebarViewMode);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Sidebar options"
+          />
+        }
+      >
+        <HugeiconsIcon icon={MoreHorizontalIcon} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="bottom" align="end">
+        <DropdownMenuRadioGroup
+          value={viewMode}
+          onValueChange={(value) => {
+            if (value === "tree" || value === "activity") {
+              setSidebarViewMode(value);
+            }
+          }}
+        >
+          <DropdownMenuLabel>View</DropdownMenuLabel>
+          <DropdownMenuRadioItem value="tree">Folder tree</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="activity">Recent activity</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -413,7 +472,7 @@ function ChatSidebarTreeInner({
               void createChat(null);
             }}
           >
-            <HugeiconsIcon icon={Add01Icon} />
+            <HugeiconsIcon icon={ChatAdd01Icon} />
           </Button>
           <Button
             size="icon-xs"
@@ -426,6 +485,7 @@ function ChatSidebarTreeInner({
           >
             <HugeiconsIcon icon={FolderAddIcon} />
           </Button>
+          <ChatSidebarViewModeMenu viewMode="tree" />
         </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
@@ -599,6 +659,300 @@ function ChatSidebarTreeInner({
         onConfirm={handleDeleteConfirm}
       />
     </>
+  );
+}
+
+/* ── Activity view ── */
+
+function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
+  const chats: ChatInfo[] = [];
+
+  const walk = (folders: ChatTreeFolderNode[], folderChats: ChatInfo[]) => {
+    chats.push(...folderChats);
+    for (const folder of folders) {
+      walk(folder.folders, folder.chats);
+    }
+  };
+
+  walk(snapshot.rootFolders, snapshot.rootChats);
+  return chats.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+interface ActivitySection {
+  label: string;
+  chats: ChatInfo[];
+}
+
+function groupChatsByActivity(chats: ChatInfo[]): ActivitySection[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const buckets = [
+    { label: "Today", from: startOfToday },
+    { label: "Last 7 days", from: startOfToday - 6 * dayMs },
+    { label: "Last 30 days", from: startOfToday - 29 * dayMs },
+    { label: "Older", from: Number.NEGATIVE_INFINITY },
+  ].map((bucket) => ({ ...bucket, chats: [] as ChatInfo[] }));
+
+  for (const chat of chats) {
+    const bucket = buckets.find((candidate) => chat.updatedAt >= candidate.from);
+    bucket?.chats.push(chat);
+  }
+
+  return buckets.filter((bucket) => bucket.chats.length > 0);
+}
+
+function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const openTab = useWorkspaceStore((s) => s.openTab);
+  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
+
+  const createChatMutation = useCreateChat();
+  const cloneChatMutation = useCloneChat();
+  const deleteItemsMutation = useDeleteChatTreeItems();
+  const renameChatTreeItem = useRenameChatTreeItem();
+
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [pendingDeleteItems, setPendingDeleteItems] = React.useState<ChatTreeItemRef[] | null>(
+    null,
+  );
+  const [renamingChat, setRenamingChat] = React.useState<{ id: string; value: string } | null>(
+    null,
+  );
+
+  useHotkey("Mod+K", () => {
+    setSearchOpen(true);
+  });
+
+  const { data: chats = [] } = useQuery({
+    queryKey: queryKeys.chatTree.snapshot(workspaceId),
+    queryFn: () => chatTreeApi.getTree(workspaceId),
+    select: flattenSnapshotChats,
+  });
+
+  const sections = React.useMemo(() => groupChatsByActivity(chats), [chats]);
+
+  const invalidateSnapshot = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.snapshot(workspaceId) });
+  }, [queryClient, workspaceId]);
+
+  // Re-sort when the active chat finishes streaming, so it bubbles to the top.
+  const currentChatStatus = useChatStatus(currentChatId ?? "");
+  const previousStatusRef = React.useRef(currentChatStatus);
+  React.useEffect(() => {
+    const wasActive =
+      previousStatusRef.current === "streaming" || previousStatusRef.current === "submitted";
+    previousStatusRef.current = currentChatStatus;
+    if (wasActive && currentChatStatus === "ready") {
+      invalidateSnapshot();
+    }
+  }, [currentChatStatus, invalidateSnapshot]);
+
+  const commitRename = React.useCallback(() => {
+    if (!renamingChat) {
+      return;
+    }
+
+    const trimmed = renamingChat.value.trim();
+    setRenamingChat(null);
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    renameChatTreeItem.mutate(
+      { itemId: `chat:${renamingChat.id}`, name: trimmed },
+      { onSuccess: invalidateSnapshot },
+    );
+  }, [invalidateSnapshot, renameChatTreeItem, renamingChat]);
+
+  const handleContextMenu = React.useCallback(
+    (chat: ChatInfo) => (event: React.MouseEvent) => {
+      event.preventDefault();
+      void chatTreeApi.showContextMenu(`chat:${chat.id}`, "chat").then((action) => {
+        if (action === "open-in-new-tab") {
+          openTab({ type: "chat", chatId: chat.id });
+        } else if (action === "clone") {
+          void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
+        } else if (action === "rename") {
+          setRenamingChat({ id: chat.id, value: chat.title });
+        } else if (action === "delete") {
+          setPendingDeleteItems([{ kind: "chat", id: chat.id }]);
+        }
+      });
+    },
+    [cloneChatMutation, invalidateSnapshot, openTab],
+  );
+
+  const handleDeleteConfirm = React.useCallback(() => {
+    if (!pendingDeleteItems || pendingDeleteItems.length === 0) {
+      return;
+    }
+
+    deleteItemsMutation.mutate(
+      { workspaceId, items: pendingDeleteItems },
+      {
+        onSettled: () => {
+          setPendingDeleteItems(null);
+        },
+      },
+    );
+  }, [deleteItemsMutation, pendingDeleteItems, workspaceId]);
+
+  return (
+    <>
+      <ChatSidebarBlock className="gap-2 pt-1">
+        <ChatTabsSection />
+
+        <ChatSidebarSectionHeader title="Chats">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Search chats (⌘K)"
+            onClick={() => {
+              setSearchOpen(true);
+            }}
+          >
+            <HugeiconsIcon icon={Search01Icon} />
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add chat"
+            onClick={() => {
+              void createChatMutation
+                .mutateAsync({ workspaceId, title: "New chat", folderId: null })
+                .then(invalidateSnapshot);
+            }}
+          >
+            <HugeiconsIcon icon={ChatAdd01Icon} />
+          </Button>
+          <ChatSidebarViewModeMenu viewMode="activity" />
+        </ChatSidebarSectionHeader>
+
+        {sections.length === 0 ? (
+          <p className="px-3 py-3 text-xs text-muted-foreground">No chats yet.</p>
+        ) : (
+          <ChatSidebarBlockContent className="px-1 py-1">
+            <div className="flex flex-col gap-2 pb-8">
+              {sections.map((section) => (
+                <section key={section.label}>
+                  <h3 className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
+                    {section.label}
+                  </h3>
+                  <div className="flex flex-col gap-0.5">
+                    {section.chats.map((chat) =>
+                      renamingChat?.id === chat.id ? (
+                        <div key={chat.id} className="flex h-7 items-center gap-1.5 px-2">
+                          <ChatTreeItemIcon chatId={chat.id} />
+                          <Input
+                            autoFocus
+                            className="h-7 min-w-0 flex-1 px-2 text-sm"
+                            value={renamingChat.value}
+                            onChange={(event) => {
+                              setRenamingChat({ id: chat.id, value: event.target.value });
+                            }}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                commitRename();
+                              }
+                              if (event.key === "Escape") {
+                                setRenamingChat(null);
+                              }
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <ChatActivityListItem
+                          key={chat.id}
+                          chat={chat}
+                          isActive={chat.id === currentChatId}
+                          onSelect={() => setCurrentChat(chat.id)}
+                          onOpenInTab={() => openTab({ type: "chat", chatId: chat.id })}
+                          onContextMenu={handleContextMenu(chat)}
+                        />
+                      ),
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </ChatSidebarBlockContent>
+        )}
+      </ChatSidebarBlock>
+      <ChatSearchDialog
+        workspaceId={workspaceId}
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSelectChat={setCurrentChat}
+      />
+      <DeleteTreeItemsDialog
+        items={pendingDeleteItems}
+        isPending={deleteItemsMutation.isPending}
+        onClose={() => {
+          if (!deleteItemsMutation.isPending) {
+            setPendingDeleteItems(null);
+          }
+        }}
+        onConfirm={handleDeleteConfirm}
+      />
+    </>
+  );
+}
+
+function ChatActivityListItem({
+  chat,
+  isActive,
+  onSelect,
+  onOpenInTab,
+  onContextMenu,
+}: {
+  chat: ChatInfo;
+  isActive: boolean;
+  onSelect: () => void;
+  onOpenInTab: () => void;
+  onContextMenu: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={isActive}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "group/tree-item relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+        "hover:bg-hover",
+        isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
+      )}
+    >
+      <ChatTreeItemIcon chatId={chat.id} />
+      <ChatTreeItemLabel>{chat.title}</ChatTreeItemLabel>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className={cn(
+          SIDEBAR_ICON_BUTTON_CLASS,
+          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
+        )}
+        aria-label={`Open ${chat.title} in new tab`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenInTab();
+        }}
+      >
+        <HugeiconsIcon icon={AddSquareIcon} />
+      </Button>
+    </div>
   );
 }
 
