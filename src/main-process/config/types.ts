@@ -1,4 +1,4 @@
-import type { ChatFormSubmitBehavior, ChatSidebarViewMode } from "@shared/ipc";
+import type { ChatFormSubmitBehavior, ChatSidebarViewMode, ChatTabsPosition } from "@shared/ipc";
 
 export type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
@@ -33,6 +33,9 @@ export interface AppConfig {
     };
     sidebar: {
       viewMode: ChatSidebarViewMode;
+    };
+    tabs: {
+      position: ChatTabsPosition;
     };
   };
   sumi: {

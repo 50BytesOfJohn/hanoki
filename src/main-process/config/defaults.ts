@@ -18,6 +18,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     sidebar: {
       viewMode: "tree",
     },
+    tabs: {
+      position: "top",
+    },
   },
   sumi: {
     promptActions: {

@@ -3,6 +3,7 @@ import { getConfig, updateConfig } from "../config";
 import type {
   ChatFormSubmitBehavior,
   ChatSidebarViewMode,
+  ChatTabsPosition,
   GlobalChatSettings,
   GlobalChatSettingsUpdateInput,
   SumiModelReference,
@@ -15,9 +16,11 @@ import { AppError } from "../ipc/core/errors";
 
 const CHAT_FORM_SUBMIT_BEHAVIORS: readonly ChatFormSubmitBehavior[] = ["enter", "mod-enter"];
 const CHAT_SIDEBAR_VIEW_MODES: readonly ChatSidebarViewMode[] = ["tree", "activity"];
+const CHAT_TABS_POSITIONS: readonly ChatTabsPosition[] = ["top", "sidebar"];
 const DEFAULT_PROMPT_STICKY_POSITION = DEFAULT_CONFIG.chat.prompt.stickyPosition;
 const DEFAULT_FORM_SUBMIT_BEHAVIOR = DEFAULT_CONFIG.chat.form.submitBehavior;
 const DEFAULT_SIDEBAR_VIEW_MODE = DEFAULT_CONFIG.chat.sidebar.viewMode;
+const DEFAULT_TABS_POSITION = DEFAULT_CONFIG.chat.tabs.position;
 const DEFAULT_SUMI_OPENROUTER_MODEL_ID = "~anthropic/claude-haiku-latest";
 
 export interface SettingsService {
@@ -38,6 +41,7 @@ export function createSettingsService(): SettingsService {
         promptStickyPosition: input.promptStickyPosition ?? current.promptStickyPosition,
         formSubmitBehavior: input.formSubmitBehavior ?? current.formSubmitBehavior,
         sidebarViewMode: input.sidebarViewMode ?? current.sidebarViewMode,
+        tabsPosition: input.tabsPosition ?? current.tabsPosition,
       };
 
       updateConfig({
@@ -50,6 +54,9 @@ export function createSettingsService(): SettingsService {
           },
           sidebar: {
             viewMode: next.sidebarViewMode,
+          },
+          tabs: {
+            position: next.tabsPosition,
           },
         },
       });
@@ -211,7 +218,16 @@ function readGlobalChatSettings(): GlobalChatSettings {
         : DEFAULT_PROMPT_STICKY_POSITION,
     formSubmitBehavior: resolveChatFormSubmitBehavior(config.chat.form.submitBehavior),
     sidebarViewMode: resolveChatSidebarViewMode(config.chat.sidebar?.viewMode),
+    tabsPosition: resolveChatTabsPosition(config.chat.tabs?.position),
   };
+}
+
+function resolveChatTabsPosition(rawValue: unknown): ChatTabsPosition {
+  if (typeof rawValue === "string" && CHAT_TABS_POSITIONS.includes(rawValue as ChatTabsPosition)) {
+    return rawValue as ChatTabsPosition;
+  }
+
+  return DEFAULT_TABS_POSITION;
 }
 
 function resolveChatSidebarViewMode(rawValue: unknown): ChatSidebarViewMode {

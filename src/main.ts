@@ -20,6 +20,12 @@ const APP_IDENTIFIER = getDefaultAppIdentifier();
 app.setName(APP_NAME);
 app.setPath("userData", path.join(app.getPath("appData"), APP_IDENTIFIER));
 
+// Opt-in CDP endpoint for driving the app in development, e.g.
+// HANOKI_DEBUG_CDP=9222 pnpm start
+if (process.env.HANOKI_DEBUG_CDP) {
+  app.commandLine.appendSwitch("remote-debugging-port", process.env.HANOKI_DEBUG_CDP);
+}
+
 if (process.platform === "win32") {
   app.setAppUserModelId(APP_IDENTIFIER);
 }

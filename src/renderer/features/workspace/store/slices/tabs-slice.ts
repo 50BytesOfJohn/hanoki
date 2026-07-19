@@ -30,7 +30,46 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         return;
       }
 
+      const closedTab = state.tabs[tabIndex];
       state.tabs.splice(tabIndex, 1);
+
+      // Closing the active tab focuses its neighbor, like IDE tabs.
+      if (closedTab.chatId === state.currentChatId) {
+        const neighbor = state.tabs[tabIndex] ?? state.tabs[tabIndex - 1];
+        if (neighbor) {
+          state.currentChatId = neighbor.chatId;
+        }
+      }
+    });
+  },
+
+  closeOtherTabs: (tabId) => {
+    set((state) => {
+      const keptTab = state.tabs.find((tab) => tab.id === tabId);
+
+      if (!keptTab || state.tabs.length < 2) {
+        return;
+      }
+
+      const hadCurrentTab = state.tabs.some((tab) => tab.chatId === state.currentChatId);
+      state.tabs = [keptTab];
+
+      if (hadCurrentTab && keptTab.chatId !== state.currentChatId) {
+        state.currentChatId = keptTab.chatId;
+      }
+    });
+  },
+
+  moveTab: (tabId, toIndex) => {
+    set((state) => {
+      const fromIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+
+      if (fromIndex === -1 || fromIndex === toIndex) {
+        return;
+      }
+
+      const [tab] = state.tabs.splice(fromIndex, 1);
+      state.tabs.splice(toIndex, 0, tab);
     });
   },
 
@@ -57,14 +96,12 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         (tab) => tab.type !== "chat" || !deletedChatIds.has(tab.chatId),
       );
 
-      if (nextTabs.length === state.tabs.length) {
-        return;
+      if (nextTabs.length !== state.tabs.length) {
+        state.tabs = nextTabs;
       }
 
-      state.tabs = nextTabs;
-
       if (state.currentChatId && deletedChatIds.has(state.currentChatId)) {
-        state.currentChatId = null;
+        state.currentChatId = nextTabs[0]?.chatId ?? null;
       }
     });
   },

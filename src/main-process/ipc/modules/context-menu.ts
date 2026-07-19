@@ -1,220 +1,106 @@
-import { BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from "electron";
-import {
-  IPC_CHANNELS,
-  type MessageContextMenuAction,
-  type TextContextMenuInput,
-} from "@shared/ipc";
+import { shell } from "electron";
+import { IPC_CHANNELS, type ContextMenuCommand, type ContextMenuCommandInput } from "@shared/ipc";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
 
-function expectArgCount(args: unknown[], min: number, max = min): void {
-  if (args.length < min || args.length > max) {
-    throw AppError.badRequest(
-      `Invalid IPC argument count. Expected ${min === max ? `${min}` : `${min}-${max}`}, received ${args.length}.`,
-    );
-  }
-}
+const CONTEXT_MENU_COMMANDS = new Set<ContextMenuCommand>([
+  "undo",
+  "redo",
+  "cut",
+  "copy",
+  "paste",
+  "paste-and-match-style",
+  "delete",
+  "select-all",
+  "look-up",
+  "search-web",
+]);
 
-function parseTextContextMenuInput(args: unknown[]): [TextContextMenuInput] {
-  expectArgCount(args, 1);
+function parseContextMenuCommandInput(args: unknown[]): [ContextMenuCommandInput] {
+  if (args.length !== 1) {
+    throw AppError.badRequest(`Invalid IPC argument count. Expected 1, received ${args.length}.`);
+  }
 
   const rawInput = args[0];
   if (!rawInput || typeof rawInput !== "object" || Array.isArray(rawInput)) {
-    throw AppError.badRequest("Text context menu payload must be an object.");
+    throw AppError.badRequest("Context menu command payload must be an object.");
   }
 
-  const inputRecord = rawInput as Record<string, unknown>;
-  const allowedKeys = new Set(["isEditable", "hasSelection", "selectionText"]);
-  for (const key of Object.keys(inputRecord)) {
+  const input = rawInput as Record<string, unknown>;
+  const allowedKeys = new Set(["command", "selectionText"]);
+  for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
-      throw AppError.badRequest(`Unsupported text context menu field "${key}".`);
+      throw AppError.badRequest(`Unsupported context menu command field "${key}".`);
     }
   }
 
-  if (typeof inputRecord.isEditable !== "boolean") {
-    throw AppError.badRequest("isEditable must be a boolean.");
+  if (
+    typeof input.command !== "string" ||
+    !CONTEXT_MENU_COMMANDS.has(input.command as ContextMenuCommand)
+  ) {
+    throw AppError.badRequest("Unsupported context menu command.");
   }
 
-  if (typeof inputRecord.hasSelection !== "boolean") {
-    throw AppError.badRequest("hasSelection must be a boolean.");
-  }
-
-  if (typeof inputRecord.selectionText !== "string") {
-    throw AppError.badRequest("selectionText must be a string.");
+  if (input.selectionText !== undefined && typeof input.selectionText !== "string") {
+    throw AppError.badRequest("selectionText must be a string when provided.");
   }
 
   return [
     {
-      isEditable: inputRecord.isEditable,
-      hasSelection: inputRecord.hasSelection,
-      selectionText: inputRecord.selectionText,
+      command: input.command as ContextMenuCommand,
+      selectionText: input.selectionText,
     },
   ];
-}
-
-function normalizeMenuTemplate(
-  template: MenuItemConstructorOptions[],
-): MenuItemConstructorOptions[] {
-  const normalized: MenuItemConstructorOptions[] = [];
-
-  for (const item of template) {
-    if (
-      item.type === "separator" &&
-      (normalized.length === 0 || normalized.at(-1)?.type === "separator")
-    ) {
-      continue;
-    }
-
-    normalized.push(item);
-  }
-
-  while (normalized.at(-1)?.type === "separator") {
-    normalized.pop();
-  }
-
-  return normalized;
-}
-
-function createTextContextMenuTemplate(
-  input: TextContextMenuInput,
-  options: {
-    isMac: boolean;
-    onLookUpSelection: () => void;
-    onSearchSelection: () => void;
-  },
-): MenuItemConstructorOptions[] {
-  const hasSelection = input.hasSelection && input.selectionText.trim().length > 0;
-  const template: MenuItemConstructorOptions[] = [];
-
-  if (input.isEditable) {
-    template.push({ role: "undo" });
-    template.push({ role: "redo" });
-    template.push({ type: "separator" });
-    template.push({ role: "cut" });
-    template.push({ role: "copy" });
-    template.push({ role: "paste" });
-
-    if (options.isMac) {
-      template.push({ role: "pasteAndMatchStyle" });
-    }
-
-    template.push({ role: "delete" });
-    template.push({ type: "separator" });
-    template.push({ role: "selectAll" });
-  } else {
-    template.push({ role: "copy", enabled: hasSelection });
-  }
-
-  if (hasSelection) {
-    template.push({ type: "separator" });
-
-    if (options.isMac) {
-      template.push({
-        label: "Look Up",
-        click: options.onLookUpSelection,
-      });
-    }
-
-    template.push({
-      label: options.isMac ? "Search with Google" : "Search the Web",
-      click: options.onSearchSelection,
-    });
-  }
-
-  if (options.isMac) {
-    template.push({ type: "separator" });
-    template.push({ role: "startSpeaking", enabled: hasSelection });
-    template.push({ role: "stopSpeaking" });
-  }
-
-  return normalizeMenuTemplate(template);
 }
 
 export function registerContextMenuIpcModule(
   context: IpcHandlerContext,
   registeredChannels: Set<string>,
 ): void {
-  registerInvokeHandler<[TextContextMenuInput], void>(context, registeredChannels, {
-    channel: IPC_CHANNELS.contextMenu.showText,
-    parseArgs: parseTextContextMenuInput,
-    handler: (_handlerContext, event, input) => {
-      const isMac = process.platform === "darwin";
-      const selectedText = input.selectionText.trim();
-      const menu = Menu.buildFromTemplate(
-        createTextContextMenuTemplate(input, {
-          isMac,
-          onLookUpSelection: () => {
+  registerInvokeHandler<[ContextMenuCommandInput], void>(context, registeredChannels, {
+    channel: IPC_CHANNELS.contextMenu.execute,
+    parseArgs: parseContextMenuCommandInput,
+    handler: async (_handlerContext, event, input) => {
+      switch (input.command) {
+        case "undo":
+          event.sender.undo();
+          return;
+        case "redo":
+          event.sender.redo();
+          return;
+        case "cut":
+          event.sender.cut();
+          return;
+        case "copy":
+          event.sender.copy();
+          return;
+        case "paste":
+          event.sender.paste();
+          return;
+        case "paste-and-match-style":
+          event.sender.pasteAndMatchStyle();
+          return;
+        case "delete":
+          event.sender.delete();
+          return;
+        case "select-all":
+          event.sender.selectAll();
+          return;
+        case "look-up":
+          if (process.platform === "darwin") {
             event.sender.showDefinitionForSelection();
-          },
-          onSearchSelection: () => {
-            if (!selectedText) {
-              return;
-            }
-
-            void shell.openExternal(
-              `https://www.google.com/search?q=${encodeURIComponent(selectedText)}`,
+          }
+          return;
+        case "search-web": {
+          const selectionText = input.selectionText?.trim();
+          if (selectionText) {
+            await shell.openExternal(
+              `https://www.google.com/search?q=${encodeURIComponent(selectionText)}`,
             );
-          },
-        }),
-      );
-      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-
-      menu.popup({
-        window,
-        frame: event.senderFrame ?? event.sender.mainFrame,
-      });
+          }
+        }
+      }
     },
   });
-
-  registerInvokeHandler<[TextContextMenuInput], MessageContextMenuAction>(
-    context,
-    registeredChannels,
-    {
-      channel: IPC_CHANNELS.contextMenu.showMessage,
-      parseArgs: parseTextContextMenuInput,
-      handler: (_handlerContext, event, input) => {
-        const isMac = process.platform === "darwin";
-        const selectedText = input.selectionText.trim();
-
-        return new Promise<MessageContextMenuAction>((resolve) => {
-          let selectedAction: MessageContextMenuAction = null;
-
-          const menu = Menu.buildFromTemplate(
-            normalizeMenuTemplate([
-              ...createTextContextMenuTemplate(input, {
-                isMac,
-                onLookUpSelection: () => {
-                  event.sender.showDefinitionForSelection();
-                },
-                onSearchSelection: () => {
-                  if (!selectedText) {
-                    return;
-                  }
-
-                  void shell.openExternal(
-                    `https://www.google.com/search?q=${encodeURIComponent(selectedText)}`,
-                  );
-                },
-              }),
-              { type: "separator" },
-              {
-                label: "Show in Graph",
-                click: () => {
-                  selectedAction = "show-in-graph";
-                },
-              },
-            ]),
-          );
-          const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-
-          menu.popup({
-            window,
-            callback: () => resolve(selectedAction),
-            frame: event.senderFrame ?? event.sender.mainFrame,
-          });
-        });
-      },
-    },
-  );
 }

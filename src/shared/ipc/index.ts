@@ -21,8 +21,7 @@ export const IPC_CHANNELS = {
     updateSumi: "settings:updateSumi",
   },
   contextMenu: {
-    showText: "contextMenu:showText",
-    showMessage: "contextMenu:showMessage",
+    execute: "contextMenu:execute",
   },
   chatTree: {
     get: "chatTree:get",
@@ -30,7 +29,6 @@ export const IPC_CHANNELS = {
     getUiState: "chatTree:getUiState",
     setUiState: "chatTree:setUiState",
     deleteItems: "chatTree:deleteItems",
-    showContextMenu: "chatTree:showContextMenu",
   },
   folders: {
     create: "folders:create",
@@ -94,16 +92,20 @@ export type ChatFormSubmitBehavior = "enter" | "mod-enter";
 
 export type ChatSidebarViewMode = "tree" | "activity";
 
+export type ChatTabsPosition = "top" | "sidebar";
+
 export interface GlobalChatSettings {
   promptStickyPosition: boolean;
   formSubmitBehavior: ChatFormSubmitBehavior;
   sidebarViewMode: ChatSidebarViewMode;
+  tabsPosition: ChatTabsPosition;
 }
 
 export interface GlobalChatSettingsUpdateInput {
   promptStickyPosition?: boolean;
   formSubmitBehavior?: ChatFormSubmitBehavior;
   sidebarViewMode?: ChatSidebarViewMode;
+  tabsPosition?: ChatTabsPosition;
 }
 
 export interface SumiModelReference {
@@ -143,13 +145,22 @@ export interface SumiSettingsUpdateInput {
   titleGeneration?: SumiTitleGenerationSettingsUpdateInput;
 }
 
-export interface TextContextMenuInput {
-  isEditable: boolean;
-  hasSelection: boolean;
-  selectionText: string;
-}
+export type ContextMenuCommand =
+  | "undo"
+  | "redo"
+  | "cut"
+  | "copy"
+  | "paste"
+  | "paste-and-match-style"
+  | "delete"
+  | "select-all"
+  | "look-up"
+  | "search-web";
 
-export type MessageContextMenuAction = "show-in-graph" | null;
+export interface ContextMenuCommandInput {
+  command: ContextMenuCommand;
+  selectionText?: string;
+}
 
 export interface FolderInfo {
   id: string;
@@ -335,8 +346,7 @@ export interface IpcApi {
   updateGlobalChatSettings: (input: GlobalChatSettingsUpdateInput) => Promise<GlobalChatSettings>;
   getSumiSettings: () => Promise<SumiSettings>;
   updateSumiSettings: (input: SumiSettingsUpdateInput) => Promise<SumiSettings>;
-  showTextContextMenu: (input: TextContextMenuInput) => Promise<void>;
-  showMessageContextMenu: (input: TextContextMenuInput) => Promise<MessageContextMenuAction>;
+  executeContextMenuCommand: (input: ContextMenuCommandInput) => Promise<void>;
   getChatTree: (workspaceId: string) => Promise<ChatTreeSnapshot>;
   getChatTreeChildren: (
     workspaceId: string,
@@ -379,12 +389,6 @@ export interface IpcApi {
   updateChatSettings: (id: string, input: ChatSettingsUpdateInput) => Promise<ChatInfo>;
   moveChat: (id: string, folderId: string | null) => Promise<ChatInfo>;
   deleteChat: (id: string) => Promise<void>;
-  showChatTreeItemContextMenu: (
-    itemId: string,
-    itemKind: "folder" | "chat",
-  ) => Promise<
-    "add-folder" | "add-chat" | "open-in-new-tab" | "clone" | "rename" | "delete" | null
-  >;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   testProviderCredentials: (

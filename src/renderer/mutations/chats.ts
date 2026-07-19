@@ -1,10 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { ChatInfo, ChatSettingsUpdateInput } from "@shared/ipc";
 
 import { chatsApi } from "../api/chats";
+import { useWorkspaceStore } from "../features/workspace/store";
 import { queryKeys } from "../queries/keys";
 
 export function useCreateChat() {
+  const navigate = useNavigate();
+  const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
+
   return useMutation({
     mutationFn: ({
       workspaceId,
@@ -15,6 +20,10 @@ export function useCreateChat() {
       title: string;
       folderId?: string | null;
     }) => chatsApi.create(workspaceId, title, folderId),
+    onSuccess: (chat) => {
+      setCurrentChat(chat.id);
+      void navigate({ to: "/chat" });
+    },
   });
 }
 

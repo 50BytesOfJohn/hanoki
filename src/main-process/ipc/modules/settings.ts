@@ -43,7 +43,12 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
   }
 
   const inputRecord = rawInput as Record<string, unknown>;
-  const allowedKeys = new Set(["promptStickyPosition", "formSubmitBehavior", "sidebarViewMode"]);
+  const allowedKeys = new Set([
+    "promptStickyPosition",
+    "formSubmitBehavior",
+    "sidebarViewMode",
+    "tabsPosition",
+  ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
       throw AppError.badRequest(`Unsupported global chat settings update field "${key}".`);
@@ -68,6 +73,13 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
       throw AppError.badRequest('sidebarViewMode must be "tree" or "activity".');
     }
     parsedInput.sidebarViewMode = inputRecord.sidebarViewMode;
+  }
+
+  if (inputRecord.tabsPosition !== undefined) {
+    if (inputRecord.tabsPosition !== "top" && inputRecord.tabsPosition !== "sidebar") {
+      throw AppError.badRequest('tabsPosition must be "top" or "sidebar".');
+    }
+    parsedInput.tabsPosition = inputRecord.tabsPosition;
   }
 
   return [parsedInput];

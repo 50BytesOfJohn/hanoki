@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { activeWorkspaceQueryOptions, listWorkspacesQueryOptions } from "@/queries/workspaces";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { TextContextMenu } from "@/components/text-context-menu";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -13,9 +14,11 @@ function RootLayout() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-full min-h-0 flex-col">
-        <Outlet />
-      </div>
+      <TextContextMenu>
+        <div className="flex h-full min-h-0 flex-col">
+          <Outlet />
+        </div>
+      </TextContextMenu>
     </TooltipProvider>
   );
 }

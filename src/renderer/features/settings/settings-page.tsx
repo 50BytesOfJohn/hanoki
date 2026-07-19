@@ -63,6 +63,11 @@ const SIDEBAR_VIEW_MODES = [
   { id: "activity", label: "Recent activity" },
 ] as const;
 
+const TABS_POSITIONS = [
+  { id: "top", label: "Top of window" },
+  { id: "sidebar", label: "Sidebar" },
+] as const;
+
 function GeneralSettings() {
   const { data: globalChatSettings, isPending: isLoadingSettings } = useQuery(
     globalChatSettingsQueryOptions,
@@ -74,6 +79,7 @@ function GeneralSettings() {
   const promptStickyPosition = globalChatSettings?.promptStickyPosition ?? true;
   const submitBehavior = globalChatSettings?.formSubmitBehavior ?? "enter";
   const sidebarViewMode = globalChatSettings?.sidebarViewMode ?? "tree";
+  const tabsPosition = globalChatSettings?.tabsPosition ?? "top";
 
   function updateSettings(input: GlobalChatSettingsUpdateInput) {
     setUpdateError(null);
@@ -158,6 +164,38 @@ function GeneralSettings() {
                   {SIDEBAR_VIEW_MODES.map((mode) => (
                     <SelectItem key={mode.id} value={mode.id}>
                       {mode.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Tabs">
+        <SettingsRow
+          title="Tab bar position"
+          description="Show open chat tabs at the top of the window or in the sidebar."
+          control={
+            <Select
+              value={tabsPosition}
+              items={Object.fromEntries(TABS_POSITIONS.map((p) => [p.id, p.label]))}
+              disabled={isPending}
+              onValueChange={(value) => {
+                if (value === "top" || value === "sidebar") {
+                  updateSettings({ tabsPosition: value });
+                }
+              }}
+            >
+              <SelectTrigger aria-label="Tab bar position" className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {TABS_POSITIONS.map((position) => (
+                    <SelectItem key={position.id} value={position.id}>
+                      {position.label}
                     </SelectItem>
                   ))}
                 </SelectGroup>

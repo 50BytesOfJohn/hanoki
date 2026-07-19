@@ -8,7 +8,6 @@ type ChatTreeApi = Pick<
   | "getChatTreeUiState"
   | "setChatTreeUiState"
   | "deleteChatTreeItems"
-  | "showChatTreeItemContextMenu"
 >;
 
 export function createChatTreeApi(): ChatTreeApi {
@@ -21,7 +20,5 @@ export function createChatTreeApi(): ChatTreeApi {
       invokeIpc(IPC_CHANNELS.chatTree.setUiState, workspaceId, expandedFolderIds),
     deleteChatTreeItems: (workspaceId, items) =>
       invokeIpc(IPC_CHANNELS.chatTree.deleteItems, workspaceId, items),
-    showChatTreeItemContextMenu: (itemId, itemKind) =>
-      invokeIpc(IPC_CHANNELS.chatTree.showContextMenu, itemId, itemKind),
   };
 }

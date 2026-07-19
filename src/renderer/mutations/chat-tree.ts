@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { ChatTreeItemRef } from "@shared/ipc";
 
 import { chatTreeApi } from "../api/chat-tree";
@@ -64,6 +65,7 @@ export function useDeleteChat() {
 }
 
 export function useDeleteChatTreeItems() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const removeTabsByChatIds = useWorkspaceStore((s) => s.removeTabsByChatIds);
   const removeExpandedNodes = useWorkspaceStore((s) => s.removeExpandedNodes);
@@ -72,8 +74,17 @@ export function useDeleteChatTreeItems() {
     mutationFn: ({ workspaceId, items }: { workspaceId: string; items: ChatTreeItemRef[] }) =>
       chatTreeApi.deleteItems(workspaceId, items),
     onSuccess: (result) => {
+      const currentChatId = useWorkspaceStore.getState().currentChatId;
+      const deletedCurrentChat =
+        currentChatId !== null && result.deletedChatIds.includes(currentChatId);
+
       removeTabsByChatIds(result.deletedChatIds);
       removeExpandedNodes(result.deletedFolderIds);
+
+      if (deletedCurrentChat) {
+        void navigate({ to: "/chat" });
+      }
+
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
     },

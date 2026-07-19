@@ -14,7 +14,6 @@ import {
   AddSquareIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  Cancel01Icon,
   Chat01Icon,
   ChatAdd01Icon,
   FolderAddIcon,
@@ -37,6 +36,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -48,7 +55,6 @@ import {
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
-import { getChatQueryOptions } from "@/queries/chats";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { queryKeys } from "@/queries/keys";
 import {
@@ -69,7 +75,6 @@ import type {
   ChatTreeItemRef,
   ChatTreeSnapshot,
 } from "@shared/ipc";
-import type { Tab } from "../workspace/store/types";
 import {
   ChatSidebar,
   ChatSidebarBlock,
@@ -77,6 +82,7 @@ import {
   ChatSidebarPanel,
 } from "./chat-sidebar";
 import { ChatSearchDialog } from "./chat-search-dialog";
+import { ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTitleUpdates } from "./chat-title-events";
 import { useWorkspaceStore } from "../workspace/store";
 
@@ -89,6 +95,55 @@ type ChatTreeNodeData =
 const ROOT_ITEM_ID = "root";
 const SIDEBAR_ICON_BUTTON_CLASS =
   "size-5 min-w-0 shrink-0 rounded p-0 text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5";
+
+type ChatTreeContextMenuAction =
+  | "add-folder"
+  | "add-chat"
+  | "open-in-new-tab"
+  | "clone"
+  | "rename"
+  | "delete";
+
+function ChatTreeItemContextMenu({
+  children,
+  itemKind,
+  onAction,
+}: {
+  children: React.ReactElement;
+  itemKind: "folder" | "chat";
+  onAction: (action: ChatTreeContextMenuAction) => void;
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={children} />
+      <ContextMenuContent className="w-48">
+        {itemKind === "folder" ? (
+          <ContextMenuGroup>
+            <ContextMenuItem onClick={() => onAction("add-folder")}>Add Folder</ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-chat")}>Add Chat</ContextMenuItem>
+          </ContextMenuGroup>
+        ) : (
+          <ContextMenuGroup>
+            <ContextMenuItem onClick={() => onAction("open-in-new-tab")}>
+              Open in New Tab
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("clone")}>Clone</ContextMenuItem>
+          </ContextMenuGroup>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => onAction("rename")}>Rename</ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem variant="destructive" onClick={() => onAction("delete")}>
+            Delete
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
 
 export function ChatSidebarTree() {
   const workspaceState = useWorkspaceStore((s) => s.state);
@@ -507,39 +562,36 @@ function ChatSidebarTreeInner({
                   return null;
                 }
 
-                const handleContextMenu = (e: React.MouseEvent) => {
-                  e.preventDefault();
+                const handleContextMenuAction = (action: ChatTreeContextMenuAction) => {
                   const itemKind = data.kind === "folder" ? "folder" : "chat";
-                  void chatTreeApi.showContextMenu(item.getId(), itemKind).then((action) => {
-                    const ensureFolderExpanded = () => {
-                      const folderItemId = item.getId();
-                      setExpandedItems((prev) =>
-                        prev.includes(folderItemId) ? prev : [...prev, folderItemId],
-                      );
-                    };
+                  const ensureFolderExpanded = () => {
+                    const folderItemId = item.getId();
+                    setExpandedItems((prev) =>
+                      prev.includes(folderItemId) ? prev : [...prev, folderItemId],
+                    );
+                  };
 
-                    if (action === "add-folder" && itemKind === "folder") {
-                      ensureFolderExpanded();
-                      void createFolder(item.getId().slice("folder:".length));
-                    } else if (action === "add-chat" && itemKind === "folder") {
-                      ensureFolderExpanded();
-                      void createChat(item.getId().slice("folder:".length));
-                    } else if (action === "open-in-new-tab" && data.kind === "chat") {
-                      openChatInTab(data.chat.id);
-                    } else if (action === "clone" && data.kind === "chat") {
-                      void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
-                        invalidateTree();
-                      });
-                    } else if (action === "rename") {
-                      item.startRenaming();
-                    } else if (action === "delete") {
-                      openDeleteDialog(
-                        selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
-                          ? selectedItems
-                          : [item.getId()],
-                      );
-                    }
-                  });
+                  if (action === "add-folder" && itemKind === "folder") {
+                    ensureFolderExpanded();
+                    void createFolder(item.getId().slice("folder:".length));
+                  } else if (action === "add-chat" && itemKind === "folder") {
+                    ensureFolderExpanded();
+                    void createChat(item.getId().slice("folder:".length));
+                  } else if (action === "open-in-new-tab" && data.kind === "chat") {
+                    openChatInTab(data.chat.id);
+                  } else if (action === "clone" && data.kind === "chat") {
+                    void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
+                      invalidateTree();
+                    });
+                  } else if (action === "rename") {
+                    item.startRenaming();
+                  } else if (action === "delete") {
+                    openDeleteDialog(
+                      selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
+                        ? selectedItems
+                        : [item.getId()],
+                    );
+                  }
                 };
 
                 if (item.isRenaming()) {
@@ -570,69 +622,76 @@ function ChatSidebarTreeInner({
 
                       navigateToChat(data.chat.id);
                     },
-                    onContextMenu: handleContextMenu,
                   });
 
                   return (
-                    <ChatTreeItemRow
+                    <ChatTreeItemContextMenu
                       key={item.getKey()}
-                      level={depth}
-                      {...chatItemProps}
-                      data-active={isActiveChat || undefined}
-                      data-drop-target={item.isDragTarget() || undefined}
+                      itemKind="chat"
+                      onAction={handleContextMenuAction}
                     >
-                      <ChatTreeItemIcon chatId={data.chat.id} />
-                      <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className={cn(
-                          SIDEBAR_ICON_BUTTON_CLASS,
-                          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
-                        )}
-                        aria-label={`Open ${data.chat.title} in new tab`}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          openChatInTab(data.chat.id);
-                        }}
+                      <ChatTreeItemRow
+                        level={depth}
+                        {...chatItemProps}
+                        data-active={isActiveChat || undefined}
+                        data-drop-target={item.isDragTarget() || undefined}
                       >
-                        <HugeiconsIcon icon={AddSquareIcon} />
-                      </Button>
-                    </ChatTreeItemRow>
+                        <ChatTreeItemIcon chatId={data.chat.id} />
+                        <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className={cn(
+                            SIDEBAR_ICON_BUTTON_CLASS,
+                            "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
+                          )}
+                          aria-label={`Open ${data.chat.title} in new tab`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openChatInTab(data.chat.id);
+                          }}
+                        >
+                          <HugeiconsIcon icon={AddSquareIcon} />
+                        </Button>
+                      </ChatTreeItemRow>
+                    </ChatTreeItemContextMenu>
                   );
                 }
 
                 if (data.kind === "folder") {
                   const isExpanded = item.isExpanded();
                   const hasChildren = data.folder.childFolderCount + data.folder.childChatCount > 0;
-                  const folderItemProps = mergeProps<"div">(item.getProps(), {
-                    onContextMenu: handleContextMenu,
-                  });
+                  const folderItemProps = item.getProps();
 
                   return (
-                    <ChatTreeItemRow
+                    <ChatTreeItemContextMenu
                       key={item.getKey()}
-                      level={depth}
-                      {...folderItemProps}
-                      data-selected={item.isSelected() || undefined}
-                      data-drop-target={item.isDragTarget() || undefined}
+                      itemKind="folder"
+                      onAction={handleContextMenuAction}
                     >
-                      <ChatTreeDisclosureButton
-                        hasChildren={hasChildren}
-                        isExpanded={isExpanded}
-                        onToggle={() => {
-                          if (isExpanded) {
-                            item.collapse();
-                          } else {
-                            item.expand();
-                          }
-                        }}
-                      />
-                      <ChatTreeItemLabel className="font-medium">
-                        {data.folder.name}
-                      </ChatTreeItemLabel>
-                    </ChatTreeItemRow>
+                      <ChatTreeItemRow
+                        level={depth}
+                        {...folderItemProps}
+                        data-selected={item.isSelected() || undefined}
+                        data-drop-target={item.isDragTarget() || undefined}
+                      >
+                        <ChatTreeDisclosureButton
+                          hasChildren={hasChildren}
+                          isExpanded={isExpanded}
+                          onToggle={() => {
+                            if (isExpanded) {
+                              item.collapse();
+                            } else {
+                              item.expand();
+                            }
+                          }}
+                        />
+                        <ChatTreeItemLabel className="font-medium">
+                          {data.folder.name}
+                        </ChatTreeItemLabel>
+                      </ChatTreeItemRow>
+                    </ChatTreeItemContextMenu>
                   );
                 }
 
@@ -765,20 +824,17 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
     );
   }, [invalidateSnapshot, renameChatTreeItem, renamingChat]);
 
-  const handleContextMenu = React.useCallback(
-    (chat: ChatInfo) => (event: React.MouseEvent) => {
-      event.preventDefault();
-      void chatTreeApi.showContextMenu(`chat:${chat.id}`, "chat").then((action) => {
-        if (action === "open-in-new-tab") {
-          openTab({ type: "chat", chatId: chat.id });
-        } else if (action === "clone") {
-          void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
-        } else if (action === "rename") {
-          setRenamingChat({ id: chat.id, value: chat.title });
-        } else if (action === "delete") {
-          setPendingDeleteItems([{ kind: "chat", id: chat.id }]);
-        }
-      });
+  const handleContextMenuAction = React.useCallback(
+    (chat: ChatInfo) => (action: ChatTreeContextMenuAction) => {
+      if (action === "open-in-new-tab") {
+        openTab({ type: "chat", chatId: chat.id });
+      } else if (action === "clone") {
+        void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
+      } else if (action === "rename") {
+        setRenamingChat({ id: chat.id, value: chat.title });
+      } else if (action === "delete") {
+        setPendingDeleteItems([{ kind: "chat", id: chat.id }]);
+      }
     },
     [cloneChatMutation, invalidateSnapshot, openTab],
   );
@@ -871,7 +927,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                           isActive={chat.id === currentChatId}
                           onSelect={() => setCurrentChat(chat.id)}
                           onOpenInTab={() => openTab({ type: "chat", chatId: chat.id })}
-                          onContextMenu={handleContextMenu(chat)}
+                          onContextMenuAction={handleContextMenuAction(chat)}
                         />
                       ),
                     )}
@@ -907,52 +963,53 @@ function ChatActivityListItem({
   isActive,
   onSelect,
   onOpenInTab,
-  onContextMenu,
+  onContextMenuAction,
 }: {
   chat: ChatInfo;
   isActive: boolean;
   onSelect: () => void;
   onOpenInTab: () => void;
-  onContextMenu: (event: React.MouseEvent) => void;
+  onContextMenuAction: (action: ChatTreeContextMenuAction) => void;
 }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={isActive}
-      onClick={onSelect}
-      onContextMenu={onContextMenu}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        "group/tree-item relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
-        "hover:bg-hover",
-        isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
-      )}
-    >
-      <ChatTreeItemIcon chatId={chat.id} />
-      <ChatTreeItemLabel>{chat.title}</ChatTreeItemLabel>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        className={cn(
-          SIDEBAR_ICON_BUTTON_CLASS,
-          "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
-        )}
-        aria-label={`Open ${chat.title} in new tab`}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onOpenInTab();
+    <ChatTreeItemContextMenu itemKind="chat" onAction={onContextMenuAction}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={isActive}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
         }}
+        className={cn(
+          "group/tree-item relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+          "hover:bg-hover",
+          isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
+        )}
       >
-        <HugeiconsIcon icon={AddSquareIcon} />
-      </Button>
-    </div>
+        <ChatTreeItemIcon chatId={chat.id} />
+        <ChatTreeItemLabel>{chat.title}</ChatTreeItemLabel>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          className={cn(
+            SIDEBAR_ICON_BUTTON_CLASS,
+            "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
+          )}
+          aria-label={`Open ${chat.title} in new tab`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenInTab();
+          }}
+        >
+          <HugeiconsIcon icon={AddSquareIcon} />
+        </Button>
+      </div>
+    </ChatTreeItemContextMenu>
   );
 }
 
@@ -975,86 +1032,17 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
 
 function ChatTabsSection() {
   const tabs = useWorkspaceStore((s) => s.tabs);
-  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
-  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
-  const closeTab = useWorkspaceStore((s) => s.closeTab);
+  const tabsPosition = useChatTabsPosition();
 
-  if (tabs.length === 0) {
+  if (tabsPosition !== "sidebar" || tabs.length === 0) {
     return null;
   }
 
   return (
     <section className="shrink-0">
       <ChatSidebarSectionHeader title="Tabs" />
-
-      <div className="flex flex-col gap-0.5 px-1">
-        {tabs.map((tab) => (
-          <ChatTabListItem
-            key={tab.id}
-            tab={tab}
-            isActive={currentChatId === tab.chatId}
-            onSelect={() => setCurrentChat(tab.chatId)}
-            onClose={() => closeTab(tab.id)}
-          />
-        ))}
-      </div>
+      <ChatTabsSidebarList />
     </section>
-  );
-}
-
-function ChatTabListItem({
-  tab,
-  isActive,
-  onSelect,
-  onClose,
-}: {
-  tab: Tab;
-  isActive: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-}) {
-  const chatQuery = useQuery(getChatQueryOptions(tab.chatId));
-  const title = chatQuery.data?.title ?? "Loading…";
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={isActive}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        "group/tab relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
-        "hover:bg-hover",
-        isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
-      )}
-    >
-      <span className="flex shrink-0 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5">
-        <HugeiconsIcon icon={Chat01Icon} />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        className={cn(
-          SIDEBAR_ICON_BUTTON_CLASS,
-          "opacity-0 transition-opacity group-hover/tab:opacity-100",
-          isActive && "opacity-50 group-hover/tab:opacity-100",
-        )}
-        aria-label={`Close ${title} tab`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-      >
-        <HugeiconsIcon icon={Cancel01Icon} />
-      </Button>
-    </div>
   );
 }
 

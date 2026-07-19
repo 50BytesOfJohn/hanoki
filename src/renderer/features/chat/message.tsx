@@ -40,7 +40,6 @@ import {
   useChatSwitchBranch,
 } from "@/features/chat/chat-context";
 import { useChatScrollToBottom } from "@/features/chat/chat-scroll-context";
-import { useMessageContextMenu } from "@/hooks/use-message-context-menu";
 import { messagesApi } from "@/api/messages";
 import { queryKeys } from "@/queries/keys";
 import { CURRENT_BRANCH_QUERY_KEY } from "@/queries/chats";
@@ -76,6 +75,7 @@ import {
 } from "@shared/tiptap/extensions";
 import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
+import { MessageContextMenu } from "./message-context-menu";
 
 const STREAMDOWN_PLUGINS = { code };
 const USER_MESSAGE_CARD_CLASS_NAME =
@@ -868,7 +868,6 @@ const UserMessage = React.memo(function UserMessage({
   message,
   modelId,
 }: UserMessageProps) {
-  const onContextMenu = useMessageContextMenu(message.id);
   const startEditingMessage = useChatStartEditingMessage();
   const stopEditingMessage = useChatStopEditingMessage();
   const submitEditedMessage = useChatSubmitEditedMessage();
@@ -884,23 +883,25 @@ const UserMessage = React.memo(function UserMessage({
 
   return (
     <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
-      <div className={USER_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
-        {isEditing ? (
-          <MessageTiptapEditor
-            className="text-[0.9375rem] leading-[1.6]"
-            document={draft}
-            onChange={setDraft}
-          />
-        ) : (
-          message.parts.map((part, i) =>
-            part.type === "text" ? (
-              <UserMessageTextPart key={i} document={createTiptapDocumentFromText(part.text)} />
-            ) : part.type === "data-tiptap" ? (
-              <UserMessageTextPart key={i} document={part.data} />
-            ) : null,
-          )
-        )}
-      </div>
+      <MessageContextMenu messageId={message.id}>
+        <div className={USER_MESSAGE_CARD_CLASS_NAME}>
+          {isEditing ? (
+            <MessageTiptapEditor
+              className="text-[0.9375rem] leading-[1.6]"
+              document={draft}
+              onChange={setDraft}
+            />
+          ) : (
+            message.parts.map((part, i) =>
+              part.type === "text" ? (
+                <UserMessageTextPart key={i} document={createTiptapDocumentFromText(part.text)} />
+              ) : part.type === "data-tiptap" ? (
+                <UserMessageTextPart key={i} document={part.data} />
+              ) : null,
+            )
+          )}
+        </div>
+      </MessageContextMenu>
 
       <UserMessageTools
         chatId={chatId}
@@ -938,7 +939,6 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const startEditingMessage = useChatStartEditingMessage();
   const stopEditingMessage = useChatStopEditingMessage();
   const submitEditedMessage = useChatSubmitEditedMessage();
-  const onContextMenu = useMessageContextMenu(message.id);
   const messageText = React.useMemo(() => getTiptapMessageDisplayText(message), [message]);
   const messageDocument = React.useMemo(() => getEditableMessageDocument(message), [message]);
   const isThinking = isAnimating && (message.parts.length === 0 || hasStreamingReasoning(message));
@@ -955,39 +955,41 @@ const AssistantMessage = React.memo(function AssistantMessage({
       className="group/message flex flex-col items-start gap-2"
       data-chat-message-id={message.id}
     >
-      <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME} onContextMenu={onContextMenu}>
-        {isEditing ? (
-          <MessageTiptapEditor
-            className="text-[0.9375rem] leading-[1.7] text-foreground/90"
-            document={draft}
-            onChange={setDraft}
-          />
-        ) : (
-          <>
-            {message.parts.map((part, i) => {
-              if (part.type === "text") {
-                return (
-                  <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
-                );
-              }
-              if (part.type === "data-tiptap") {
-                return (
-                  <AssistantMessageTextPart
-                    key={i}
-                    text={serializeTiptapToMarkdown(part.data)}
-                    isAnimating={isAnimating}
-                  />
-                );
-              }
-              if (isToolUIPart(part)) {
-                return <ToolCallMarker key={part.toolCallId} part={part} />;
-              }
-              return null;
-            })}
-            {isThinking ? <ThinkingMarker hasPriorText={messageText.length > 0} /> : null}
-          </>
-        )}
-      </div>
+      <MessageContextMenu messageId={message.id}>
+        <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME}>
+          {isEditing ? (
+            <MessageTiptapEditor
+              className="text-[0.9375rem] leading-[1.7] text-foreground/90"
+              document={draft}
+              onChange={setDraft}
+            />
+          ) : (
+            <>
+              {message.parts.map((part, i) => {
+                if (part.type === "text") {
+                  return (
+                    <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
+                  );
+                }
+                if (part.type === "data-tiptap") {
+                  return (
+                    <AssistantMessageTextPart
+                      key={i}
+                      text={serializeTiptapToMarkdown(part.data)}
+                      isAnimating={isAnimating}
+                    />
+                  );
+                }
+                if (isToolUIPart(part)) {
+                  return <ToolCallMarker key={part.toolCallId} part={part} />;
+                }
+                return null;
+              })}
+              {isThinking ? <ThinkingMarker hasPriorText={messageText.length > 0} /> : null}
+            </>
+          )}
+        </div>
+      </MessageContextMenu>
 
       {!isAnimating ? (
         <AssistantMessageTools

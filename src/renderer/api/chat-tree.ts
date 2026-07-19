@@ -47,8 +47,4 @@ export const chatTreeApi = {
 
     return window.electronAPI.deleteChatTreeItems(parsedWorkspaceId.value, items);
   },
-
-  showContextMenu(itemId: string, itemKind: "folder" | "chat") {
-    return window.electronAPI.showChatTreeItemContextMenu(itemId, itemKind);
-  },
 };

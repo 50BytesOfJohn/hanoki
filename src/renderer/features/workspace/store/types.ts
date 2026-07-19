@@ -45,7 +45,9 @@ export interface TabsSliceValue {
 export interface TabsSlice extends TabsSliceValue {
   openTab: (content: TabContent) => void;
   closeTab: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
   closeAllTabs: () => void;
+  moveTab: (tabId: string, toIndex: number) => void;
   removeTabsByChatIds: (chatIds: readonly string[]) => void;
 }
 
