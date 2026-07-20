@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/50BytesOfJohn/hanoki/security/advisories/new
+    about: Report security issues privately.
+  - name: Community support
+    url: https://discord.gg/uRCYRMrXUx
+    about: Ask usage and setup questions in Discord.

@@ -6,6 +6,10 @@ Hanoki app (Electron Forge + React). Early stage.
 
 [Join the Discord](https://discord.gg/uRCYRMrXUx)
 
+Contributions are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before
+opening a pull request, and report vulnerabilities through the private process
+in [SECURITY.md](./SECURITY.md).
+
 ## macOS notes (important)
 
 There's no Apple Developer license yet, so builds are **unsigned**:
