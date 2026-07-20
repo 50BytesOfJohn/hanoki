@@ -1,4 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
+import { HeadContent, ScriptOnce, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 
@@ -14,30 +14,23 @@ export const Route = createRootRoute({
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      {
-        title: "Hanoki — a calm home for your AI chats",
-      },
-      {
-        name: "description",
-        content:
-          "Hanoki is a local-first desktop app for chatting, writing, and creative work with any model. Quietly beautiful, neatly organized, and entirely yours. Free & open source.",
-      },
+      { name: "application-name", content: "Hanoki" },
       { name: "theme-color", content: "#e8e3d7" },
-      { property: "og:title", content: "Hanoki" },
-      {
-        property: "og:description",
-        content:
-          "A calm, local-first desktop app for chatting, writing, and creative work with any AI model.",
-      },
-      { property: "og:image", content: "/hanoki-banner.png" },
-      { property: "og:type", content: "website" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/hanoki-mark.png" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Manrope:wght@400;500;600;700;800&display=swap",
+      },
+      { rel: "icon", href: "/hanoki-mark.png", type: "image/png", sizes: "512x512" },
+      { rel: "apple-touch-icon", href: "/hanoki-mark.png" },
+      { rel: "manifest", href: "/manifest.json" },
     ],
   }),
   shellComponent: RootDocument,
@@ -47,13 +40,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script
-          // set theme before paint to avoid a flash of the wrong palette
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{var t=localStorage.getItem('hanoki-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();",
-          }}
-        />
+        <ScriptOnce>
+          {
+            "(function(){try{var t=localStorage.getItem('hanoki-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();"
+          }
+        </ScriptOnce>
         <HeadContent />
       </head>
       <body>

@@ -1,25 +1,20 @@
 {
-  "short_name": "TanStack App",
-  "name": "Create TanStack App Sample",
+  "id": "/",
+  "short_name": "Hanoki",
+  "name": "Hanoki — Local-First AI Chat Desktop App",
+  "description": "A free, open-source desktop AI chat app for cloud and local models.",
   "icons": [
     {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "logo192.png",
+      "src": "/hanoki-mark.png",
       "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "logo512.png",
-      "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "categories": ["productivity", "utilities"],
+  "theme_color": "#e8e3d7",
+  "background_color": "#e8e3d7"
 }

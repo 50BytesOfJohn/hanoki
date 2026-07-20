@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hanoki OG image concepts</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Manrope:wght@500;600;700&display=swap");
+
+      :root {
+        --paper: #e8e3d7;
+        --paper-light: #f4efe4;
+        --sumi: #24211a;
+        --sumi-soft: #57513f;
+        --moss: #6f7d4c;
+        --moss-deep: #4f5c34;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        font-family: "Manrope", sans-serif;
+      }
+
+      .og {
+        position: relative;
+        display: none;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        color: var(--sumi);
+        background:
+          radial-gradient(900px 540px at -8% -12%, rgba(111, 125, 76, 0.18), transparent 58%),
+          radial-gradient(850px 500px at 108% 105%, rgba(134, 151, 92, 0.14), transparent 58%),
+          linear-gradient(150deg, #f1ecdf 0%, var(--paper) 72%, #dfd8c8 100%);
+      }
+
+      .og::after {
+        position: absolute;
+        z-index: 10;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        opacity: 0.48;
+        mix-blend-mode: multiply;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
+      }
+
+      body[data-variant="calm"] .calm,
+      body[data-variant="mark"] .mark,
+      body[data-variant="product"] .product {
+        display: block;
+      }
+
+      .wordmark {
+        display: block;
+        width: 246px;
+        height: auto;
+      }
+
+      .eyebrow {
+        margin: 0 0 16px;
+        color: var(--moss-deep);
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .calm .copy {
+        position: absolute;
+        z-index: 4;
+        top: 58px;
+        left: 70px;
+        width: 670px;
+      }
+
+      .calm h1 {
+        width: 660px;
+        margin: 74px 0 22px;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 72px;
+        font-weight: 600;
+        line-height: 0.98;
+        letter-spacing: -0.035em;
+      }
+
+      .calm h1 em {
+        position: relative;
+        color: var(--moss-deep);
+        font-weight: 500;
+      }
+
+      .calm h1 em::after {
+        position: absolute;
+        right: -5px;
+        bottom: -5px;
+        left: -2px;
+        height: 11px;
+        content: "";
+        opacity: 0.72;
+        border-radius: 50%;
+        background: var(--moss);
+        clip-path: polygon(
+          0 45%,
+          18% 20%,
+          43% 40%,
+          68% 4%,
+          100% 35%,
+          98% 65%,
+          75% 50%,
+          52% 86%,
+          21% 60%,
+          2% 78%
+        );
+      }
+
+      .calm .subline {
+        margin: 0;
+        color: var(--sumi-soft);
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+      }
+
+      .calm .moss-disc {
+        position: absolute;
+        top: -168px;
+        right: -160px;
+        width: 640px;
+        height: 640px;
+        opacity: 0.86;
+        border-radius: 48% 52% 47% 53% / 44% 43% 57% 56%;
+        background:
+          radial-gradient(circle at 32% 33%, rgba(179, 193, 130, 0.95), transparent 18%),
+          radial-gradient(circle at 60% 64%, #596638, transparent 54%),
+          linear-gradient(140deg, #8c9c5f, #4d5932);
+        filter: blur(0.2px);
+      }
+
+      .calm .app-shot {
+        position: absolute;
+        z-index: 3;
+        right: -142px;
+        bottom: -89px;
+        width: 664px;
+        transform: rotate(-2.4deg);
+        filter: drop-shadow(0 24px 34px rgba(31, 29, 22, 0.36));
+      }
+
+      .calm .seal {
+        position: absolute;
+        z-index: 5;
+        right: 35px;
+        bottom: 31px;
+        width: 122px;
+        height: 122px;
+        transform: rotate(4deg);
+      }
+
+      .mark {
+        text-align: center;
+      }
+
+      .mark .halo {
+        position: absolute;
+        top: -170px;
+        left: 50%;
+        width: 870px;
+        height: 870px;
+        transform: translateX(-50%);
+        opacity: 0.52;
+        border: 1px solid rgba(79, 92, 52, 0.23);
+        border-radius: 50%;
+        box-shadow:
+          0 0 0 86px rgba(111, 125, 76, 0.035),
+          0 0 0 172px rgba(111, 125, 76, 0.025);
+      }
+
+      .mark .center {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        height: 100%;
+        align-items: center;
+        flex-direction: column;
+        justify-content: center;
+        padding-bottom: 10px;
+      }
+
+      .mark .brand {
+        width: 590px;
+        margin-bottom: 40px;
+      }
+
+      .mark h1 {
+        margin: 0;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 51px;
+        font-weight: 500;
+        letter-spacing: -0.025em;
+      }
+
+      .mark p {
+        margin: 15px 0 0;
+        color: var(--sumi-soft);
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: 0.035em;
+      }
+
+      .mark .brush {
+        position: absolute;
+        right: -80px;
+        bottom: -130px;
+        left: -80px;
+        height: 200px;
+        transform: rotate(-2deg);
+        opacity: 0.78;
+        background: linear-gradient(90deg, #4c5831, #83945b 55%, #536039);
+        clip-path: polygon(
+          0 42%,
+          8% 30%,
+          17% 39%,
+          25% 17%,
+          36% 36%,
+          47% 15%,
+          58% 30%,
+          70% 8%,
+          81% 27%,
+          92% 3%,
+          100% 22%,
+          100% 100%,
+          0 100%
+        );
+      }
+
+      .product {
+        color: #eee8d9;
+        background:
+          radial-gradient(700px 470px at 83% 78%, rgba(130, 153, 80, 0.2), transparent 64%),
+          radial-gradient(560px 380px at 10% -12%, rgba(111, 125, 76, 0.13), transparent 66%),
+          linear-gradient(145deg, #191813 0%, #11110e 72%);
+      }
+
+      .product::after {
+        mix-blend-mode: overlay;
+        opacity: 0.55;
+      }
+
+      .product .copy {
+        position: absolute;
+        z-index: 5;
+        top: 55px;
+        left: 67px;
+        width: 520px;
+      }
+
+      .product .wordmark {
+        width: 226px;
+      }
+
+      .product h1 {
+        margin: 90px 0 20px;
+        font-family: "Fraunces", Georgia, serif;
+        font-size: 61px;
+        font-weight: 500;
+        line-height: 1.02;
+        letter-spacing: -0.035em;
+      }
+
+      .product h1 em {
+        color: #b8c98d;
+        font-weight: 500;
+      }
+
+      .product .subline {
+        width: 455px;
+        margin: 0;
+        color: #b9b19d;
+        font-size: 18px;
+        font-weight: 500;
+        line-height: 1.55;
+      }
+
+      .product .chip {
+        display: inline-flex;
+        margin-top: 30px;
+        padding: 10px 15px;
+        color: #d8dfbd;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border: 1px solid rgba(184, 201, 141, 0.28);
+        border-radius: 999px;
+        background: rgba(111, 125, 76, 0.11);
+      }
+
+      .product .app-shot {
+        position: absolute;
+        z-index: 3;
+        right: -168px;
+        bottom: -78px;
+        width: 760px;
+        transform: rotate(-1deg);
+        filter: drop-shadow(0 28px 54px rgba(0, 0, 0, 0.62));
+      }
+
+      .product .rule {
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        right: 416px;
+        width: 1px;
+        height: 630px;
+        transform: rotate(11deg);
+        background: linear-gradient(transparent, rgba(184, 201, 141, 0.26), transparent);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="og calm" data-name="calm">
+      <div class="copy">
+        <img class="wordmark" src="../public/wordmark-light.png" alt="Hanoki" />
+        <h1>Where AI chat feels <em>calm</em> again.</h1>
+        <p class="subline">Local-first · Any model · Entirely yours</p>
+      </div>
+      <div class="moss-disc"></div>
+      <img class="app-shot" src="../public/shot-chat.png" alt="" />
+      <img class="seal" src="../public/hanoki-mark.png" alt="" />
+    </main>
+
+    <main class="og mark" data-name="mark">
+      <div class="halo"></div>
+      <div class="center">
+        <img class="brand" src="../public/wordmark-light.png" alt="Hanoki" />
+        <h1>A calm home for your AI chats.</h1>
+        <p>LOCAL-FIRST · OPEN SOURCE · ANY MODEL</p>
+      </div>
+      <div class="brush"></div>
+    </main>
+
+    <main class="og product" data-name="product">
+      <div class="copy">
+        <img class="wordmark" src="../public/wordmark-dark.png" alt="Hanoki" />
+        <h1>Your conversations,<br /><em>quietly organized.</em></h1>
+        <p class="subline">
+          A local-first desktop app for chatting, writing, and creative work with any AI model.
+        </p>
+        <div class="chip">Free &amp; open source</div>
+      </div>
+      <div class="rule"></div>
+      <img class="app-shot" src="../public/shot-chat.png" alt="" />
+    </main>
+
+    <script>
+      const variant = new URLSearchParams(location.search).get("variant") || "calm";
+      document.body.dataset.variant = variant;
+    </script>
+  </body>
+</html>

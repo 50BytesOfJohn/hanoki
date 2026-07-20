@@ -15,11 +15,106 @@ import {
 
 import { Button } from "#/components/ui/button";
 
-export const Route = createFileRoute("/")({ component: Home });
-
+const SITE_URL = "https://hanoki.app/";
 const GITHUB = "https://github.com/50BytesOfJohn/hanoki";
 const RELEASES = "https://github.com/50BytesOfJohn/hanoki/releases";
 const DISCORD = "https://discord.gg/uRCYRMrXUx";
+const TITLE = "Hanoki — Local-First AI Chat Desktop App";
+const DESCRIPTION =
+  "Hanoki is a free, open-source desktop AI chat app for macOS. Use cloud or local models while keeping your chats, API keys, and workspace private.";
+const SOCIAL_DESCRIPTION =
+  "A calm, local-first desktop app for chatting, writing, and creative work with cloud or local AI models.";
+const OG_IMAGE = `${SITE_URL}og-image.png`;
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${SITE_URL}#organization`,
+      name: "Hanoki",
+      url: SITE_URL,
+      logo: `${SITE_URL}hanoki-mark.png`,
+      sameAs: [GITHUB, DISCORD],
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}#website`,
+      url: SITE_URL,
+      name: "Hanoki",
+      description: DESCRIPTION,
+      inLanguage: "en",
+      publisher: { "@id": `${SITE_URL}#organization` },
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${SITE_URL}#app`,
+      name: "Hanoki",
+      url: SITE_URL,
+      description: DESCRIPTION,
+      applicationCategory: "CommunicationApplication",
+      applicationSubCategory: "AI chat client",
+      operatingSystem: "macOS",
+      image: OG_IMAGE,
+      screenshot: [
+        `${SITE_URL}shot-chat.png`,
+        `${SITE_URL}shot-providers.png`,
+        `${SITE_URL}shot-graph.png`,
+      ],
+      downloadUrl: RELEASES,
+      license: `${GITHUB}/blob/main/LICENSE`,
+      isAccessibleForFree: true,
+      offers: {
+        "@type": "Offer",
+        price: 0,
+        priceCurrency: "USD",
+      },
+      featureList: [
+        "Branching AI conversations",
+        "Workspaces and nested folders",
+        "Cloud and local AI model support",
+        "Local-first chat storage",
+        "OS keychain storage for API keys",
+      ],
+      author: { "@id": `${SITE_URL}#organization` },
+    },
+  ],
+};
+
+export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: TITLE },
+      { name: "description", content: DESCRIPTION },
+      { name: "robots", content: "index, follow, max-image-preview:large, max-snippet:-1" },
+      { property: "og:title", content: TITLE },
+      { property: "og:description", content: SOCIAL_DESCRIPTION },
+      { property: "og:site_name", content: "Hanoki" },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: OG_IMAGE },
+      { property: "og:image:secure_url", content: OG_IMAGE },
+      { property: "og:image:type", content: "image/png" },
+      { property: "og:image:width", content: "1731" },
+      { property: "og:image:height", content: "909" },
+      { property: "og:image:alt", content: "Hanoki — Where AI chat feels calm again." },
+      { property: "og:type", content: "website" },
+      { property: "og:locale", content: "en_US" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: TITLE },
+      { name: "twitter:description", content: SOCIAL_DESCRIPTION },
+      { name: "twitter:image", content: OG_IMAGE },
+      { name: "twitter:image:alt", content: "Hanoki — Where AI chat feels calm again." },
+    ],
+    links: [{ rel: "canonical", href: SITE_URL }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify(structuredData),
+      },
+    ],
+  }),
+  component: Home,
+});
 
 const rise: Variants = {
   hidden: { opacity: 0, y: 18 },
@@ -115,14 +210,18 @@ function Wordmark({ className, height = "h-8" }: { className?: string; height?: 
   return (
     <a href="#top" className={`inline-flex items-center ${className ?? ""}`} aria-label="Hanoki">
       <img
-        src="/wordmark-light.png"
+        src="/wordmark-light.webp"
         alt="Hanoki"
+        width={480}
+        height={130}
         className={`${height} w-auto select-none dark:hidden`}
         draggable={false}
       />
       <img
-        src="/wordmark-dark.png"
+        src="/wordmark-dark.webp"
         alt="Hanoki"
+        width={480}
+        height={126}
         className={`hidden ${height} w-auto select-none dark:block`}
         draggable={false}
       />
@@ -248,6 +347,8 @@ function Hero() {
             alt="The Hanoki desktop app: workspaces and nested folders in the sidebar with a chat open"
             width={3364}
             height={2044}
+            fetchPriority="high"
+            decoding="async"
           />
         </div>
       </motion.div>
@@ -345,7 +446,7 @@ function Showcase({
       </Reveal>
 
       <Reveal i={1} className={`app-frame ${reverse ? "order-1 lg:order-2" : ""}`}>
-        <img src={img} alt={alt} width={3364} height={2044} />
+        <img src={img} alt={alt} width={3364} height={2044} loading="lazy" decoding="async" />
       </Reveal>
     </section>
   );
@@ -423,6 +524,10 @@ function CallToAction() {
         <img
           src="/hanoki-mark.png"
           alt=""
+          width={512}
+          height={512}
+          loading="lazy"
+          decoding="async"
           className="relative mx-auto mb-6 size-14"
           draggable={false}
         />
