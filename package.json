@@ -21,6 +21,11 @@
   "main": ".vite/build/main.js",
   "scripts": {
     "start": "electron-forge start",
+    "web:dev": "pnpm --filter @hanoki/web dev",
+    "web:build": "pnpm --filter @hanoki/web build",
+    "web:preview": "pnpm --filter @hanoki/web preview",
+    "web:test": "pnpm --filter @hanoki/web test",
+    "web:deploy": "pnpm --filter @hanoki/web deploy",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "release:publish": "electron-forge publish",
