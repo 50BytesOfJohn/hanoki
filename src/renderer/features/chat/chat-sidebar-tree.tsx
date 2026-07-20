@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   asyncDataLoaderFeature,
   dragAndDropFeature,
+  expandAllFeature,
   hotkeysCoreFeature,
   renamingFeature,
   selectionFeature,
@@ -46,9 +47,12 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 
@@ -175,7 +179,15 @@ export function ChatSidebarTree() {
   );
 }
 
-function ChatSidebarViewModeMenu({ viewMode }: { viewMode: ChatSidebarViewMode }) {
+function ChatSidebarViewModeMenu({
+  viewMode,
+  onExpandAll,
+  onCollapseAll,
+}: {
+  viewMode: ChatSidebarViewMode;
+  onExpandAll?: () => void;
+  onCollapseAll?: () => void;
+}) {
   const setSidebarViewMode = useWorkspaceStore((s) => s.setSidebarViewMode);
 
   return (
@@ -205,6 +217,16 @@ function ChatSidebarViewModeMenu({ viewMode }: { viewMode: ChatSidebarViewMode }
           <DropdownMenuRadioItem value="tree">Folder tree</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="activity">Recent activity</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {onExpandAll && onCollapseAll ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Folders</DropdownMenuLabel>
+              <DropdownMenuItem onClick={onExpandAll}>Expand all folders</DropdownMenuItem>
+              <DropdownMenuItem onClick={onCollapseAll}>Collapse all folders</DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -289,6 +311,7 @@ function ChatSidebarTreeInner({
       hotkeysCoreFeature,
       renamingFeature,
       dragAndDropFeature,
+      expandAllFeature,
     ],
     state: { expandedItems, renamingItem, renamingValue, selectedItems },
     setExpandedItems,
@@ -550,7 +573,15 @@ function ChatSidebarTreeInner({
           >
             <HugeiconsIcon icon={FolderAddIcon} />
           </Button>
-          <ChatSidebarViewModeMenu viewMode="tree" />
+          <ChatSidebarViewModeMenu
+            viewMode="tree"
+            onExpandAll={() => {
+              void tree.expandAll();
+            }}
+            onCollapseAll={() => {
+              tree.collapseAll();
+            }}
+          />
         </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
