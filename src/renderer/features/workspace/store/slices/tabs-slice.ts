@@ -1,14 +1,18 @@
-import type { Tab, TabContent, TabsSlice, WorkspaceSliceCreator } from "../types";
+import type { OpenTabOptions, Tab, TabContent, TabsSlice, WorkspaceSliceCreator } from "../types";
 
 export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
   tabs: [],
 
-  openTab: (content: TabContent) => {
+  openTab: (content: TabContent, options?: OpenTabOptions) => {
+    const activate = options?.activate ?? true;
+
     set((state) => {
       const existingTab = state.tabs.find((tab) => tab.chatId === content.chatId);
 
       if (existingTab) {
-        state.currentChatId = existingTab.chatId;
+        if (activate) {
+          state.currentChatId = existingTab.chatId;
+        }
         return;
       }
 
@@ -18,7 +22,10 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       };
 
       state.tabs.push(newTab);
-      state.currentChatId = newTab.chatId;
+
+      if (activate) {
+        state.currentChatId = newTab.chatId;
+      }
     });
   },
 
@@ -56,6 +63,40 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
 
       if (hadCurrentTab && keptTab.chatId !== state.currentChatId) {
         state.currentChatId = keptTab.chatId;
+      }
+    });
+  },
+
+  closeTabsToLeft: (tabId) => {
+    set((state) => {
+      const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+      if (tabIndex <= 0) {
+        return;
+      }
+
+      const keptTabs = state.tabs.slice(tabIndex);
+      const hadCurrentTab = state.tabs.some((tab) => tab.chatId === state.currentChatId);
+      state.tabs = keptTabs;
+
+      if (hadCurrentTab && !keptTabs.some((tab) => tab.chatId === state.currentChatId)) {
+        state.currentChatId = keptTabs[0]?.chatId ?? null;
+      }
+    });
+  },
+
+  closeTabsToRight: (tabId) => {
+    set((state) => {
+      const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+      if (tabIndex === -1 || tabIndex >= state.tabs.length - 1) {
+        return;
+      }
+
+      const keptTabs = state.tabs.slice(0, tabIndex + 1);
+      const hadCurrentTab = state.tabs.some((tab) => tab.chatId === state.currentChatId);
+      state.tabs = keptTabs;
+
+      if (hadCurrentTab && !keptTabs.some((tab) => tab.chatId === state.currentChatId)) {
+        state.currentChatId = keptTabs[keptTabs.length - 1]?.chatId ?? null;
       }
     });
   },

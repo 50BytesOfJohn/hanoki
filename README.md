@@ -1,8 +1,20 @@
-![Hanoki banner](./assets/frame-86.png)
+![Hanoki banner](./assets/banner.png)
 
 # Hanoki
 
 Hanoki app (Electron Forge + React). Early stage.
+
+[Join the Discord](https://discord.gg/uRCYRMrXUx)
+
+## macOS notes (important)
+
+There's no Apple Developer license yet, so builds are **unsigned**:
+
+- **No auto-updates** — you'll need to download new versions manually.
+- **Gatekeeper** — macOS will block the app until you allow it in **System Settings → Privacy & Security** (or right-click → Open the first time).
+- **Keychain** — on first use macOS may ask for your login keychain password. That's expected: API keys are stored in the Keychain so they stay secure.
+
+If you'd like to support the project, contributions will go toward an Apple Developer license so we can ship proper signed installs and auto-updates.
 
 ## Product docs
 

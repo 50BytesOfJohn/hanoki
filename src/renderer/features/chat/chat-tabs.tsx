@@ -27,6 +27,9 @@ import type { ChatTabsPosition } from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
 import { useWorkspaceStore } from "../workspace/store";
 
+/** DataTransfer format for chats dragged out of the sidebar tree. */
+export const CHAT_DRAG_FORMAT = "application/x-hanoki-chats";
+
 export function useChatTabsPosition(): ChatTabsPosition {
   const { data } = useQuery(globalChatSettingsQueryOptions);
   return data?.tabsPosition ?? "top";
@@ -38,6 +41,8 @@ function useTabStrip() {
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs);
+  const closeTabsToLeft = useWorkspaceStore((s) => s.closeTabsToLeft);
+  const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight);
   const moveTab = useWorkspaceStore((s) => s.moveTab);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -56,18 +61,38 @@ function useTabStrip() {
     [moveTab, tabs],
   );
 
-  return { tabs, currentChatId, setCurrentChat, closeTab, closeOtherTabs, sensors, handleDragEnd };
+  return {
+    tabs,
+    currentChatId,
+    setCurrentChat,
+    closeTab,
+    closeOtherTabs,
+    closeTabsToLeft,
+    closeTabsToRight,
+    sensors,
+    handleDragEnd,
+  };
 }
 
 /* ── Horizontal strip (window toolbar) ── */
 
 export function ChatTabsBar() {
-  const { tabs, currentChatId, setCurrentChat, closeTab, closeOtherTabs, sensors, handleDragEnd } =
-    useTabStrip();
+  const {
+    tabs,
+    currentChatId,
+    setCurrentChat,
+    closeTab,
+    closeOtherTabs,
+    closeTabsToLeft,
+    closeTabsToRight,
+    sensors,
+    handleDragEnd,
+  } = useTabStrip();
+  const openTab = useWorkspaceStore((s) => s.openTab);
+  const [isChatDropTarget, setIsChatDropTarget] = React.useState(false);
 
-  if (tabs.length === 0) {
-    return null;
-  }
+  const hasChatDrag = (event: React.DragEvent) =>
+    event.dataTransfer.types.includes(CHAT_DRAG_FORMAT);
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -76,18 +101,48 @@ export function ChatTabsBar() {
           role="tablist"
           aria-label="Open chats"
           aria-orientation="horizontal"
-          className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onDragOver={(event) => {
+            if (hasChatDrag(event)) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setIsChatDropTarget(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsChatDropTarget(false);
+            }
+          }}
+          onDrop={(event) => {
+            setIsChatDropTarget(false);
+            if (!hasChatDrag(event)) {
+              return;
+            }
+            event.preventDefault();
+            const chatIds: string[] = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
+            for (const chatId of chatIds) {
+              openTab({ type: "chat", chatId });
+            }
+          }}
+          className={cn(
+            "flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            isChatDropTarget && "bg-hover ring-1 ring-muted/30 ring-dashed",
+          )}
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, index) => (
             <ChatTabItem
               key={tab.id}
               tab={tab}
               orientation="horizontal"
               isActive={currentChatId === tab.chatId}
               canCloseOthers={tabs.length > 1}
+              canCloseToLeft={index > 0}
+              canCloseToRight={index < tabs.length - 1}
               onSelect={() => setCurrentChat(tab.chatId)}
               onClose={() => closeTab(tab.id)}
               onCloseOthers={() => closeOtherTabs(tab.id)}
+              onCloseToLeft={() => closeTabsToLeft(tab.id)}
+              onCloseToRight={() => closeTabsToRight(tab.id)}
             />
           ))}
         </div>
@@ -99,8 +154,17 @@ export function ChatTabsBar() {
 /* ── Vertical list (sidebar "Tabs" section) ── */
 
 export function ChatTabsSidebarList() {
-  const { tabs, currentChatId, setCurrentChat, closeTab, closeOtherTabs, sensors, handleDragEnd } =
-    useTabStrip();
+  const {
+    tabs,
+    currentChatId,
+    setCurrentChat,
+    closeTab,
+    closeOtherTabs,
+    closeTabsToLeft,
+    closeTabsToRight,
+    sensors,
+    handleDragEnd,
+  } = useTabStrip();
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -111,16 +175,20 @@ export function ChatTabsSidebarList() {
           aria-orientation="vertical"
           className="flex flex-col gap-0.5 px-1"
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, index) => (
             <ChatTabItem
               key={tab.id}
               tab={tab}
               orientation="vertical"
               isActive={currentChatId === tab.chatId}
               canCloseOthers={tabs.length > 1}
+              canCloseToLeft={index > 0}
+              canCloseToRight={index < tabs.length - 1}
               onSelect={() => setCurrentChat(tab.chatId)}
               onClose={() => closeTab(tab.id)}
               onCloseOthers={() => closeOtherTabs(tab.id)}
+              onCloseToLeft={() => closeTabsToLeft(tab.id)}
+              onCloseToRight={() => closeTabsToRight(tab.id)}
             />
           ))}
         </div>
@@ -136,17 +204,25 @@ function ChatTabItem({
   orientation,
   isActive,
   canCloseOthers,
+  canCloseToLeft,
+  canCloseToRight,
   onSelect,
   onClose,
   onCloseOthers,
+  onCloseToLeft,
+  onCloseToRight,
 }: {
   tab: Tab;
   orientation: "horizontal" | "vertical";
   isActive: boolean;
   canCloseOthers: boolean;
+  canCloseToLeft: boolean;
+  canCloseToRight: boolean;
   onSelect: () => void;
   onClose: () => void;
   onCloseOthers: () => void;
+  onCloseToLeft: () => void;
+  onCloseToRight: () => void;
 }) {
   const { data: chat } = useQuery(getChatQueryOptions(tab.chatId));
   const title = chat?.title ?? "Loading…";
@@ -228,10 +304,16 @@ function ChatTabItem({
           </div>
         }
       />
-      <ContextMenuContent className="w-44">
+      <ContextMenuContent className="w-48">
         <ContextMenuItem onClick={onClose}>Close Tab</ContextMenuItem>
         <ContextMenuItem disabled={!canCloseOthers} onClick={onCloseOthers}>
           Close Other Tabs
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canCloseToLeft} onClick={onCloseToLeft}>
+          Close Tabs to the Left
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canCloseToRight} onClick={onCloseToRight}>
+          Close Tabs to the Right
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

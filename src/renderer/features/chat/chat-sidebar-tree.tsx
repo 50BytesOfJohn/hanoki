@@ -82,7 +82,7 @@ import {
   ChatSidebarPanel,
 } from "./chat-sidebar";
 import { ChatSearchDialog } from "./chat-search-dialog";
-import { ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
+import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTitleUpdates } from "./chat-title-events";
 import { useWorkspaceStore } from "../workspace/store";
 
@@ -296,6 +296,16 @@ function ChatSidebarTreeInner({
     setRenamingItem,
     setRenamingValue,
     canReorder: false,
+    // Lets chats be dragged onto foreign drop targets like the tab bar.
+    createForeignDragObject: (items) => ({
+      format: CHAT_DRAG_FORMAT,
+      data: JSON.stringify(
+        items
+          .map((item) => item.getId())
+          .filter((id) => id.startsWith("chat:"))
+          .map((id) => id.slice("chat:".length)),
+      ),
+    }),
     canDrop: (items, target) => {
       const targetId = target.item.getId();
       // Only allow dropping on folders or root
@@ -448,8 +458,8 @@ function ChatSidebarTreeInner({
   );
 
   const openChatInTab = React.useCallback(
-    (chatId: string) => {
-      openTab({ type: "chat", chatId });
+    (chatId: string, options?: { activate?: boolean }) => {
+      openTab({ type: "chat", chatId }, options);
     },
     [openTab],
   );
@@ -621,6 +631,32 @@ function ChatSidebarTreeInner({
                       }
 
                       navigateToChat(data.chat.id);
+                    },
+                    onDoubleClick: (event) => {
+                      if (event.defaultPrevented || isSelectionModifierEvent(event)) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      openChatInTab(data.chat.id);
+                    },
+                    onMouseDown: (event) => {
+                      // Prevent middle-click autoscroll.
+                      if (event.button === 1) {
+                        event.preventDefault();
+                      }
+                    },
+                    onAuxClick: (event) => {
+                      if (
+                        event.button !== 1 ||
+                        event.defaultPrevented ||
+                        isSelectionModifierEvent(event)
+                      ) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      openChatInTab(data.chat.id, { activate: false });
                     },
                   });
 
@@ -926,7 +962,9 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                           chat={chat}
                           isActive={chat.id === currentChatId}
                           onSelect={() => setCurrentChat(chat.id)}
-                          onOpenInTab={() => openTab({ type: "chat", chatId: chat.id })}
+                          onOpenInTab={(options) =>
+                            openTab({ type: "chat", chatId: chat.id }, options)
+                          }
                           onContextMenuAction={handleContextMenuAction(chat)}
                         />
                       ),
@@ -968,7 +1006,7 @@ function ChatActivityListItem({
   chat: ChatInfo;
   isActive: boolean;
   onSelect: () => void;
-  onOpenInTab: () => void;
+  onOpenInTab: (options?: { activate?: boolean }) => void;
   onContextMenuAction: (action: ChatTreeContextMenuAction) => void;
 }) {
   return (
@@ -978,6 +1016,24 @@ function ChatActivityListItem({
         tabIndex={0}
         aria-pressed={isActive}
         onClick={onSelect}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          onOpenInTab();
+        }}
+        onMouseDown={(event) => {
+          // Prevent middle-click autoscroll.
+          if (event.button === 1) {
+            event.preventDefault();
+          }
+        }}
+        onAuxClick={(event) => {
+          if (event.button !== 1) {
+            return;
+          }
+
+          event.preventDefault();
+          onOpenInTab({ activate: false });
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();

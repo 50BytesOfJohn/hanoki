@@ -42,10 +42,17 @@ export interface TabsSliceValue {
   tabs: Tab[];
 }
 
+export type OpenTabOptions = {
+  /** When false, adds the tab without switching to it. Defaults to true. */
+  activate?: boolean;
+};
+
 export interface TabsSlice extends TabsSliceValue {
-  openTab: (content: TabContent) => void;
+  openTab: (content: TabContent, options?: OpenTabOptions) => void;
   closeTab: (tabId: string) => void;
   closeOtherTabs: (tabId: string) => void;
+  closeTabsToLeft: (tabId: string) => void;
+  closeTabsToRight: (tabId: string) => void;
   closeAllTabs: () => void;
   moveTab: (tabId: string, toIndex: number) => void;
   removeTabsByChatIds: (chatIds: readonly string[]) => void;
