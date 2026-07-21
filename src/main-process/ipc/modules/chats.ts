@@ -66,7 +66,13 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
   }
 
   const inputRecord = rawInput as Record<string, unknown>;
-  const allowedKeys = new Set(["modelId", "systemPrompt", "webEnabled", "hanokiEnabled"]);
+  const allowedKeys = new Set([
+    "modelId",
+    "systemPrompt",
+    "modelConfig",
+    "webEnabled",
+    "hanokiEnabled",
+  ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
       throw AppError.badRequest(`Unsupported chat settings update field "${key}".`);
@@ -92,6 +98,37 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
       typeof inputRecord.systemPrompt === "string" && inputRecord.systemPrompt.trim().length === 0
         ? null
         : inputRecord.systemPrompt;
+  }
+
+  if (inputRecord.modelConfig !== undefined) {
+    if (
+      !inputRecord.modelConfig ||
+      typeof inputRecord.modelConfig !== "object" ||
+      Array.isArray(inputRecord.modelConfig)
+    ) {
+      throw AppError.badRequest("modelConfig must be an object.");
+    }
+
+    const modelConfig = inputRecord.modelConfig as Record<string, unknown>;
+    for (const key of Object.keys(modelConfig)) {
+      if (key !== "temperature") {
+        throw AppError.badRequest(`Unsupported model config update field "${key}".`);
+      }
+    }
+
+    if (modelConfig.temperature !== undefined) {
+      if (
+        modelConfig.temperature !== null &&
+        (typeof modelConfig.temperature !== "number" ||
+          !Number.isFinite(modelConfig.temperature) ||
+          modelConfig.temperature < 0 ||
+          modelConfig.temperature > 1)
+      ) {
+        throw AppError.badRequest("temperature must be null or a number between 0 and 1.");
+      }
+
+      parsedInput.modelConfig = { temperature: modelConfig.temperature };
+    }
   }
 
   if (inputRecord.webEnabled !== undefined) {

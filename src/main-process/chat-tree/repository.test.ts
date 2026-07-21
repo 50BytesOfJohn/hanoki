@@ -16,6 +16,7 @@ import {
   getFolderById,
   moveChatTreeItems,
   searchWorkspaceChats,
+  updateChatSettings,
 } from "./repository";
 
 const testDataDirectory = mkdtempSync(join(tmpdir(), "hanoki-move-items-"));
@@ -149,6 +150,31 @@ describe("createFolder", () => {
     });
 
     expect(getFolderById(folder.id)).toEqual(expect.objectContaining({ parentId: parent.id }));
+  });
+});
+
+describe("updateChatSettings", () => {
+  it("stores a temperature override and removes the empty model config when reset", () => {
+    createWorkspace({ id: "settings-workspace", name: "Settings" });
+    const chat = createChat({
+      workspaceId: "settings-workspace",
+      title: "Configured chat",
+      folderId: null,
+    });
+
+    expect(
+      updateChatSettings(chat.id, {
+        systemPrompt: "Be concise.",
+        modelConfig: { temperature: 0.4 },
+      }).settings,
+    ).toEqual({
+      systemPrompt: "Be concise.",
+      modelConfig: { temperature: 0.4 },
+    });
+
+    expect(updateChatSettings(chat.id, { modelConfig: { temperature: null } }).settings).toEqual({
+      systemPrompt: "Be concise.",
+    });
   });
 });
 

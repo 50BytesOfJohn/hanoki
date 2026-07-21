@@ -220,6 +220,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const agent = new ToolLoopAgent({
       model: languageModel,
       instructions: chat.settings.systemPrompt?.trim() || undefined,
+      temperature: chat.settings.modelConfig?.temperature,
       tools,
       activeTools,
       stopWhen: isStepCount(100),
@@ -231,6 +232,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           workspaceId: chat.workspaceId,
           provider: sdkProvider,
           modelId: sdkModelId,
+          temperature: chat.settings.modelConfig?.temperature ?? null,
+          hasCustomSystemPrompt: Boolean(chat.settings.systemPrompt?.trim()),
           activeTools,
         });
       },
@@ -269,6 +272,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           totalTokens: usage.totalTokens,
           warningCount: warnings?.length ?? 0,
         });
+        if (warnings?.length) {
+          console.warn("[ai] Request warnings.", {
+            callId: endedCallId,
+            chatId: chat.id,
+            warnings,
+          });
+        }
       },
     });
 

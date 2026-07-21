@@ -11,10 +11,17 @@ type ChatTableRow = typeof chats.$inferSelect;
 type ChatSettings = {
   modelId?: string | null;
   systemPrompt?: string | null;
+  modelConfig?: {
+    temperature?: number;
+  };
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
 };
-type ChatSettingsPatch = Partial<ChatSettings>;
+type ChatSettingsPatch = Omit<Partial<ChatSettings>, "modelConfig"> & {
+  modelConfig?: {
+    temperature?: number | null;
+  };
+};
 
 export interface FolderRow {
   id: string;
@@ -113,6 +120,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   const record = value as Record<string, unknown>;
   const modelId = record.modelId;
   const systemPrompt = record.systemPrompt;
+  const modelConfig = record.modelConfig;
   const webEnabled = record.webEnabled;
   const hanokiEnabled = record.hanokiEnabled;
   const normalizedSettings: ChatSettings = {};
@@ -127,6 +135,18 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.systemPrompt = systemPrompt;
   } else if (systemPrompt === null) {
     normalizedSettings.systemPrompt = null;
+  }
+
+  if (modelConfig && typeof modelConfig === "object" && !Array.isArray(modelConfig)) {
+    const temperature = (modelConfig as Record<string, unknown>).temperature;
+    if (
+      typeof temperature === "number" &&
+      Number.isFinite(temperature) &&
+      temperature >= 0 &&
+      temperature <= 1
+    ) {
+      normalizedSettings.modelConfig = { temperature };
+    }
   }
 
   if (typeof webEnabled === "boolean") {
@@ -155,6 +175,21 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
 
   if ("systemPrompt" in settingsPatch) {
     nextSettings.systemPrompt = settingsPatch.systemPrompt ?? null;
+  }
+
+  if (settingsPatch.modelConfig && "temperature" in settingsPatch.modelConfig) {
+    const modelConfig = { ...nextSettings.modelConfig };
+    if (settingsPatch.modelConfig.temperature === null) {
+      delete modelConfig.temperature;
+    } else if (settingsPatch.modelConfig.temperature !== undefined) {
+      modelConfig.temperature = settingsPatch.modelConfig.temperature;
+    }
+
+    if (Object.keys(modelConfig).length === 0) {
+      delete nextSettings.modelConfig;
+    } else {
+      nextSettings.modelConfig = modelConfig;
+    }
   }
 
   if ("webEnabled" in settingsPatch) {

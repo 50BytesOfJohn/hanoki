@@ -2,7 +2,9 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatEmptyPage } from "@/features/chat/chat-empty-page";
 import {
@@ -67,6 +69,14 @@ export function ChatSettingsPage() {
         }
       />
 
+      <SettingsSection title="Model">
+        <TemperatureRow
+          key={chat.id}
+          chatId={chat.id}
+          savedTemperature={chat.settings.modelConfig?.temperature}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Instructions">
         <SystemPromptRow
           key={`${chat.id}:${chat.settings.systemPrompt ?? ""}`}
@@ -75,6 +85,90 @@ export function ChatSettingsPage() {
         />
       </SettingsSection>
     </ChatSettingsShell>
+  );
+}
+
+function TemperatureRow({
+  chatId,
+  savedTemperature,
+}: {
+  chatId: string;
+  savedTemperature?: number;
+}) {
+  const updateChatSettings = useUpdateChatSettings();
+  const [temperature, setTemperature] = React.useState(savedTemperature ?? 0.7);
+  const [error, setError] = React.useState<string | null>(null);
+  const isCustom = savedTemperature !== undefined;
+
+  React.useEffect(() => {
+    if (savedTemperature !== undefined) {
+      setTemperature(savedTemperature);
+    }
+  }, [savedTemperature]);
+
+  function updateTemperature(nextTemperature: number | null) {
+    setError(null);
+    updateChatSettings.mutate(
+      {
+        id: chatId,
+        input: { modelConfig: { temperature: nextTemperature } },
+      },
+      {
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : "Failed to update the temperature.");
+        },
+      },
+    );
+  }
+
+  return (
+    <SettingsRow
+      title="Temperature"
+      description="Default uses the selected model's setting. Custom values run from focused (0) to varied (1); some models may ignore them."
+      control={
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs text-muted-foreground">{isCustom ? "Custom" : "Default"}</span>
+          <Switch
+            aria-label="Use custom temperature"
+            checked={isCustom}
+            disabled={updateChatSettings.isPending}
+            onCheckedChange={(checked) => updateTemperature(checked ? temperature : null)}
+          />
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-2.5">
+        {isCustom ? (
+          <div className="flex items-center gap-3">
+            <span id="chat-temperature-control-label" className="sr-only">
+              Temperature
+            </span>
+            <Slider
+              aria-labelledby="chat-temperature-control-label"
+              className="max-w-sm"
+              min={0}
+              max={1}
+              step={0.1}
+              value={[temperature]}
+              disabled={updateChatSettings.isPending}
+              onValueChange={(value) =>
+                setTemperature((typeof value === "number" ? value : value[0]) ?? temperature)
+              }
+              onValueCommitted={(value) => {
+                const nextTemperature = typeof value === "number" ? value : value[0];
+                if (nextTemperature !== undefined && nextTemperature !== savedTemperature) {
+                  updateTemperature(nextTemperature);
+                }
+              }}
+            />
+            <output className="w-7 text-right font-mono text-xs tabular-nums">
+              {temperature.toFixed(1)}
+            </output>
+          </div>
+        ) : null}
+        <SettingsError>{error}</SettingsError>
+      </div>
+    </SettingsRow>
   );
 }
 

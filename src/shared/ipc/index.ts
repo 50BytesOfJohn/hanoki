@@ -184,13 +184,21 @@ export interface ChatInfo {
 export interface ChatSettings {
   modelId?: string | null;
   systemPrompt?: string | null;
+  modelConfig?: ChatModelConfig;
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
+}
+
+export interface ChatModelConfig {
+  temperature?: number;
 }
 
 export interface ChatSettingsUpdateInput {
   modelId?: string | null;
   systemPrompt?: string | null;
+  modelConfig?: {
+    temperature?: number | null;
+  };
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
 }
