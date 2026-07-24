@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { TextContextMenu } from "@/components/text-context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu";
+import { useWorkspaceStore } from "@/features/workspace/store";
+import { useOptionalChatPane } from "./chat-pane-context";
 
 export function MessageContextMenu({
   children,
@@ -12,6 +14,8 @@ export function MessageContextMenu({
   messageId: string;
 }) {
   const navigate = useNavigate();
+  const pane = useOptionalChatPane();
+  const setPaneView = useWorkspaceStore((state) => state.setPaneView);
 
   return (
     <TextContextMenu
@@ -19,6 +23,11 @@ export function MessageContextMenu({
       extraItems={
         <ContextMenuItem
           onClick={() => {
+            if (pane) {
+              setPaneView(pane.tabId, pane.paneId, "/chat/graph", messageId);
+              void navigate({ to: "/chat" });
+              return;
+            }
             void navigate({
               search: (previous) => ({ ...previous, graphMessageId: messageId }),
               to: "/chat/graph",

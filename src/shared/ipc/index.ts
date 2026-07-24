@@ -243,26 +243,45 @@ export interface DeleteChatTreeItemsResult {
 
 export type TabType = "chat";
 
+export type ChatPaneView = "/chat" | "/chat/graph" | "/chat/pinned-branches" | "/chat/settings";
+
+export interface ChatPaneState {
+  id: string;
+  type: "pane";
+  chatId: string;
+  view: ChatPaneView;
+  graphMessageId?: string;
+}
+
+export interface ChatSplitState {
+  id: string;
+  type: "split";
+  orientation: "horizontal" | "vertical";
+  children: ChatLayoutNode[];
+  sizes: number[];
+}
+
+export type ChatLayoutNode = ChatPaneState | ChatSplitState;
+
 export interface TabStateItem {
   id: string;
   type: TabType;
-  chatId: string;
+  layout: ChatLayoutNode;
+  focusedPaneId: string;
 }
 
 export interface TabsUiState {
   tabs: TabStateItem[];
-  currentChatId: string | null;
+  activeTabId: string | null;
 }
 
 export interface WorkspaceSettings {
   chatTreeExpandedFolderIds?: string[];
   tabs?: TabStateItem[];
-  currentChatId?: string | null;
+  activeTabId?: string | null;
   sidebarViewMode?: ChatSidebarViewMode;
   /** Unsent composer documents per chat id. Strings are legacy drafts. */
   chatDrafts?: Record<string, TiptapDocument | string>;
-  /** Last-used chat panel view (route path) per chat id; absent = conversation. */
-  chatViews?: Record<string, string>;
 }
 
 export type WorkspaceSettingsPatch = Partial<WorkspaceSettings>;

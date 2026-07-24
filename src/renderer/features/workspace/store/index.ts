@@ -26,10 +26,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
               state: state.state,
               workspace: state.workspace,
 
+              activeTabId: state.activeTabId,
               currentChatId: state.currentChatId,
               sidebarViewMode: state.sidebarViewMode,
               chatDrafts: state.chatDrafts,
-              chatViews: state.chatViews,
               tabs: state.tabs,
 
               expandedTreeNodes: state.expandedTreeNodes,

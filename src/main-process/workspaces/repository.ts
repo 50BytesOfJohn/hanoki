@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 
 import { DEFAULT_WORKSPACE_ID } from "@shared/workspace/workspace-id";
-import type { WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
+import type { ChatLayoutNode, WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
 import { parseTiptapDocument } from "@shared/tiptap/document";
 import { getAppDatabase } from "../db/database";
 import { workspaces } from "../db/schema";
@@ -45,10 +45,9 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   const allowedKeys = new Set<keyof WorkspaceSettings>([
     "chatTreeExpandedFolderIds",
     "tabs",
-    "currentChatId",
+    "activeTabId",
     "sidebarViewMode",
     "chatDrafts",
-    "chatViews",
   ]);
 
   for (const key of Object.keys(record)) {
@@ -75,7 +74,7 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
 
         const tabRecord = entry as Record<string, unknown>;
         const hasOnlySupportedKeys = Object.keys(tabRecord).every((key) =>
-          ["id", "type", "chatId"].includes(key),
+          ["id", "type", "layout", "focusedPaneId"].includes(key),
         );
         if (!hasOnlySupportedKeys) {
           return true;
@@ -85,8 +84,9 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
           typeof tabRecord.id !== "string" ||
           tabRecord.id.trim().length === 0 ||
           tabRecord.type !== "chat" ||
-          typeof tabRecord.chatId !== "string" ||
-          tabRecord.chatId.trim().length === 0
+          !isChatLayoutNode(tabRecord.layout) ||
+          typeof tabRecord.focusedPaneId !== "string" ||
+          tabRecord.focusedPaneId.trim().length === 0
         );
       }))
   ) {
@@ -94,9 +94,9 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   }
 
   if (
-    record.currentChatId !== undefined &&
-    record.currentChatId !== null &&
-    typeof record.currentChatId !== "string"
+    record.activeTabId !== undefined &&
+    record.activeTabId !== null &&
+    typeof record.activeTabId !== "string"
   ) {
     return false;
   }
@@ -108,12 +108,6 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   ) {
     return false;
   }
-
-  const isStringRecord = (entry: unknown): boolean =>
-    typeof entry === "object" &&
-    entry !== null &&
-    !Array.isArray(entry) &&
-    Object.values(entry).every((recordValue) => typeof recordValue === "string");
 
   if (record.chatDrafts !== undefined) {
     if (
@@ -128,11 +122,42 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     }
   }
 
-  if (record.chatViews !== undefined && !isStringRecord(record.chatViews)) {
-    return false;
-  }
-
   return true;
+}
+
+function isChatLayoutNode(value: unknown, depth = 0): value is ChatLayoutNode {
+  if (depth > 20 || !value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (record.type === "pane") {
+    return (
+      Object.keys(record).every((key) =>
+        ["id", "type", "chatId", "view", "graphMessageId"].includes(key),
+      ) &&
+      typeof record.id === "string" &&
+      record.id.trim().length > 0 &&
+      typeof record.chatId === "string" &&
+      record.chatId.trim().length > 0 &&
+      ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"].includes(
+        record.view as string,
+      ) &&
+      (record.graphMessageId === undefined || typeof record.graphMessageId === "string")
+    );
+  }
+  if (record.type !== "split") return false;
+  return (
+    Object.keys(record).every((key) =>
+      ["id", "type", "orientation", "children", "sizes"].includes(key),
+    ) &&
+    typeof record.id === "string" &&
+    record.id.trim().length > 0 &&
+    (record.orientation === "horizontal" || record.orientation === "vertical") &&
+    Array.isArray(record.children) &&
+    record.children.length >= 2 &&
+    record.children.every((child) => isChatLayoutNode(child, depth + 1)) &&
+    Array.isArray(record.sizes) &&
+    record.sizes.length === record.children.length &&
+    record.sizes.every((size) => typeof size === "number" && Number.isFinite(size) && size > 0)
+  );
 }
 
 function normalizeWorkspaceSettings(raw: unknown, workspaceId: string): WorkspaceSettings {

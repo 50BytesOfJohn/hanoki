@@ -19,8 +19,9 @@ import { getChatQueryOptions } from "@/queries/chats";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 
-export function ChatSettingsPage() {
-  const activeChatId = useWorkspaceStore((state) => state.currentChatId);
+export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
+  const currentChatId = useWorkspaceStore((state) => (chatId ? null : state.currentChatId));
+  const activeChatId = chatId ?? currentChatId;
 
   const chatQuery = useQuery(getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }));
 

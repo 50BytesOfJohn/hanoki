@@ -1,5 +1,7 @@
 import {
   type ActiveWorkspaceInfo,
+  type ChatLayoutNode,
+  type ChatPaneView,
   type GetActiveWorkspaceOptions,
   IPC_CHANNELS,
   type TabStateItem,
@@ -131,7 +133,7 @@ function parseTabsArray(input: unknown): TabStateItem[] {
     }
 
     const record = entry as Record<string, unknown>;
-    const allowedKeys = new Set(["id", "type", "chatId"]);
+    const allowedKeys = new Set(["id", "type", "layout", "focusedPaneId"]);
     for (const key of Object.keys(record)) {
       if (!allowedKeys.has(key)) {
         throw AppError.badRequest(`Unsupported tab field "${key}".`);
@@ -141,9 +143,51 @@ function parseTabsArray(input: unknown): TabStateItem[] {
     return {
       id: parseValidTabId(record.id),
       type: parseValidTabType(record.type),
-      chatId: parseValidChatId(record.chatId),
+      layout: parseChatLayoutNode(record.layout),
+      focusedPaneId: parseValidTabId(record.focusedPaneId),
     };
   });
+}
+
+function parseChatLayoutNode(input: unknown, depth = 0): ChatLayoutNode {
+  if (depth > 20 || !input || typeof input !== "object" || Array.isArray(input)) {
+    throw AppError.badRequest("Invalid chat layout node.");
+  }
+  const record = input as Record<string, unknown>;
+  const id = parseValidTabId(record.id);
+  if (record.type === "pane") {
+    const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];
+    if (!allowedViews.includes(record.view as string)) {
+      throw AppError.badRequest("Invalid chat pane view.");
+    }
+    return {
+      id,
+      type: "pane",
+      chatId: parseValidChatId(record.chatId),
+      view: record.view as ChatPaneView,
+      ...(typeof record.graphMessageId === "string"
+        ? { graphMessageId: record.graphMessageId }
+        : {}),
+    };
+  }
+  if (
+    record.type !== "split" ||
+    (record.orientation !== "horizontal" && record.orientation !== "vertical") ||
+    !Array.isArray(record.children) ||
+    record.children.length < 2 ||
+    !Array.isArray(record.sizes) ||
+    record.sizes.length !== record.children.length ||
+    !record.sizes.every((size) => typeof size === "number" && Number.isFinite(size) && size > 0)
+  ) {
+    throw AppError.badRequest("Invalid chat split node.");
+  }
+  return {
+    id,
+    type: "split",
+    orientation: record.orientation,
+    children: record.children.map((child) => parseChatLayoutNode(child, depth + 1)),
+    sizes: record.sizes as number[],
+  };
 }
 
 function parseGetActiveWorkspaceInput(args: unknown[]): [GetActiveWorkspaceOptions] {

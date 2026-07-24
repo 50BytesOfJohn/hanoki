@@ -24,7 +24,7 @@ export const TiptapMessageContent = React.memo(function TiptapMessageContent({
   return (
     <div
       className={cn(
-        "tiptap-message-content prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.7] prose-p:my-0 prose-p:leading-[1.7] prose-headings:mb-2 prose-headings:mt-5 prose-headings:font-heading prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link",
+        "tiptap-message-content prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.7] prose-p:leading-[1.7] prose-headings:mb-2 prose-headings:mt-5 prose-headings:font-heading prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link",
         className,
       )}
     >

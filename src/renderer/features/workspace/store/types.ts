@@ -1,33 +1,23 @@
-import { ChatSidebarViewMode, WorkspaceInfo } from "@shared/ipc";
+import type { ChatPaneView, ChatSidebarViewMode, TabStateItem, WorkspaceInfo } from "@shared/ipc";
 import type { StateCreator } from "zustand";
 import "zustand/middleware/immer";
 import type { TiptapDocument } from "@shared/tiptap/document";
 
-export type TabType = "chat";
-
-export interface ChatTab {
-  type: "chat";
-  chatId: string;
-}
-
-export type TabContent = ChatTab;
-
-export type Tab = {
-  id: string;
-} & TabContent;
+export type TabContent = { type: "chat"; chatId: string };
+export type Tab = TabStateItem;
 
 export type WorkspaceState = "idle" | "loading";
 
 export interface WorkspaceSliceValue {
   state: WorkspaceState;
   workspace: WorkspaceInfo | null;
+  activeTabId: string | null;
+  /** Derived mirror of the active tab's focused pane, used by chat runtime consumers. */
   currentChatId: string | null;
   /** Per-workspace override of the global sidebar view mode; null = use global default. */
   sidebarViewMode: ChatSidebarViewMode | null;
   /** Unsent composer documents per chat id. Strings are legacy drafts. */
   chatDrafts: Record<string, TiptapDocument | string>;
-  /** Last-used chat panel view (route path) per chat id; absent = conversation. */
-  chatViews: Record<string, string>;
 }
 
 export interface WorkspaceSlice extends WorkspaceSliceValue {
@@ -35,7 +25,6 @@ export interface WorkspaceSlice extends WorkspaceSliceValue {
   setCurrentChat: (chatId: string | null) => void;
   setSidebarViewMode: (mode: ChatSidebarViewMode) => void;
   setChatDraft: (chatId: string, draft: TiptapDocument) => void;
-  setChatView: (chatId: string, view: string) => void;
 }
 
 export interface TabsSliceValue {
@@ -55,6 +44,25 @@ export interface TabsSlice extends TabsSliceValue {
   closeTabsToRight: (tabId: string) => void;
   closeAllTabs: () => void;
   moveTab: (tabId: string, toIndex: number) => void;
+  selectTab: (tabId: string) => void;
+  openChatInFocusedPane: (chatId: string) => void;
+  focusPane: (tabId: string, paneId: string) => void;
+  setPaneView: (tabId: string, paneId: string, view: ChatPaneView, graphMessageId?: string) => void;
+  splitPane: (
+    tabId: string,
+    paneId: string,
+    chatId: string,
+    direction: "left" | "right" | "top" | "bottom",
+  ) => void;
+  movePane: (
+    tabId: string,
+    sourcePaneId: string,
+    targetPaneId: string,
+    position: "center" | "left" | "right" | "top" | "bottom",
+  ) => void;
+  closePane: (tabId: string, paneId: string) => void;
+  resizeSplit: (tabId: string, splitId: string, sizes: Record<string, number>) => void;
+  focusAdjacentPane: (direction: "left" | "right" | "up" | "down") => void;
   removeTabsByChatIds: (chatIds: readonly string[]) => void;
 }
 

@@ -22,6 +22,7 @@ import {
   getChatMessagesQueryOptions,
 } from "@/queries/chats";
 import { queryKeys } from "@/queries/keys";
+import { useOptionalChatPane } from "../../chat-pane-context";
 
 const LazyChatGraphCanvas = React.lazy(() =>
   import("./chat-graph-canvas").then((module) => ({
@@ -29,10 +30,16 @@ const LazyChatGraphCanvas = React.lazy(() =>
   })),
 );
 
-export function ChatGraphPage() {
+export function ChatGraphPage({
+  chatId,
+  graphMessageId: paneGraphMessageId,
+}: { chatId?: string; graphMessageId?: string } = {}) {
   const search = useSearch({ from: "/chat" });
-  const { graphMessageId } = search;
-  const activeChatId = useWorkspaceStore((state) => state.currentChatId);
+  const graphMessageId = paneGraphMessageId ?? search.graphMessageId;
+  const currentChatId = useWorkspaceStore((state) => (chatId ? null : state.currentChatId));
+  const setPaneView = useWorkspaceStore((state) => state.setPaneView);
+  const pane = useOptionalChatPane();
+  const activeChatId = chatId ?? currentChatId;
 
   const {
     data: allMessages = [],
@@ -94,6 +101,7 @@ export function ChatGraphPage() {
   const handleSelectBranch = React.useCallback(
     (messageId: string) => {
       setFocusedMessageId(messageId);
+      if (pane) setPaneView(pane.tabId, pane.paneId, "/chat/graph", messageId);
 
       if (activeMessageIds.has(messageId)) {
         return;
@@ -101,7 +109,7 @@ export function ChatGraphPage() {
 
       switchBranchMutation.mutate(messageId);
     },
-    [activeMessageIds, switchBranchMutation],
+    [activeMessageIds, pane, setPaneView, switchBranchMutation],
   );
 
   React.useEffect(() => {

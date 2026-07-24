@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import type { ChatTabsPosition } from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
 import { useWorkspaceStore } from "../workspace/store";
+import { getFocusedPane, getPanes } from "../workspace/store/layout-tree";
 
 /** DataTransfer format for chats dragged out of the sidebar tree. */
 export const CHAT_DRAG_FORMAT = "application/x-hanoki-chats";
@@ -37,8 +38,8 @@ export function useChatTabsPosition(): ChatTabsPosition {
 
 function useTabStrip() {
   const tabs = useWorkspaceStore((s) => s.tabs);
-  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
-  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
+  const selectTab = useWorkspaceStore((s) => s.selectTab);
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs);
   const closeTabsToLeft = useWorkspaceStore((s) => s.closeTabsToLeft);
@@ -63,8 +64,8 @@ function useTabStrip() {
 
   return {
     tabs,
-    currentChatId,
-    setCurrentChat,
+    activeTabId,
+    selectTab,
     closeTab,
     closeOtherTabs,
     closeTabsToLeft,
@@ -79,8 +80,8 @@ function useTabStrip() {
 export function ChatTabsBar() {
   const {
     tabs,
-    currentChatId,
-    setCurrentChat,
+    activeTabId,
+    selectTab,
     closeTab,
     closeOtherTabs,
     closeTabsToLeft,
@@ -134,11 +135,11 @@ export function ChatTabsBar() {
               key={tab.id}
               tab={tab}
               orientation="horizontal"
-              isActive={currentChatId === tab.chatId}
+              isActive={activeTabId === tab.id}
               canCloseOthers={tabs.length > 1}
               canCloseToLeft={index > 0}
               canCloseToRight={index < tabs.length - 1}
-              onSelect={() => setCurrentChat(tab.chatId)}
+              onSelect={() => selectTab(tab.id)}
               onClose={() => closeTab(tab.id)}
               onCloseOthers={() => closeOtherTabs(tab.id)}
               onCloseToLeft={() => closeTabsToLeft(tab.id)}
@@ -156,8 +157,8 @@ export function ChatTabsBar() {
 export function ChatTabsSidebarList() {
   const {
     tabs,
-    currentChatId,
-    setCurrentChat,
+    activeTabId,
+    selectTab,
     closeTab,
     closeOtherTabs,
     closeTabsToLeft,
@@ -180,11 +181,11 @@ export function ChatTabsSidebarList() {
               key={tab.id}
               tab={tab}
               orientation="vertical"
-              isActive={currentChatId === tab.chatId}
+              isActive={activeTabId === tab.id}
               canCloseOthers={tabs.length > 1}
               canCloseToLeft={index > 0}
               canCloseToRight={index < tabs.length - 1}
-              onSelect={() => setCurrentChat(tab.chatId)}
+              onSelect={() => selectTab(tab.id)}
               onClose={() => closeTab(tab.id)}
               onCloseOthers={() => closeOtherTabs(tab.id)}
               onCloseToLeft={() => closeTabsToLeft(tab.id)}
@@ -224,7 +225,9 @@ function ChatTabItem({
   onCloseToLeft: () => void;
   onCloseToRight: () => void;
 }) {
-  const { data: chat } = useQuery(getChatQueryOptions(tab.chatId));
+  const focusedPane = getFocusedPane(tab);
+  const paneCount = getPanes(tab.layout).length;
+  const { data: chat } = useQuery(getChatQueryOptions(focusedPane.chatId));
   const title = chat?.title ?? "Loading…";
   const isHorizontal = orientation === "horizontal";
 
@@ -283,8 +286,13 @@ function ChatTabItem({
               isDragging && "z-10 opacity-80 shadow-sm",
             )}
           >
-            <ChatTabStatusIcon chatId={tab.chatId} />
+            <ChatTabStatusIcon chatId={focusedPane.chatId} />
             <span className="min-w-0 flex-1 truncate">{title}</span>
+            {paneCount > 1 ? (
+              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                {paneCount}
+              </span>
+            ) : null}
             <Button
               size="icon-xs"
               variant="ghost"

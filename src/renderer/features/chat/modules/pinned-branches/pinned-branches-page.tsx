@@ -32,9 +32,11 @@ import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { useChatStore } from "@/stores/chat-store";
+import { useOptionalChatPane } from "../../chat-pane-context";
 
-export function PinnedBranchesPage() {
-  const chatId = useWorkspaceStore((s) => s.currentChatId);
+export function PinnedBranchesPage({ chatId: paneChatId }: { chatId?: string } = {}) {
+  const currentChatId = useWorkspaceStore((state) => (paneChatId ? null : state.currentChatId));
+  const chatId = paneChatId ?? currentChatId;
 
   const { data: pinned = [], isLoading, error } = useQuery(getPinnedBranchesQueryOptions());
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
@@ -130,7 +132,9 @@ function PinnedBranchItem({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const pane = useOptionalChatPane();
   const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
+  const setPaneView = useWorkspaceStore((state) => state.setPaneView);
 
   const switchBranchMutation = useMutation({
     mutationFn: () => messagesApi.switchBranch(summary.chatId, summary.messageId),
@@ -156,10 +160,14 @@ function PinnedBranchItem({
   });
 
   const handleOpenInChat = () => {
-    setCurrentChat(summary.chatId);
+    if (!pane) setCurrentChat(summary.chatId);
     switchBranchMutation.mutate(undefined, {
       onSuccess: () => {
-        void navigate({ to: "/chat" });
+        if (pane) {
+          setPaneView(pane.tabId, pane.paneId, "/chat");
+        } else {
+          void navigate({ to: "/chat" });
+        }
       },
     });
   };

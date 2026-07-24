@@ -1,20 +1,28 @@
-import { syncWorkspaceSettingsStateToSqlite } from "../storage/sqlite-storage";
+import {
+  normalizePersistedTabs,
+  syncWorkspaceSettingsStateToSqlite,
+} from "../storage/sqlite-storage";
 import type { WorkspaceSlice, WorkspaceSliceCreator } from "../types";
 import { workspaceApi } from "@/api/workspaces";
 import { parseTiptapDocument } from "@shared/tiptap/document";
+import { getFocusedPane } from "../layout-tree";
 
-export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set) => ({
+export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set, get) => ({
   state: "idle",
   workspace: null,
+  activeTabId: null,
   currentChatId: null,
   sidebarViewMode: null,
   chatDrafts: {},
-  chatViews: {},
 
   setCurrentChat: (chatId) => {
-    set((state) => {
-      state.currentChatId = chatId;
-    });
+    if (chatId === null) {
+      set((state) => {
+        state.currentChatId = null;
+      });
+      return;
+    }
+    get().openChatInFocusedPane(chatId);
   },
 
   setChatDraft: (chatId, draft) => {
@@ -24,17 +32,6 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
         state.chatDrafts[chatId] = draft;
       } else {
         delete state.chatDrafts[chatId];
-      }
-    });
-  },
-
-  setChatView: (chatId, view) => {
-    set((state) => {
-      // "/chat" is the default view — no need to store it.
-      if (view === "/chat") {
-        delete state.chatViews[chatId];
-      } else {
-        state.chatViews[chatId] = view;
       }
     });
   },
@@ -55,7 +52,7 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
      * On workspace switch we need to flush the syncWorkspaceSettings first,
      * to avoid sync data loss
      */
-    syncWorkspaceSettingsStateToSqlite.flush();
+    await syncWorkspaceSettingsStateToSqlite.flush();
 
     /**
      * Now we need will set new workspace as active,
@@ -63,24 +60,23 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set)
      */
     const { settings: newSettings = {}, ...newWorkspace } =
       await workspaceApi.setActive(newWorkspaceId);
+    const normalizedTabs = await normalizePersistedTabs(newSettings.tabs, newWorkspace.id);
 
     set((state) => {
       state.state = "idle";
 
       state.workspace = newWorkspace;
 
-      state.currentChatId = newSettings.currentChatId ?? null;
-      state.tabs =
-        newSettings.tabs?.map((t) => ({
-          id: t.id,
-          type: "chat",
-          chatId: t.chatId,
-        })) ?? [];
+      state.tabs = normalizedTabs;
+      state.activeTabId = state.tabs.some((tab) => tab.id === newSettings.activeTabId)
+        ? (newSettings.activeTabId ?? null)
+        : (state.tabs[0]?.id ?? null);
+      const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+      state.currentChatId = activeTab ? getFocusedPane(activeTab).chatId : null;
 
       state.expandedTreeNodes = newSettings.chatTreeExpandedFolderIds ?? [];
       state.sidebarViewMode = newSettings.sidebarViewMode ?? null;
       state.chatDrafts = newSettings.chatDrafts ?? {};
-      state.chatViews = newSettings.chatViews ?? {};
     });
 
     /**

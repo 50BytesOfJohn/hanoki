@@ -27,6 +27,8 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
   ChatInfo,
+  ChatLayoutNode,
+  ChatPaneState,
   ChatSettingsUpdateInput,
   ChatTreeItemRef,
   ChatTreeChildrenSlice,
@@ -43,7 +45,7 @@ import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/rep
 
 const CHAT_TREE_EXPANDED_FOLDER_IDS_SETTINGS_KEY = "chatTreeExpandedFolderIds";
 const TABS_SETTINGS_KEY = "tabs";
-const CURRENT_CHAT_ID_SETTINGS_KEY = "currentChatId";
+const ACTIVE_TAB_ID_SETTINGS_KEY = "activeTabId";
 const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
 
@@ -165,6 +167,51 @@ function normalizeTabId(value: unknown): string | null {
   return value;
 }
 
+function normalizeLayout(value: unknown, depth = 0): ChatLayoutNode | null {
+  if (depth > 20 || !value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = normalizeTabId(record.id);
+  if (!id) return null;
+  if (record.type === "pane") {
+    const chatId = parseChatId(record.chatId);
+    if (!chatId.ok) return null;
+    const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];
+    const view = allowedViews.includes(record.view as string) ? record.view : "/chat";
+    return {
+      id,
+      type: "pane",
+      chatId: chatId.value,
+      view: view as ChatPaneState["view"],
+      ...(typeof record.graphMessageId === "string"
+        ? { graphMessageId: record.graphMessageId }
+        : {}),
+    };
+  }
+  if (
+    record.type !== "split" ||
+    (record.orientation !== "horizontal" && record.orientation !== "vertical") ||
+    !Array.isArray(record.children)
+  ) {
+    return null;
+  }
+  const children = record.children
+    .map((child) => normalizeLayout(child, depth + 1))
+    .filter((child): child is ChatLayoutNode => child !== null);
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  const rawSizes = Array.isArray(record.sizes) ? record.sizes : [];
+  const sizes =
+    rawSizes.length === children.length &&
+    rawSizes.every((size) => typeof size === "number" && Number.isFinite(size) && size > 0)
+      ? (rawSizes as number[])
+      : children.map(() => 100 / children.length);
+  return { id, type: "split", orientation: record.orientation, children, sizes };
+}
+
+function getLayoutPanes(node: ChatLayoutNode): ChatPaneState[] {
+  return node.type === "pane" ? [node] : node.children.flatMap(getLayoutPanes);
+}
+
 function normalizeTabs(value: unknown): TabStateItem[] {
   if (!Array.isArray(value)) {
     return [];
@@ -184,17 +231,18 @@ function normalizeTabs(value: unknown): TabStateItem[] {
       continue;
     }
 
-    if (record.type !== "chat") {
-      continue;
-    }
-
-    const parsedChatId = parseChatId(record.chatId);
-    if (!parsedChatId.ok) {
-      continue;
-    }
+    if (record.type !== "chat") continue;
+    const layout = normalizeLayout(record.layout);
+    if (!layout) continue;
+    const panes = getLayoutPanes(layout);
+    const focusedPaneId =
+      typeof record.focusedPaneId === "string" &&
+      panes.some((pane) => pane.id === record.focusedPaneId)
+        ? record.focusedPaneId
+        : panes[0].id;
 
     seenTabIds.add(tabId);
-    normalizedTabs.push({ id: tabId, type: "chat", chatId: parsedChatId.value });
+    normalizedTabs.push({ id: tabId, type: "chat", layout, focusedPaneId });
 
     if (normalizedTabs.length >= MAX_PERSISTED_TABS) {
       break;
@@ -204,7 +252,7 @@ function normalizeTabs(value: unknown): TabStateItem[] {
   return normalizedTabs;
 }
 
-function normalizeCurrentChatId(value: unknown): string | null {
+function normalizeActiveTabId(value: unknown): string | null {
   return normalizeTabId(value);
 }
 
@@ -225,10 +273,33 @@ function pruneTabsForWorkspace(workspaceId: string, tabs: readonly TabStateItem[
   const existingChatIds = new Set(
     listWorkspaceChatIds(
       workspaceId,
-      tabs.map((tab) => tab.chatId),
+      tabs.flatMap((tab) => getLayoutPanes(tab.layout).map((p) => p.chatId)),
     ),
   );
-  return tabs.filter((tab) => existingChatIds.has(tab.chatId));
+  return tabs.flatMap((tab) => {
+    const layout = pruneLayout(tab.layout, existingChatIds);
+    if (!layout) return [];
+    const panes = getLayoutPanes(layout);
+    return [
+      {
+        ...tab,
+        layout,
+        focusedPaneId: panes.some((pane) => pane.id === tab.focusedPaneId)
+          ? tab.focusedPaneId
+          : panes[0].id,
+      },
+    ];
+  });
+}
+
+function pruneLayout(node: ChatLayoutNode, chatIds: ReadonlySet<string>): ChatLayoutNode | null {
+  if (node.type === "pane") return chatIds.has(node.chatId) ? node : null;
+  const children = node.children
+    .map((child) => pruneLayout(child, chatIds))
+    .filter((child): child is ChatLayoutNode => child !== null);
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  return { ...node, children, sizes: children.map(() => 100 / children.length) };
 }
 
 export function createChatTreeService(): ChatTreeService {
@@ -243,11 +314,34 @@ export function createChatTreeService(): ChatTreeService {
       writeChatTreeUiState(result.workspaceId, nextExpandedFolderIds);
     }
 
-    const currentTabsUiState = readTabsUiState(result.workspaceId);
+    const workspaceSettings = getWorkspaceSettings(result.workspaceId);
+    const currentTabs = normalizeTabs(workspaceSettings[TABS_SETTINGS_KEY]);
     const deletedChatIds = new Set(result.deletedChatIds);
-    const nextTabs = currentTabsUiState.tabs.filter((tab) => !deletedChatIds.has(tab.chatId));
+    const nextTabs = currentTabs.flatMap((tab) => {
+      const layout = pruneLayout(
+        tab.layout,
+        new Set(
+          getLayoutPanes(tab.layout)
+            .map((pane) => pane.chatId)
+            .filter((id) => !deletedChatIds.has(id)),
+        ),
+      );
+      if (!layout) return [];
+      const panes = getLayoutPanes(layout);
+      return [
+        {
+          ...tab,
+          layout,
+          focusedPaneId: panes.some((pane) => pane.id === tab.focusedPaneId)
+            ? tab.focusedPaneId
+            : panes[0].id,
+        },
+      ];
+    });
 
-    if (nextTabs.length !== currentTabsUiState.tabs.length) {
+    const paneCount = (tabs: readonly TabStateItem[]) =>
+      tabs.reduce((count, tab) => count + getLayoutPanes(tab.layout).length, 0);
+    if (paneCount(nextTabs) !== paneCount(currentTabs)) {
       writeTabsUiState(result.workspaceId, nextTabs);
     }
   }
@@ -281,9 +375,12 @@ export function createChatTreeService(): ChatTreeService {
     const normalizedTabs = normalizeTabs(workspaceSettings[TABS_SETTINGS_KEY]);
     const prunedTabs = pruneTabsForWorkspace(workspaceId, normalizedTabs);
 
+    const storedActiveTabId = normalizeActiveTabId(workspaceSettings[ACTIVE_TAB_ID_SETTINGS_KEY]);
     return {
       tabs: prunedTabs,
-      currentChatId: normalizeCurrentChatId(workspaceSettings[CURRENT_CHAT_ID_SETTINGS_KEY]),
+      activeTabId: prunedTabs.some((tab) => tab.id === storedActiveTabId)
+        ? storedActiveTabId
+        : (prunedTabs[0]?.id ?? null),
     };
   }
 
@@ -291,16 +388,19 @@ export function createChatTreeService(): ChatTreeService {
     const workspaceSettings = getWorkspaceSettings(workspaceId);
     const normalizedTabs = normalizeTabs(tabs);
     const prunedTabs = pruneTabsForWorkspace(workspaceId, normalizedTabs);
-    const currentChatId = normalizeCurrentChatId(workspaceSettings[CURRENT_CHAT_ID_SETTINGS_KEY]);
+    const storedActiveTabId = normalizeActiveTabId(workspaceSettings[ACTIVE_TAB_ID_SETTINGS_KEY]);
+    const activeTabId = prunedTabs.some((tab) => tab.id === storedActiveTabId)
+      ? storedActiveTabId
+      : (prunedTabs[0]?.id ?? null);
 
     updateWorkspaceSettings(workspaceId, {
       [TABS_SETTINGS_KEY]: prunedTabs,
-      [CURRENT_CHAT_ID_SETTINGS_KEY]: currentChatId,
+      [ACTIVE_TAB_ID_SETTINGS_KEY]: activeTabId,
     });
 
     return {
       tabs: prunedTabs,
-      currentChatId,
+      activeTabId,
     };
   }
 

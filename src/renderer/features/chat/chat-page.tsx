@@ -90,7 +90,7 @@ export function ChatPage() {
   );
 }
 
-function ActiveChatView({ chatId }: { chatId: string }) {
+export function ActiveChatView({ chatId }: { chatId: string }) {
   const serverStatus = useSystemStore((s) => s.aiServer.status);
   const serverError = useSystemStore((s) => s.aiServer.error);
   const port = useSystemStore(selectAiServerPort);

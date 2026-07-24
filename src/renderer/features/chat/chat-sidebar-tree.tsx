@@ -103,7 +103,12 @@ const SIDEBAR_ICON_BUTTON_CLASS =
 type ChatTreeContextMenuAction =
   | "add-folder"
   | "add-chat"
+  | "open-in-focused-pane"
   | "open-in-new-tab"
+  | "open-to-left"
+  | "open-to-right"
+  | "open-above"
+  | "open-below"
   | "clone"
   | "rename"
   | "delete";
@@ -128,9 +133,20 @@ function ChatTreeItemContextMenu({
           </ContextMenuGroup>
         ) : (
           <ContextMenuGroup>
+            <ContextMenuItem onClick={() => onAction("open-in-focused-pane")}>
+              Open in Focused Pane
+            </ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("open-in-new-tab")}>
               Open in New Tab
             </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("open-to-left")}>
+              Open to the Left
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("open-to-right")}>
+              Open to the Right
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("open-above")}>Open Above</ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("open-below")}>Open Below</ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("clone")}>Clone</ContextMenuItem>
           </ContextMenuGroup>
         )}
@@ -251,6 +267,9 @@ function ChatSidebarTreeInner({
 
   const openTab = useWorkspaceStore((s) => s.openTab);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const splitPane = useWorkspaceStore((s) => s.splitPane);
+  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
+  const tabs = useWorkspaceStore((s) => s.tabs);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
   const [expandedItems, setExpandedItems] = React.useState<string[]>(() =>
@@ -494,6 +513,18 @@ function ChatSidebarTreeInner({
     [setCurrentChat],
   );
 
+  const openChatBeside = React.useCallback(
+    (chatId: string, direction: "left" | "right" | "top" | "bottom") => {
+      const tab = tabs.find((candidate) => candidate.id === activeTabId);
+      if (!tab) {
+        openTab({ type: "chat", chatId });
+        return;
+      }
+      splitPane(tab.id, tab.focusedPaneId, chatId, direction);
+    },
+    [activeTabId, openTab, splitPane, tabs],
+  );
+
   const handleDeleteConfirm = React.useCallback(() => {
     if (!pendingDeleteItems || pendingDeleteItems.length === 0) {
       return;
@@ -618,8 +649,18 @@ function ChatSidebarTreeInner({
                   } else if (action === "add-chat" && itemKind === "folder") {
                     ensureFolderExpanded();
                     void createChat(item.getId().slice("folder:".length));
+                  } else if (action === "open-in-focused-pane" && data.kind === "chat") {
+                    navigateToChat(data.chat.id);
                   } else if (action === "open-in-new-tab" && data.kind === "chat") {
                     openChatInTab(data.chat.id);
+                  } else if (action === "open-to-left" && data.kind === "chat") {
+                    openChatBeside(data.chat.id, "left");
+                  } else if (action === "open-to-right" && data.kind === "chat") {
+                    openChatBeside(data.chat.id, "right");
+                  } else if (action === "open-above" && data.kind === "chat") {
+                    openChatBeside(data.chat.id, "top");
+                  } else if (action === "open-below" && data.kind === "chat") {
+                    openChatBeside(data.chat.id, "bottom");
                   } else if (action === "clone" && data.kind === "chat") {
                     void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
                       invalidateTree();
@@ -831,6 +872,9 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const openTab = useWorkspaceStore((s) => s.openTab);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const splitPane = useWorkspaceStore((s) => s.splitPane);
+  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
+  const tabs = useWorkspaceStore((s) => s.tabs);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
   const createChatMutation = useCreateChat();
@@ -893,8 +937,23 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
 
   const handleContextMenuAction = React.useCallback(
     (chat: ChatInfo) => (action: ChatTreeContextMenuAction) => {
-      if (action === "open-in-new-tab") {
+      const activeTab = tabs.find((tab) => tab.id === activeTabId);
+      const openBeside = (direction: "left" | "right" | "top" | "bottom") => {
+        if (activeTab) splitPane(activeTab.id, activeTab.focusedPaneId, chat.id, direction);
+        else openTab({ type: "chat", chatId: chat.id });
+      };
+      if (action === "open-in-focused-pane") {
+        setCurrentChat(chat.id);
+      } else if (action === "open-in-new-tab") {
         openTab({ type: "chat", chatId: chat.id });
+      } else if (action === "open-to-left") {
+        openBeside("left");
+      } else if (action === "open-to-right") {
+        openBeside("right");
+      } else if (action === "open-above") {
+        openBeside("top");
+      } else if (action === "open-below") {
+        openBeside("bottom");
       } else if (action === "clone") {
         void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
       } else if (action === "rename") {
@@ -903,7 +962,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         setPendingDeleteItems([{ kind: "chat", id: chat.id }]);
       }
     },
-    [cloneChatMutation, invalidateSnapshot, openTab],
+    [activeTabId, cloneChatMutation, invalidateSnapshot, openTab, setCurrentChat, splitPane, tabs],
   );
 
   const handleDeleteConfirm = React.useCallback(() => {
@@ -1045,7 +1104,13 @@ function ChatActivityListItem({
       <div
         role="button"
         tabIndex={0}
+        draggable
         aria-pressed={isActive}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "copy";
+          event.dataTransfer.setData(CHAT_DRAG_FORMAT, JSON.stringify([chat.id]));
+          event.dataTransfer.setData("text/plain", chat.title);
+        }}
         onClick={onSelect}
         onDoubleClick={(event) => {
           event.preventDefault();

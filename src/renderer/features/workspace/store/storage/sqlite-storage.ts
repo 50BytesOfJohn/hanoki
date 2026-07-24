@@ -1,23 +1,43 @@
 import { workspaceApi } from "@/api/workspaces";
+import { chatsApi } from "@/api/chats";
 import type { PersistStorage } from "zustand/middleware";
 import type { WorkspaceStoreValues } from "../types";
 import { AsyncDebouncer } from "@tanstack/react-pacer";
+import type { TabStateItem } from "@shared/ipc";
+import { getFocusedPane, getPanes, normalizeTab, removeChats } from "../layout-tree";
+
+export async function normalizePersistedTabs(
+  tabs: readonly TabStateItem[] | undefined,
+  workspaceId: string,
+): Promise<TabStateItem[]> {
+  const normalized = tabs?.map(normalizeTab).filter((tab) => tab !== null) ?? [];
+  const chatIds = [
+    ...new Set(normalized.flatMap((tab) => getPanes(tab.layout).map((pane) => pane.chatId))),
+  ];
+  const chatResults = await Promise.allSettled(chatIds.map((chatId) => chatsApi.get(chatId)));
+  const unavailableChatIds = new Set(
+    chatIds.filter((chatId, index) => {
+      const result = chatResults[index];
+      return result.status === "rejected" || result.value.workspaceId !== workspaceId;
+    }),
+  );
+  return normalized.flatMap((tab) => {
+    const layout = removeChats(tab.layout, unavailableChatIds);
+    if (!layout) return [];
+    return [normalizeTab({ ...tab, layout })].filter((item) => item !== null);
+  });
+}
 
 export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
   async (state: WorkspaceStoreValues) => {
     if (!state.workspace) return;
 
     await workspaceApi.updateSettings(state.workspace.id, {
-      currentChatId: state.currentChatId,
-      tabs: state.tabs.map((t) => ({
-        chatId: t.chatId,
-        id: t.id,
-        type: "chat",
-      })),
+      activeTabId: state.activeTabId,
+      tabs: state.tabs,
 
       chatTreeExpandedFolderIds: state.expandedTreeNodes,
       chatDrafts: state.chatDrafts,
-      chatViews: state.chatViews,
 
       // ponytail: null = no override; skip the key so the stored value survives
       ...(state.sidebarViewMode ? { sidebarViewMode: state.sidebarViewMode } : {}),
@@ -35,7 +55,7 @@ export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(
 );
 
 /**
- * Flush any pending debounced sync on quit so recent state (drafts, tabs, views)
+ * Flush any pending debounced sync on quit so recent state (drafts and tab layouts)
  * isn't lost to the 5s debounce window.
  */
 window.addEventListener("beforeunload", () => {
@@ -60,24 +80,25 @@ export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
        */
       if (!workspace) return null;
 
+      const tabs = await normalizePersistedTabs(settings?.tabs, workspace.id);
+      const activeTabId = tabs.some((tab) => tab.id === settings?.activeTabId)
+        ? (settings?.activeTabId ?? null)
+        : (tabs[0]?.id ?? null);
+      const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
       return {
         state: {
           state: "idle",
           workspace,
 
           // CURRENT CHAT + TABS
-          currentChatId: settings?.currentChatId ?? null,
-          tabs:
-            settings?.tabs?.map((t) => ({
-              id: t.id,
-              type: "chat",
-              chatId: t.chatId,
-            })) ?? [],
+          activeTabId,
+          currentChatId: activeTab ? getFocusedPane(activeTab).chatId : null,
+          tabs,
 
           expandedTreeNodes: settings?.chatTreeExpandedFolderIds ?? [],
           sidebarViewMode: settings?.sidebarViewMode ?? null,
           chatDrafts: settings?.chatDrafts ?? {},
-          chatViews: settings?.chatViews ?? {},
         } satisfies WorkspaceStoreValues,
       };
     } catch (e) {
