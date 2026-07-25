@@ -37,7 +37,8 @@ import {
   useChatIsInteractionLocked,
   useChatIsStreaming,
   useChatId,
-  useChatMessages,
+  useChatGetMessages,
+  useChatLastMessage,
   useChatModelId,
   useChatSendMessage,
   useChatStop,
@@ -45,6 +46,7 @@ import {
   resolveModelId,
 } from "@/features/chat/chat-context";
 import { getChatQueryOptions } from "@/queries/chats";
+import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
 import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context";
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
@@ -188,13 +190,14 @@ function ActiveChatContent() {
     return () => useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current);
   }, [chatId]);
   const modelId = useChatModelId();
-  const messages = useChatMessages();
+  const getMessages = useChatGetMessages();
   const sendMessage = useChatSendMessage();
   const regenerateMessage = useChatRegenerateMessage();
   const stopChat = useChatStop();
   const canStop = useChatCanStop();
   const isInteractionLocked = useChatIsInteractionLocked();
   const isStreaming = useChatIsStreaming();
+  const isActivePane = useIsActiveChatPane();
   const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(chatId, isStreaming);
   const jumpToMessage = React.useCallback(
     (direction: "next" | "previous") => {
@@ -271,7 +274,7 @@ function ActiveChatContent() {
     return () => registerScrollActions(null);
   }, [registerScrollActions, scrollToTop, scrollToBottom]);
   const { data: globalChatSettings } = useQuery(globalChatSettingsQueryOptions);
-  const lastMessage = messages.at(-1) ?? null;
+  const lastMessage = useChatLastMessage();
   const lastUserMessageId = lastMessage?.role === "user" ? lastMessage.id : null;
 
   const promptStickyPosition = globalChatSettings?.promptStickyPosition ?? true;
@@ -302,14 +305,14 @@ function ActiveChatContent() {
     void sendMessage({
       parts: createTiptapMessageParts(parsedInput.value.document),
       metadata: {
-        parentId: messages.at(-1)?.id ?? null,
+        parentId: getMessages().at(-1)?.id ?? null,
       },
     });
     updateInput(createEmptyTiptapDocument());
     return true;
   }, [
+    getMessages,
     isInteractionLocked,
-    messages,
     modelId,
     parsedInput,
     scrollToBottom,
@@ -324,7 +327,7 @@ function ActiveChatContent() {
       stopGeneration();
     },
     {
-      enabled: canStop,
+      enabled: canStop && isActivePane,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -339,6 +342,7 @@ function ActiveChatContent() {
       jumpToMessage("previous");
     },
     {
+      enabled: isActivePane,
       ignoreInputs: true,
       preventDefault: false,
       stopPropagation: false,
@@ -353,6 +357,7 @@ function ActiveChatContent() {
       jumpToMessage("next");
     },
     {
+      enabled: isActivePane,
       ignoreInputs: true,
       preventDefault: false,
       stopPropagation: false,

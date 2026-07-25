@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { useWorkspaceStore } from "@/features/workspace/store";
+
 interface ChatPaneContextValue {
   tabId: string;
   paneId: string;
@@ -26,4 +28,16 @@ export function useChatPane(): ChatPaneContextValue {
 
 export function useOptionalChatPane(): ChatPaneContextValue | null {
   return React.useContext(ChatPaneContext);
+}
+
+/** True when this pane is the focused pane of the active tab. Every tab/pane stays mounted, so
+ * pane-scoped hotkeys must gate on this or they fire once per mounted pane. */
+export function useIsActiveChatPane(): boolean {
+  const pane = useOptionalChatPane();
+  return useWorkspaceStore(
+    (state) =>
+      !pane ||
+      (state.activeTabId === pane.tabId &&
+        state.tabs.find((tab) => tab.id === pane.tabId)?.focusedPaneId === pane.paneId),
+  );
 }

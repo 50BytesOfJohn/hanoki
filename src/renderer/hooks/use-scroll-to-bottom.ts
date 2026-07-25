@@ -22,6 +22,20 @@ function isContainerAtBottom(container: HTMLDivElement): boolean {
 }
 
 function captureScrollPosition(container: HTMLDivElement): ChatScrollPosition {
+  // Restoring an at-bottom position ignores the anchor, so skip measuring every
+  // message — this runs on every frame of a streaming response.
+  if (
+    container.scrollHeight - container.scrollTop - container.clientHeight <=
+    RESTORE_BOTTOM_THRESHOLD
+  ) {
+    return {
+      anchorMessageId: null,
+      anchorOffset: 0,
+      scrollTop: container.scrollTop,
+      isAtBottom: true,
+    };
+  }
+
   const containerRect = container.getBoundingClientRect();
   const anchor = getMessageElements(container).find((message) => {
     const rect = message.getBoundingClientRect();

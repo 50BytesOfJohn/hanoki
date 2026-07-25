@@ -631,6 +631,44 @@ export function useChatMessages() {
   return useChatSnapshot(subscribe, getSnapshot);
 }
 
+/**
+ * Snapshot of the trailing message that only changes identity when the message
+ * itself changes — so consumers do not re-render on every streamed chunk.
+ */
+export function useChatLastMessage(): { id: string; role: HanokiUiMessage["role"] } | null {
+  const chat = useChatSession();
+  const cacheRef = React.useRef<{ id: string; role: HanokiUiMessage["role"] } | null>(null);
+  const subscribe = React.useCallback(
+    (onStoreChange: () => void) =>
+      chat["~registerMessagesCallback"](onStoreChange, CHAT_STREAM_THROTTLE_MS),
+    [chat],
+  );
+  const getSnapshot = React.useCallback(() => {
+    const last = chat.messages.at(-1);
+    const cached = cacheRef.current;
+
+    if (!last) {
+      cacheRef.current = null;
+      return null;
+    }
+
+    if (cached && cached.id === last.id && cached.role === last.role) {
+      return cached;
+    }
+
+    cacheRef.current = { id: last.id, role: last.role };
+    return cacheRef.current;
+  }, [chat]);
+
+  return useChatSnapshot(subscribe, getSnapshot);
+}
+
+/** Reads the current messages on demand, without subscribing to them. */
+export function useChatGetMessages() {
+  const chat = useChatSession();
+  return React.useCallback(() => chat.messages, [chat]);
+}
+
 export function useChatSendMessage() {
   return useChatContext((state) => state.sendMessage);
 }
