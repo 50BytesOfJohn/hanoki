@@ -1,6 +1,6 @@
 ---
 name: release-hanoki-app
-description: Release the Hanoki Electron app by creating the commit and tag sequence that triggers the GitHub Actions release pipeline. Use when asked to release the app, cut a release, bump the patch version, or create and push the release tag for this repo. This skill first commits the current work with the git-commit skill, then creates a separate patch version bump commit, tags it with the new package version prefixed by v, and pushes the branch and tag.
+description: Release the Hanoki Electron app by creating the commit and tag sequence that triggers the GitHub Actions release pipeline, then announcing the release on social media. Use when asked to release the app, cut a release, bump the patch version, or create and push the release tag for this repo. This skill first commits the current work with the git-commit skill, then creates a separate patch version bump commit, tags it with the new package version prefixed by v, pushes the branch and tag, and finally proposes release announcement posts for approval before publishing them via Buffer.
 ---
 
 # Release Hanoki App
@@ -12,6 +12,18 @@ description: Release the Hanoki Electron app by creating the commit and tag sequ
 3. Ask the git-commit skill for a detailed Conventional Commit message with a useful body so GitHub-generated release notes stay readable.
 4. Keep the version bump out of that first commit.
 5. Read `.github/workflows/release.yml` and `package.json` if there is any doubt about the release flow.
+6. After the tag is pushed, announce the release (see below).
+
+## Social Announcement
+
+Publish through [$buffer](/Users/tom/Developer/repos/hanoki/.agents/skills/buffer/SKILL.md) to both `50BytesOfJohn` channels (bluesky `677460164697c1deffd3a5ef`, twitter `677460664697c1deffd6de1e`), org `66a27a5d618c283aaf6e4a9f`.
+
+- Source the content from the commits in the tag range (`git log <prev-tag>..<new-tag>`).
+- Main post: announcement of the highlights, not a changelog dump. Bug-fix-only release still gets a post — make it worth reading on its own.
+- Thread: one item per notable change, then a final item sweeping up the smaller ones.
+- Skip trivial changes entirely. The changelog covers them; social media only covers what matters.
+- Same content on both channels, trimmed to fit X's limit.
+- Post the full proposal in chat and wait for explicit user approval. After approval publish immediately with `--mode shareNow` — no scheduling.
 
 ## Release Rules
 
@@ -45,6 +57,15 @@ git push origin HEAD
 git push origin "v<new-version>"
 ```
 
+Threaded post payload (`thread[0]` must equal `text`):
+
+```bash
+./.agents/skills/buffer/scripts/buffer-cli posts create --json '{
+  "channelId": "<id>", "schedulingType": "automatic", "mode": "shareNow",
+  "text": "<main post>", "thread": ["<main post>", "<item>", "<rest>"]
+}'
+```
+
 ## Verification
 
 - Read the new version from `package.json` after bumping.
@@ -57,3 +78,4 @@ git push origin "v<new-version>"
 - Stop and ask before proceeding if the repo contains changes that do not look release-ready, secrets, or unrelated work that should not be committed.
 - Stop if the first commit fails and fix the cause before continuing.
 - Stop if the version bump changes unexpected files and inspect them before committing.
+- Never publish social posts without approval. A failed announcement does not undo the release — report it and stop.

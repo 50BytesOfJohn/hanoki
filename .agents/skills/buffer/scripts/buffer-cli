@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
+
+set -a
+source "$repo_root/.env"
+set +a
+
+if [[ -z "${BUFFER_API_KEY:-}" ]]; then
+  echo "BUFFER_API_KEY is missing from $repo_root/.env" >&2
+  exit 1
+fi
+
+cd "$repo_root"
+exec bunx @bufferapp/cli "$@"
