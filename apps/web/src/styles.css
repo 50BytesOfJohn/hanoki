@@ -3,6 +3,15 @@
 
 @import "tw-animate-css";
 
+/* Self-hosted, so the first paint doesn't wait on a cross-origin stylesheet
+   from fonts.googleapis.com (and so visitors aren't announced to Google just
+   for loading the page). `opsz` keeps Fraunces' optical sizing on display
+   headings; the subsets beyond latin are unicode-range gated and never
+   downloaded for English copy. */
+@import "@fontsource-variable/fraunces/opsz.css";
+@import "@fontsource-variable/fraunces/opsz-italic.css";
+@import "@fontsource-variable/manrope/wght.css";
+
 @custom-variant dark (&:is(.dark *));
 
 /*
@@ -19,7 +28,6 @@
   --sumi-faint: #837c68;
   --moss: #6f7d4c;
   --moss-deep: #4f5c34;
-  --moss-bright: #86975c;
   --moss-wash: rgba(111, 125, 76, 0.14);
 
   --line: rgba(36, 33, 26, 0.13);
@@ -27,13 +35,9 @@
   --surface: rgba(250, 247, 239, 0.72);
   --surface-strong: rgba(250, 247, 240, 0.9);
   --inset-glint: rgba(255, 253, 247, 0.85);
-  --chip-bg: rgba(250, 247, 240, 0.7);
-  --link-bg-hover: rgba(255, 253, 247, 0.95);
-  --kicker: var(--moss-deep);
 
   --wash-a: rgba(111, 125, 76, 0.16);
   --wash-b: rgba(134, 151, 92, 0.12);
-  --nav-scrolled-bg: rgba(238, 233, 221, 0.72);
 
   --cta-bg: #232019;
   --cta-fg: #f2ecdf;
@@ -41,8 +45,21 @@
   --cta-border: rgba(255, 253, 247, 0.1);
   --cta-glow: rgba(134, 151, 92, 0.34);
 
+  /* ink panels — dark cards that let the app's own dark screenshots sit
+     natively on the paper instead of fighting it */
+  --ink-bg: #262319;
+  --ink-bg-2: #1c1a14;
+  --ink-fg: #ede8da;
+  --ink-line: rgba(236, 231, 217, 0.1);
+  --ink-accent: #b8c98d;
+
   --shot-shadow: drop-shadow(0 18px 38px rgba(36, 33, 26, 0.26))
     drop-shadow(0 4px 10px rgba(36, 33, 26, 0.14));
+
+  --branch-line: rgba(236, 231, 217, 0.3);
+  --branch-active: #a8bb7c;
+  --branch-node: rgba(236, 231, 217, 0.06);
+  --branch-node-line: rgba(236, 231, 217, 0.16);
 
   /* shadcn tokens on the washi palette (light) */
   --background: var(--paper);
@@ -76,7 +93,6 @@
   --sumi-faint: #837c69;
   --moss: #9fb36e;
   --moss-deep: #b8c98d;
-  --moss-bright: #aec079;
   --moss-wash: rgba(159, 179, 110, 0.16);
 
   --line: rgba(236, 231, 217, 0.12);
@@ -84,18 +100,21 @@
   --surface: rgba(33, 31, 24, 0.68);
   --surface-strong: rgba(33, 31, 24, 0.92);
   --inset-glint: rgba(255, 253, 247, 0.045);
-  --chip-bg: rgba(33, 31, 24, 0.6);
-  --link-bg-hover: rgba(46, 43, 33, 0.8);
 
   --wash-a: rgba(159, 179, 110, 0.12);
   --wash-b: rgba(120, 140, 84, 0.1);
-  --nav-scrolled-bg: rgba(25, 23, 18, 0.72);
 
-  --cta-bg: #24221b;
+  --cta-bg: #201e17;
   --cta-fg: #f2ecdf;
   --cta-dim: #b0a892;
-  --cta-border: rgba(236, 231, 217, 0.12);
-  --cta-glow: rgba(159, 179, 110, 0.26);
+  --cta-border: rgba(159, 179, 110, 0.22);
+  --cta-glow: rgba(159, 179, 110, 0.24);
+
+  --ink-bg: #1f1d16;
+  --ink-bg-2: #171610;
+  --ink-fg: #ece7d9;
+  --ink-line: rgba(236, 231, 217, 0.12);
+  --ink-accent: #b8c98d;
 
   --shot-shadow: drop-shadow(0 22px 46px rgba(0, 0, 0, 0.6))
     drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
@@ -120,8 +139,8 @@
 }
 
 @theme inline {
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces Variable", Georgia, "Times New Roman", serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -158,6 +177,12 @@ html {
   scroll-behavior: smooth;
 }
 
+/* the nav is sticky — anchored sections must clear it */
+:target,
+section[id] {
+  scroll-margin-top: 5.5rem;
+}
+
 html,
 body,
 #app {
@@ -177,7 +202,7 @@ body {
       180deg,
       var(--paper-2) 0%,
       var(--paper) 46%,
-      color-mix(in oklab, var(--paper) 88%, black) 100%
+      color-mix(in oklab, var(--paper) 96%, black) 100%
     );
   background-attachment: fixed;
   overflow-x: hidden;
@@ -224,14 +249,6 @@ body::before {
   margin-inline: auto;
 }
 
-.kicker {
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  font-weight: 700;
-  font-size: 0.68rem;
-  color: var(--kicker);
-}
-
 /* raised washi surface — cards, nav, panels */
 .washi {
   border: 1px solid var(--line);
@@ -243,7 +260,103 @@ body::before {
   backdrop-filter: blur(8px);
 }
 
-.feature-card {
+/* ── motion ─────────────────────────────────────────────────────────────
+   Everything here is CSS. A JS reveal library can leave content stuck at
+   opacity 0 when rAF is throttled (background tab, restored session), which
+   is exactly the content search engines and impatient people see first.
+   Time-based keyframes run off the animation timeline and always finish;
+   scroll-linked reveals use the native view() timeline and simply don't
+   apply where it's unsupported — content renders either way. */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@keyframes shot-in {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.97);
+  }
+}
+@keyframes edge-march {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rise {
+    animation: rise-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 80ms);
+  }
+  .drop-in {
+    animation: drop-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .rise-shot {
+    animation: shot-in 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 300ms;
+  }
+  .branch-edge-idle {
+    stroke-dasharray: 3 4;
+    animation: edge-march 2.4s linear infinite;
+  }
+
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: rise-in 1s linear both;
+      animation-timeline: view();
+      /* both ends inside the `entry` range so every element — including the
+         last one above the footer — always reaches 100% */
+      animation-range: entry calc(4% + var(--i, 0) * 5%) entry calc(34% + var(--i, 0) * 5%);
+    }
+  }
+}
+
+/* inline list separated by hairline dots */
+.dotted::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 1.25rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.5;
+  vertical-align: 0.2em;
+}
+
+/* ── "works with" strip ─────────────────────────────────────────────── */
+
+.provider-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.75rem;
+  padding: 1.1rem 0;
+  border-block: 1px solid var(--hairline);
+}
+
+/* ── bento cards ────────────────────────────────────────────────────── */
+
+.paper-card,
+.ink-card {
+  position: relative;
+  border-radius: 1.15rem;
+  overflow: hidden;
+  transition:
+    border-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+.paper-card {
   border: 1px solid var(--line);
   background: linear-gradient(
     168deg,
@@ -253,23 +366,167 @@ body::before {
   box-shadow:
     0 1px 0 var(--inset-glint) inset,
     0 16px 30px rgba(20, 24, 12, 0.08);
-  transition:
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 260ms ease,
-    box-shadow 260ms ease;
 }
-.feature-card:hover {
-  transform: translateY(-3px);
+.paper-card:hover {
   border-color: color-mix(in oklab, var(--moss) 42%, var(--line));
   box-shadow:
     0 1px 0 var(--inset-glint) inset,
     0 22px 40px rgba(20, 24, 12, 0.16);
 }
 
-.chip {
-  border: 1px solid var(--line);
-  background: var(--chip-bg);
-  border-radius: 999px;
+.ink-card {
+  border: 1px solid var(--ink-line);
+  background: linear-gradient(168deg, var(--ink-bg), var(--ink-bg-2));
+  color: var(--ink-fg);
+  box-shadow:
+    0 1px 0 rgba(255, 253, 247, 0.06) inset,
+    0 20px 40px rgba(20, 24, 12, 0.22);
+}
+.ink-card:hover {
+  border-color: color-mix(in oklab, var(--ink-accent) 34%, var(--ink-line));
+  box-shadow:
+    0 1px 0 rgba(255, 253, 247, 0.06) inset,
+    0 26px 52px rgba(20, 24, 12, 0.3);
+}
+
+/* a short brushed rule instead of the usual icon-in-a-rounded-square */
+.card-rule {
+  display: block;
+  width: 2.25rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--moss);
+}
+.ink-card .card-rule {
+  background: var(--ink-accent);
+}
+
+/* a cropped screenshot sitting on a card's bottom edge — reads as a window
+   peeking up out of the card */
+.shot {
+  border: 1px solid var(--ink-line);
+  border-bottom: 0;
+  box-shadow: 0 -14px 30px rgba(20, 24, 12, 0.16);
+}
+.paper-card .shot {
+  border-color: var(--line);
+}
+
+/* spec rows in the local-first card */
+/* a plain fact table: no card, no icons, just hairlines */
+.spec-list {
+  border-top: 1px solid var(--hairline);
+}
+.spec-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.92rem;
+}
+.spec-row dd {
+  margin: 0;
+}
+
+/* ── branch diagram ─────────────────────────────────────────────────── */
+
+.branch-node {
+  fill: var(--branch-node);
+  stroke: var(--branch-node-line);
+  stroke-width: 1;
+}
+.branch-node.is-active {
+  stroke: color-mix(in oklab, var(--branch-active) 55%, transparent);
+}
+.branch-text {
+  fill: var(--ink-fg);
+  opacity: 0.72;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+}
+
+/* ── hairline rule with a brushed fade ──────────────────────────────── */
+
+.rule {
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 22%, var(--line) 78%, transparent);
+}
+
+/* ── FAQ (native details/summary) ───────────────────────────────────── */
+
+.faq details {
+  border-top: 1px solid var(--hairline);
+}
+.faq details:last-of-type {
+  border-bottom: 1px solid var(--hairline);
+}
+.faq summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.15rem 0.25rem;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-serif);
+  font-size: 1.12rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: color 160ms ease;
+}
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+.faq summary:hover {
+  color: var(--moss-deep);
+}
+.faq-mark {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  width: 0.85rem;
+  height: 0.85rem;
+  opacity: 0.55;
+}
+.faq-mark::before,
+.faq-mark::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto 0;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 2px;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.faq-mark::after {
+  transform: rotate(90deg);
+}
+.faq details[open] .faq-mark::after {
+  transform: rotate(0deg);
+}
+.faq details[open] summary {
+  color: var(--moss-deep);
+}
+.faq details > p {
+  padding: 0 2rem 1.35rem 0.25rem;
+  max-width: 46rem;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: var(--sumi-soft);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .faq details[open] > p {
+    animation: faq-in 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+@keyframes faq-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 /* app screenshots ship their own window chrome + shadow on a transparent
@@ -278,8 +535,10 @@ body::before {
   display: block;
   width: 100%;
   height: auto;
-  /* drop-shadow follows the window's rounded-rect alpha and renders outside the
-     box, so the glow is soft on all sides and never clipped */
+  /* drop-shadow follows the window's rounded-rect alpha and renders outside
+     the box, so the glow is soft on all sides and never clipped. A box-shadow
+     can't do this — the screenshots carry a transparent margin, so a box
+     shadow would trace a rectangle away from the visible window edge. */
   filter: var(--shot-shadow);
 }
 
@@ -337,14 +596,28 @@ body::before {
 }
 
 .cta-band {
-  background: var(--cta-bg);
+  background: linear-gradient(168deg, color-mix(in oklab, var(--cta-bg) 92%, white), var(--cta-bg));
   color: var(--cta-fg);
   border: 1px solid var(--cta-border);
+  box-shadow:
+    0 1px 0 rgba(255, 253, 247, 0.07) inset,
+    0 28px 60px rgba(20, 24, 12, 0.24);
+}
+.cta-glow {
+  background: radial-gradient(560px 280px at 50% -20%, var(--cta-glow), transparent 70%);
 }
 
 .site-footer {
+  margin-top: 1.5rem;
   border-top: 1px solid var(--line);
   background: color-mix(in oklab, var(--surface) 70%, transparent);
+}
+
+/* keyboard focus is never optional */
+:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {

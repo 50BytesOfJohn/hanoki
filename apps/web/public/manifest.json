@@ -1,14 +1,37 @@
 {
   "id": "/",
-  "short_name": "Hanoki",
   "name": "Hanoki — Local-First AI Chat Desktop App",
-  "description": "A free, open-source desktop AI chat app for cloud and local models.",
+  "short_name": "Hanoki",
+  "description": "A free, open-source desktop AI chat app for cloud and local models. Branch any message, organize chats into workspaces, keep everything on your own machine.",
+  "lang": "en",
+  "dir": "ltr",
   "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180",
+      "purpose": "any"
+    },
     {
       "src": "/hanoki-mark.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/shot-graph.webp",
+      "type": "image/webp",
+      "sizes": "3364x2044",
+      "form_factor": "wide",
+      "label": "One conversation as a branching graph of replies"
     }
   ],
   "start_url": "/",

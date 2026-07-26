@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hand-maintained: add a <url> here when you add a route.
+
+  TanStack Start can generate this (vite.config.ts → tanstackStart.sitemap), but
+  its generator declares the urlset as `https://www.sitemaps.org/...` while the
+  protocol's namespace is the literal string `http://www.sitemaps.org/...`, and
+  it emits <image:image> without ever declaring the image namespace. Namespaces
+  compare as exact strings, so strict validators reject both. Three routes are
+  cheaper to keep by hand than to patch post-build.
+
+  Google ignores <changefreq> and <priority>, so they aren't here.
+-->
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://hanoki.app/</loc>
+    <lastmod>2026-07-26</lastmod>
+    <image:image>
+      <image:loc>https://hanoki.app/shot-graph.webp</image:loc>
+      <image:title>Hanoki showing one conversation as a branching graph</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://hanoki.app/og-image.png</image:loc>
+      <image:title>Hanoki — Where AI chat feels calm again.</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://hanoki.app/download</loc>
+    <lastmod>2026-07-26</lastmod>
+  </url>
+  <url>
+    <loc>https://hanoki.app/privacy</loc>
+    <lastmod>2026-07-26</lastmod>
+  </url>
+</urlset>

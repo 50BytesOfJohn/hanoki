@@ -1,4 +1,59 @@
+# hanoki.app — everything here is public, and we'd like it read.
+
 User-agent: *
+Allow: /
+
+# Search + AI answer engines, named explicitly so a future blanket rule
+# doesn't quietly remove Hanoki from the places people now ask questions.
+# Retrieval bots (they fetch a page to answer a live query and cite it):
+User-agent: Googlebot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Training crawlers. The app is MIT-licensed and the site is marketing copy;
+# there is nothing here worth withholding from a model.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: meta-externalagent
 Allow: /
 
 Sitemap: https://hanoki.app/sitemap.xml

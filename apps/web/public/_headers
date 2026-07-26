@@ -1,0 +1,29 @@
+# Cloudflare Workers static-asset headers.
+# Applies to prerendered HTML and files in public/ — not to Worker responses.
+
+/*
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+
+# Hashed by the bundler, so the content can never change under a given URL.
+# Fonts land here too — matching them again by extension would concatenate a
+# second, identical Cache-Control onto the same response.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Unhashed images: cache hard at the edge, revalidate in the browser daily, so
+# replacing a screenshot doesn't need a filename change to take effect.
+/*.webp
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/*.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+# Crawler-facing files should never be served stale.
+/robots.txt
+  Cache-Control: public, max-age=3600
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+  Content-Type: application/xml; charset=utf-8

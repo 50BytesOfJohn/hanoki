@@ -1,155 +1,80 @@
-import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { motion, useReducedMotion, type Variants } from "motion/react";
-import {
-  ArrowRight,
-  Boxes,
-  FolderTree,
-  GitBranch,
-  Github,
-  HardDrive,
-  Moon,
-  Sparkles,
-  Sun,
-} from "lucide-react";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { ArrowRight, Github } from "lucide-react";
 
 import { Button } from "#/components/ui/button";
+import { Footer, Nav, Reveal } from "#/components/site-chrome";
+import { DISCORD, GITHUB, jsonLd, pageGraph, seo, url } from "#/lib/seo";
 
-const SITE_URL = "https://hanoki.app/";
-const GITHUB = "https://github.com/50BytesOfJohn/hanoki";
-const RELEASES = "https://github.com/50BytesOfJohn/hanoki/releases";
-const DISCORD = "https://discord.gg/uRCYRMrXUx";
-const TITLE = "Hanoki — Local-First AI Chat Desktop App";
+const TITLE = "Hanoki — Local-First AI Chat Desktop App for macOS";
 const DESCRIPTION =
-  "Hanoki is a free, open-source desktop AI chat app for macOS. Use cloud or local models while keeping your chats, API keys, and workspace private.";
+  "Hanoki is a free, open-source desktop AI chat app for macOS. Branch any message, organize chats into workspaces, and keep your conversations and API keys on your own machine.";
 const SOCIAL_DESCRIPTION =
   "A calm, local-first desktop app for chatting, writing, and creative work with cloud or local AI models.";
-const OG_IMAGE = `${SITE_URL}og-image.png`;
 
-const structuredData = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "Organization",
-      "@id": `${SITE_URL}#organization`,
-      name: "Hanoki",
-      url: SITE_URL,
-      logo: `${SITE_URL}hanoki-mark.png`,
-      sameAs: [GITHUB, DISCORD],
-    },
-    {
-      "@type": "WebSite",
-      "@id": `${SITE_URL}#website`,
-      url: SITE_URL,
-      name: "Hanoki",
-      description: DESCRIPTION,
-      inLanguage: "en",
-      publisher: { "@id": `${SITE_URL}#organization` },
-    },
-    {
-      "@type": "SoftwareApplication",
-      "@id": `${SITE_URL}#app`,
-      name: "Hanoki",
-      url: SITE_URL,
-      description: DESCRIPTION,
-      applicationCategory: "CommunicationApplication",
-      applicationSubCategory: "AI chat client",
-      operatingSystem: "macOS",
-      image: OG_IMAGE,
-      screenshot: [
-        `${SITE_URL}shot-chat.png`,
-        `${SITE_URL}shot-providers.png`,
-        `${SITE_URL}shot-graph.png`,
-      ],
-      downloadUrl: RELEASES,
-      license: `${GITHUB}/blob/main/LICENSE`,
-      isAccessibleForFree: true,
-      offers: {
-        "@type": "Offer",
-        price: 0,
-        priceCurrency: "USD",
-      },
-      featureList: [
-        "Branching AI conversations",
-        "Workspaces and nested folders",
-        "Cloud and local AI model support",
-        "Local-first chat storage",
-        "OS keychain storage for API keys",
-      ],
-      author: { "@id": `${SITE_URL}#organization` },
-    },
-  ],
-};
+const faq = [
+  {
+    q: "Is Hanoki free?",
+    a: "Yes. It's MIT-licensed, with no account and no subscription. You pay your model providers directly with your own API keys, or nothing at all if you run local models.",
+  },
+  {
+    q: "Where do my chats actually live?",
+    a: "In a SQLite database on your machine. API keys are encrypted by the operating system — the macOS Keychain — rather than sitting in a plaintext config file. There is no Hanoki server, so there is nothing to sync and nothing to leak.",
+  },
+  {
+    q: "Which models can I use?",
+    a: "Anthropic, OpenAI, Google, OpenRouter, Groq, xAI, Mistral, DeepSeek, Together AI, Cohere and Hugging Face out of the box, plus local runtimes like Ollama and any OpenAI-compatible endpoint. Enable the models you care about per provider and switch between them mid-conversation.",
+  },
+  {
+    q: "What does branching a chat mean?",
+    a: "Every message in Hanoki is a node in a tree rather than a line in a scroll. Edit a prompt or re-run a reply with a different model and you get a new branch instead of overwriting what was there. Both paths stay, and you can jump between them or pin the ones worth keeping.",
+  },
+  {
+    q: "Windows or Linux?",
+    a: "Hanoki is a normal Electron app and the build config already covers Windows and Linux, but macOS is the only platform with published builds today. Follow the repo or the Discord if you want a ping when that changes.",
+  },
+  {
+    q: "Why does macOS warn me on first launch?",
+    a: "Builds are still unsigned, because there's no Apple Developer licence yet. Right-click the app and choose Open, or allow it under System Settings → Privacy & Security. It also means no auto-updates for now.",
+  },
+];
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: TITLE },
-      { name: "description", content: DESCRIPTION },
-      { name: "robots", content: "index, follow, max-image-preview:large, max-snippet:-1" },
-      { property: "og:title", content: TITLE },
-      { property: "og:description", content: SOCIAL_DESCRIPTION },
-      { property: "og:site_name", content: "Hanoki" },
-      { property: "og:url", content: SITE_URL },
-      { property: "og:image", content: OG_IMAGE },
-      { property: "og:image:secure_url", content: OG_IMAGE },
-      { property: "og:image:type", content: "image/png" },
-      { property: "og:image:width", content: "1731" },
-      { property: "og:image:height", content: "909" },
-      { property: "og:image:alt", content: "Hanoki — Where AI chat feels calm again." },
-      { property: "og:type", content: "website" },
-      { property: "og:locale", content: "en_US" },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: TITLE },
-      { name: "twitter:description", content: SOCIAL_DESCRIPTION },
-      { name: "twitter:image", content: OG_IMAGE },
-      { name: "twitter:image:alt", content: "Hanoki — Where AI chat feels calm again." },
-    ],
-    links: [{ rel: "canonical", href: SITE_URL }],
-    scripts: [
-      {
-        type: "application/ld+json",
-        children: JSON.stringify(structuredData),
-      },
-    ],
-  }),
+  head: () => {
+    const { meta, links } = seo({
+      title: TITLE,
+      description: DESCRIPTION,
+      path: "/",
+      social: SOCIAL_DESCRIPTION,
+    });
+    return {
+      meta,
+      links,
+      scripts: [
+        jsonLd(
+          pageGraph({
+            path: "/",
+            name: TITLE,
+            description: DESCRIPTION,
+            extra: [
+              {
+                "@type": "FAQPage",
+                "@id": `${url("/")}#faq`,
+                mainEntity: faq.map((f) => ({
+                  "@type": "Question",
+                  name: f.q,
+                  acceptedAnswer: { "@type": "Answer", text: f.a },
+                })),
+              },
+            ],
+          }),
+        ),
+      ],
+    };
+  },
   component: Home,
 });
 
-const rise: Variants = {
-  hidden: { opacity: 0, y: 18 },
-  show: (i: number = 0) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.7, delay: i * 0.08, ease: [0.16, 1, 0.3, 1] },
-  }),
-};
-
-function Reveal({
-  children,
-  i = 0,
-  className,
-  as = "div",
-}: {
-  children: React.ReactNode;
-  i?: number;
-  className?: string;
-  as?: "div" | "li" | "section";
-}) {
-  const MotionTag = motion[as];
-  return (
-    <MotionTag
-      className={className}
-      custom={i}
-      variants={rise}
-      initial="hidden"
-      whileInView="show"
-      viewport={{ once: true, margin: "-80px" }}
-    >
-      {children}
-    </MotionTag>
-  );
-}
+/* ------------------------------------------------------------------ page */
 
 function Home() {
   return (
@@ -157,10 +82,10 @@ function Home() {
       <Nav />
       <main>
         <Hero />
-        <Features />
         <Providers />
-        <Sumi />
-        <Branching />
+        <Bento />
+        <Honest />
+        <Faq />
         <CallToAction />
       </main>
       <Footer />
@@ -168,153 +93,37 @@ function Home() {
   );
 }
 
-function useTheme() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
-    setMounted(true);
-  }, []);
-  const toggle = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    document.documentElement.classList.toggle("dark", next === "dark");
-    try {
-      localStorage.setItem("hanoki-theme", next);
-    } catch {}
-    setTheme(next);
-  };
-  return { theme, toggle, mounted };
-}
-
-function ThemeToggle() {
-  const { theme, toggle, mounted } = useTheme();
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={toggle}
-      aria-label="Toggle theme"
-      className="size-9 rounded-full"
-    >
-      {mounted && theme === "dark" ? (
-        <Sun className="size-[1.05rem]" />
-      ) : (
-        <Moon className="size-[1.05rem]" />
-      )}
-    </Button>
-  );
-}
-
-function Wordmark({ className, height = "h-8" }: { className?: string; height?: string }) {
-  // background-keyed to transparent from the supplied assets; swap per theme
-  return (
-    <a href="#top" className={`inline-flex items-center ${className ?? ""}`} aria-label="Hanoki">
-      <img
-        src="/wordmark-light.webp"
-        alt="Hanoki"
-        width={480}
-        height={130}
-        className={`${height} w-auto select-none dark:hidden`}
-        draggable={false}
-      />
-      <img
-        src="/wordmark-dark.webp"
-        alt="Hanoki"
-        width={480}
-        height={126}
-        className={`hidden ${height} w-auto select-none dark:block`}
-        draggable={false}
-      />
-    </a>
-  );
-}
-
-function Nav() {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return (
-    <header id="top" className="site-nav" data-scrolled={scrolled}>
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        className="washi relative mx-auto flex w-[min(1120px,calc(100%-1.5rem))] items-center justify-between rounded-full py-2 pl-5 pr-2.5"
-      >
-        <Wordmark height="h-6" />
-        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-7 text-[0.9rem] font-medium md:flex">
-          <a className="nav-link" href="#features">
-            Features
-          </a>
-          <a className="nav-link" href="#providers">
-            Models
-          </a>
-          <a className="nav-link" href="#sumi">
-            Sumi
-          </a>
-        </nav>
-        <div className="flex items-center gap-1.5">
-          <ThemeToggle />
-          <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
-            <a href={GITHUB} target="_blank" rel="noreferrer">
-              <Github />
-              GitHub
-            </a>
-          </Button>
-          <Button size="sm" asChild className="rounded-full">
-            <a href={RELEASES} target="_blank" rel="noreferrer">
-              Download
-            </a>
-          </Button>
-        </div>
-      </motion.div>
-    </header>
-  );
-}
+/* ------------------------------------------------------------------ hero */
 
 function Hero() {
-  const reduce = useReducedMotion();
   return (
-    <section className="page-wrap relative pb-4 pt-24 text-center md:pt-28">
-      <motion.h1
-        variants={rise}
-        custom={0}
-        initial="hidden"
-        animate="show"
-        className="mx-auto max-w-4xl font-serif text-[2.9rem] font-semibold leading-[1.04] tracking-[-0.02em] sm:text-[3.7rem] lg:text-[4.4rem]"
+    <section className="page-wrap relative pb-4 pt-20 text-center md:pt-24">
+      <h1
+        style={{ "--i": 0 } as React.CSSProperties}
+        className="rise mx-auto max-w-4xl text-balance font-serif text-[2.9rem] font-semibold leading-[1.03] tracking-[-0.02em] sm:text-[3.7rem] lg:text-[4.4rem]"
       >
         Where AI chat feels{" "}
         <span className="ink-underline italic text-[var(--moss-deep)]">calm</span> again.
-      </motion.h1>
+      </h1>
 
-      <motion.p
-        variants={rise}
-        custom={1}
-        initial="hidden"
-        animate="show"
-        className="mx-auto mt-6 max-w-xl text-[1.08rem] leading-relaxed text-[var(--sumi-soft)]"
+      <p
+        style={{ "--i": 1 } as React.CSSProperties}
+        className="rise mx-auto mt-6 max-w-[38rem] text-pretty text-[1.08rem] leading-relaxed text-[var(--sumi-soft)]"
       >
-        Hanoki is a local-first desktop app for chatting, writing, and creative work with any model
-        — quietly beautiful, neatly organized, and entirely yours.
-      </motion.p>
+        A local-first desktop app for chatting with any model, cloud or local. Fork any message to
+        try another angle, keep every path, and file the whole thing into workspaces that match how
+        you work.
+      </p>
 
-      <motion.div
-        variants={rise}
-        custom={2}
-        initial="hidden"
-        animate="show"
-        className="mt-9 flex flex-wrap items-center justify-center gap-3"
+      <div
+        style={{ "--i": 2 } as React.CSSProperties}
+        className="rise mt-9 flex flex-wrap items-center justify-center gap-3"
       >
         <Button size="lg" asChild>
-          <a href={RELEASES} target="_blank" rel="noreferrer">
+          <Link to="/download">
             Download for macOS
             <ArrowRight />
-          </a>
+          </Link>
         </Button>
         <Button size="lg" variant="outline" asChild>
           <a href={GITHUB} target="_blank" rel="noreferrer">
@@ -322,205 +131,347 @@ function Hero() {
             Star on GitHub
           </a>
         </Button>
-      </motion.div>
+      </div>
 
-      <motion.p
-        variants={rise}
-        custom={3}
-        initial="hidden"
-        animate="show"
-        className="mt-5 text-[0.82rem] text-[var(--sumi-faint)]"
+      <ul
+        style={{ "--i": 3 } as React.CSSProperties}
+        className="rise mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[0.82rem] text-[var(--sumi-faint)]"
       >
-        Free &amp; MIT-licensed. Your chats and keys never leave your machine.
-      </motion.p>
+        <li>Free &amp; MIT-licensed</li>
+        <li className="dotted">No account</li>
+        <li className="dotted">Bring your own keys</li>
+        <li className="dotted">Nothing leaves your machine</li>
+      </ul>
 
-      {/* the money shot: the real app */}
-      <motion.div
-        initial={reduce ? false : { opacity: 0, y: 40, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 1, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="relative mx-auto mt-16 max-w-5xl"
-      >
+      {/* the money shot: a real conversation, branched */}
+      <div className="rise-shot relative mx-auto mt-16 max-w-5xl">
         <div className="app-frame">
           <img
-            src="/shot-chat.png"
-            alt="The Hanoki desktop app: workspaces and nested folders in the sidebar with a chat open"
+            src="/shot-graph.webp"
+            alt="The Hanoki desktop app showing one conversation as a graph, branching into several assistant and user replies"
             width={3364}
             height={2044}
             fetchPriority="high"
             decoding="async"
           />
         </div>
-      </motion.div>
-    </section>
-  );
-}
-
-const features = [
-  {
-    icon: FolderTree,
-    title: "Workspaces & folders",
-    body: "Group chats into workspaces and nested folders — projects, clients, experiments. Your thinking, organized the way you actually work.",
-  },
-  {
-    icon: Sparkles,
-    title: "Sumi, woven in",
-    body: "Small AI-assisted actions right in the composer — refine a draft, name a chat, tidy a thought. Quietly there when you want them.",
-  },
-  {
-    icon: Boxes,
-    title: "Bring your own models",
-    body: "Anthropic, OpenAI, Google, OpenRouter, local runtimes. Add your keys and switch models without changing how you chat.",
-  },
-  {
-    icon: HardDrive,
-    title: "Local-first & private",
-    body: "Chats and settings live on your machine. API keys go in the OS keychain — nothing synced anywhere you didn't ask for.",
-  },
-];
-
-function Features() {
-  return (
-    <section id="features" className="page-wrap py-24">
-      <Reveal className="mb-12 max-w-2xl">
-        <p className="kicker">Calm by design</p>
-        <h2 className="mt-3 font-serif text-[2.1rem] font-semibold leading-tight tracking-tight sm:text-[2.5rem]">
-          Everything you want in a chat app. Nothing you don't.
-        </h2>
-      </Reveal>
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        {features.map((f, i) => (
-          <Reveal as="div" i={i} key={f.title} className="feature-card rounded-2xl p-7">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-[var(--moss-wash)] text-[var(--moss-deep)]">
-              <f.icon className="size-5" strokeWidth={1.75} />
-            </div>
-            <h3 className="mt-5 font-serif text-[1.35rem] font-semibold tracking-tight">
-              {f.title}
-            </h3>
-            <p className="mt-2.5 text-[0.98rem] leading-relaxed text-[var(--sumi-soft)]">
-              {f.body}
-            </p>
-          </Reveal>
-        ))}
       </div>
     </section>
   );
 }
 
-function Showcase({
-  id,
-  kicker,
-  title,
-  body,
-  img,
-  alt,
-  reverse,
-  children,
-}: {
-  id?: string;
-  kicker: string;
-  title: React.ReactNode;
-  body: string;
-  img: string;
-  alt: string;
-  reverse?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <section
-      id={id}
-      className={`page-wrap grid grid-cols-1 items-center gap-12 py-16 ${
-        reverse ? "lg:grid-cols-[1.1fr_0.9fr]" : "lg:grid-cols-[0.9fr_1.1fr]"
-      }`}
-    >
-      <Reveal className={reverse ? "order-2 lg:order-1" : ""}>
-        <p className="kicker">{kicker}</p>
-        <h2 className="mt-3 font-serif text-[2.1rem] font-semibold leading-tight tracking-tight sm:text-[2.6rem]">
-          {title}
-        </h2>
-        <p className="mt-5 max-w-lg text-[1.05rem] leading-relaxed text-[var(--sumi-soft)]">
-          {body}
-        </p>
-        {children}
-      </Reveal>
+/* -------------------------------------------------------------- providers */
 
-      <Reveal i={1} className={`app-frame ${reverse ? "order-1 lg:order-2" : ""}`}>
-        <img src={img} alt={alt} width={3364} height={2044} loading="lazy" decoding="async" />
-      </Reveal>
-    </section>
-  );
-}
-
-const providers = ["Anthropic", "OpenAI", "Google", "OpenRouter", "Ollama", "Local models"];
+const providers = [
+  "Anthropic",
+  "OpenAI",
+  "Google",
+  "OpenRouter",
+  "Groq",
+  "xAI",
+  "Mistral",
+  "DeepSeek",
+  "Together AI",
+  "Cohere",
+  "Hugging Face",
+  "Ollama",
+  "Any OpenAI-compatible endpoint",
+];
 
 function Providers() {
   return (
-    <Showcase
-      id="providers"
-      kicker="Bring your own models"
-      title="Cloud when you want it. Local when you don't."
-      body="Add your own API keys or point Hanoki at a local runtime. Every model you enable is a tap away — and your keys stay in the OS keychain, never synced anywhere."
-      img="/shot-providers.png"
-      alt="Hanoki provider settings: a searchable list of models you can enable per provider"
-    >
-      <div className="mt-7 flex flex-wrap gap-2.5">
-        {providers.map((p) => (
-          <span
-            key={p}
-            className="chip px-4 py-2 text-[0.9rem] font-medium text-[var(--sumi-soft)]"
-          >
-            {p}
-          </span>
-        ))}
-      </div>
-    </Showcase>
+    <section id="models" className="page-wrap pt-10">
+      <Reveal className="provider-strip">
+        <p className="whitespace-nowrap text-[0.9rem] text-[var(--sumi-faint)]">Works with</p>
+        <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[0.95rem] font-medium text-[var(--sumi-soft)]">
+          {providers.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      </Reveal>
+    </section>
   );
 }
 
-function Sumi() {
+/* ------------------------------------------------------------------ shots */
+
+/** A pre-cropped detail of the app, sitting flush with the card's bottom edge
+ *  so it reads as a window peeking up. The crops live in `public/crop-*.webp`
+ *  — cutting them at build time beats scaling a 3364px screenshot down in the
+ *  browser, both in bytes and in paint cost. */
+function Shot({
+  src,
+  alt,
+  width,
+  height,
+}: {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+}) {
   return (
-    <Showcase
-      id="sumi"
-      kicker="A gentle assist"
-      title="Sumi helps — only when you ask."
-      body="Little AI-assisted actions woven through the app: refine a message, generate a chat title, keep things tidy. Pick the model that powers them. No autocomplete jumping at you, no noise."
-      img="/shot-sumi.png"
-      alt="Hanoki Sumi settings: toggles for prompt actions and title generation"
-      reverse
+    <img
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      className="shot mx-7 mt-auto block h-auto w-[calc(100%-3.5rem)] select-none rounded-t-xl"
     />
   );
 }
 
-function Branching() {
+/* ------------------------------------------------------------------ bento */
+
+function BranchDiagram() {
   return (
-    <Showcase
-      kicker="When one answer isn't enough"
-      title="Explore a branch, keep the original."
-      body="Fork any message to try another angle or another model, and Hanoki keeps every path as a live graph — so you can wander without losing the thread. There when you need it, invisible when you don't."
-      img="/shot-graph.png"
-      alt="Hanoki graph view: a conversation branching into multiple assistant and user messages"
+    <svg
+      viewBox="0 0 320 170"
+      fill="none"
+      className="branch-svg w-full max-w-[23rem]"
+      role="img"
+      aria-label="A message branching into two replies, one of which continues"
     >
-      <div className="mt-6 inline-flex items-center gap-2 text-[0.95rem] font-medium text-[var(--moss-deep)]">
-        <GitBranch className="size-4" strokeWidth={1.9} />
-        Branch, compare, and backtrack — nothing lost
-      </div>
-    </Showcase>
+      {/* the road not taken — dashed, like the app's own inactive graph edges */}
+      <path
+        d="M96 85 C 124 85 124 34 152 34"
+        stroke="var(--branch-line)"
+        strokeWidth="1.5"
+        className="branch-edge-idle"
+      />
+      <path d="M96 85 C 124 85 124 136 152 136" stroke="var(--branch-active)" strokeWidth="1.5" />
+      <path d="M240 136 H 262" stroke="var(--branch-active)" strokeWidth="1.5" />
+
+      {/* nodes */}
+      <rect x="8" y="70" width="88" height="30" rx="8" className="branch-node" />
+      <rect x="152" y="19" width="88" height="30" rx="8" className="branch-node" />
+      <rect x="152" y="121" width="88" height="30" rx="8" className="branch-node is-active" />
+      <rect x="262" y="121" width="50" height="30" rx="8" className="branch-node is-active" />
+
+      <text x="22" y="89" className="branch-text">
+        your prompt
+      </text>
+      <text x="166" y="38" className="branch-text">
+        model A
+      </text>
+      <text x="166" y="140" className="branch-text">
+        model B
+      </text>
+      <text x="276" y="140" className="branch-text">
+        …
+      </text>
+    </svg>
   );
 }
 
+function CardHead({ title, body }: { title: string; body: string }) {
+  return (
+    <>
+      <span className="card-rule" aria-hidden />
+      <h3 className="mt-5 font-serif text-[1.32rem] font-semibold tracking-tight">{title}</h3>
+      <p className="mt-2.5 text-pretty text-[0.97rem] leading-relaxed opacity-80">{body}</p>
+    </>
+  );
+}
+
+function Bento() {
+  return (
+    <section id="features" className="page-wrap pb-20 pt-16 sm:pt-20">
+      <Reveal className="mb-12 max-w-2xl">
+        <h2 className="text-balance font-serif text-[2.1rem] font-semibold leading-tight tracking-tight sm:text-[2.5rem]">
+          What a single scrolling thread can't give you.
+        </h2>
+        <p className="mt-4 max-w-lg text-[1.02rem] leading-relaxed text-[var(--sumi-soft)]">
+          Six things Hanoki does differently, none of which require you to change how you type a
+          message.
+        </p>
+      </Reveal>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <Reveal i={0} className="ink-card flex flex-col p-7 sm:col-span-2 lg:col-span-3">
+          <CardHead
+            title="Every message can fork"
+            body="Edit a reply, try a second model, chase a side thought. Each attempt becomes its own branch instead of overwriting the last one, so the answer you liked is still there tomorrow."
+          />
+          <div className="flex flex-1 items-center justify-center pt-6">
+            <BranchDiagram />
+          </div>
+        </Reveal>
+
+        <Reveal i={1} className="ink-card flex flex-col sm:col-span-2 lg:col-span-3">
+          <div className="p-7">
+            <CardHead
+              title="Workspaces & nested folders"
+              body="Group chats the way you already think about them: by project, by client, by whatever you're chasing this week. Not one flat list of half-remembered titles."
+            />
+          </div>
+          <Shot
+            src="/crop-sidebar.webp"
+            alt="Hanoki's sidebar with chats grouped into nested folders"
+            width={830}
+            height={622}
+          />
+        </Reveal>
+
+        <Reveal i={2} className="paper-card flex flex-col overflow-hidden lg:col-span-2">
+          <div className="p-7">
+            <CardHead
+              title="Bring your own models"
+              body="Add your keys, switch on the models you actually use, and change provider mid-conversation without changing how you chat."
+            />
+          </div>
+          <Shot
+            src="/crop-models.webp"
+            alt="Hanoki provider settings with a searchable list of models to enable"
+            width={639}
+            height={400}
+          />
+        </Reveal>
+
+        <Reveal i={3} className="paper-card flex flex-col overflow-hidden lg:col-span-2">
+          <div className="p-7">
+            <CardHead
+              title="Sumi, woven in"
+              body="Small AI-assisted actions live in the composer: refine a draft, name a chat. Off by default, and powered by whichever model you point them at."
+            />
+          </div>
+          <Shot
+            src="/crop-sumi.webp"
+            alt="Hanoki's Sumi settings with toggles for prompt actions and title generation"
+            width={639}
+            height={400}
+          />
+        </Reveal>
+
+        <Reveal i={4} className="paper-card flex flex-col overflow-hidden lg:col-span-2">
+          <div className="p-7">
+            <CardHead
+              title="Pin the good branches"
+              body="Bookmark the turns worth keeping. Jump the whole chat back to any of them in one click."
+            />
+          </div>
+          <Shot
+            src="/crop-pinned.webp"
+            alt="Hanoki's pinned branches panel listing bookmarked points in a conversation"
+            width={639}
+            height={400}
+          />
+        </Reveal>
+
+        <Reveal
+          i={5}
+          className="paper-card grid gap-8 p-7 sm:col-span-2 md:grid-cols-[1.1fr_1fr] md:items-center lg:col-span-6 lg:p-9"
+        >
+          <div>
+            <CardHead
+              title="Local-first, and honest about it"
+              body="There is no Hanoki server. Chats and settings live in a SQLite file on your disk, API keys go to the OS keychain, and the only requests Hanoki makes are the ones you send to your own providers."
+            />
+            <p className="mt-4 text-[0.95rem]">
+              <Link to="/privacy" className="nav-link">
+                What Hanoki does and doesn't collect →
+              </Link>
+            </p>
+          </div>
+          <dl className="spec-list">
+            {[
+              ["API keys", "OS keychain"],
+              ["Chats & folders", "Local SQLite file"],
+              ["Telemetry", "None"],
+              ["Accounts", "None"],
+              ["Source", "MIT on GitHub"],
+            ].map(([k, v]) => (
+              <div key={k} className="spec-row">
+                <dt className="opacity-65">{k}</dt>
+                <dd className="font-medium">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ----------------------------------------------------------------- honest */
+
+function Honest() {
+  return (
+    <section className="page-wrap pb-4">
+      <Reveal className="mx-auto max-w-3xl text-center">
+        <span className="rule" aria-hidden />
+        <h2 className="mt-10 text-balance font-serif text-[1.8rem] font-semibold leading-tight tracking-tight sm:text-[2.15rem]">
+          It's pre-alpha. Things move fast and break sometimes.
+        </h2>
+        <p className="mx-auto mt-5 max-w-xl text-pretty text-[1.02rem] leading-relaxed text-[var(--sumi-soft)]">
+          There's no Apple Developer licence yet, so macOS builds are unsigned: the first launch
+          needs a right-click → Open, and updates are manual. The{" "}
+          <Link to="/download">install guide</Link> walks through it. If that sounds fun rather than
+          scary, you're exactly the right kind of early.
+        </p>
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <Button variant="outline" asChild>
+            <a href={DISCORD} target="_blank" rel="noreferrer">
+              Join the Discord
+            </a>
+          </Button>
+          <Button variant="ghost" asChild>
+            <a href={`${GITHUB}/issues`} target="_blank" rel="noreferrer">
+              Report a bug
+              <ArrowRight />
+            </a>
+          </Button>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------- faq */
+
+function Faq() {
+  return (
+    <section id="faq" className="page-wrap py-20">
+      <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+        <Reveal>
+          <h2 className="text-balance font-serif text-[2.1rem] font-semibold leading-tight tracking-tight">
+            Before you download.
+          </h2>
+          <p className="mt-4 max-w-sm text-[0.98rem] leading-relaxed text-[var(--sumi-soft)]">
+            Anything missing? The{" "}
+            <a href={DISCORD} target="_blank" rel="noreferrer">
+              Discord
+            </a>{" "}
+            is small and answers quickly.
+          </p>
+        </Reveal>
+
+        <Reveal i={1} className="faq">
+          {faq.map((item) => (
+            <details key={item.q} name="faq">
+              <summary>
+                {item.q}
+                <span className="faq-mark" aria-hidden />
+              </summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* -------------------------------------------------------------------- cta */
+
 function CallToAction() {
   return (
-    <section className="page-wrap py-20">
+    <section className="page-wrap pb-20">
       <Reveal className="cta-band relative overflow-hidden rounded-3xl px-8 py-16 text-center sm:px-16">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(560px 280px at 50% -20%, var(--cta-glow), transparent 70%)",
-          }}
-        />
+        <div aria-hidden className="cta-glow pointer-events-none absolute inset-0" />
         <img
           src="/hanoki-mark.png"
           alt=""
@@ -531,12 +482,12 @@ function CallToAction() {
           className="relative mx-auto mb-6 size-14"
           draggable={false}
         />
-        <h2 className="relative font-serif text-[2.1rem] font-semibold leading-tight tracking-tight text-[var(--cta-fg)] sm:text-[2.7rem]">
+        <h2 className="relative text-balance font-serif text-[2.1rem] font-semibold leading-tight tracking-tight text-[var(--cta-fg)] sm:text-[2.7rem]">
           Bring a little calm to your chats.
         </h2>
-        <p className="relative mx-auto mt-4 max-w-lg text-[1.02rem] leading-relaxed text-[var(--cta-dim)]">
-          A desktop AI app that stays out of the way and keeps your work local. Early, honest, and
-          moving fast.
+        <p className="relative mx-auto mt-4 max-w-lg text-pretty text-[1.02rem] leading-relaxed text-[var(--cta-dim)]">
+          Download it, point it at your own keys, and see whether it sticks. There's nothing to sign
+          up for.
         </p>
         <div className="relative mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button
@@ -544,10 +495,10 @@ function CallToAction() {
             asChild
             className="bg-[var(--cta-fg)] text-[var(--cta-bg)] shadow-sm hover:bg-white hover:text-[var(--cta-bg)]"
           >
-            <a href={RELEASES} target="_blank" rel="noreferrer">
+            <Link to="/download">
               Download Hanoki
               <ArrowRight />
-            </a>
+            </Link>
           </Button>
           <Button
             size="lg"
@@ -555,8 +506,9 @@ function CallToAction() {
             asChild
             className="border-white/20 bg-white/5 text-[var(--cta-fg)] hover:bg-white/10 hover:text-white"
           >
-            <a href={DISCORD} target="_blank" rel="noreferrer">
-              Join the Discord
+            <a href={GITHUB} target="_blank" rel="noreferrer">
+              <Github />
+              Read the source
             </a>
           </Button>
         </div>
@@ -565,27 +517,4 @@ function CallToAction() {
   );
 }
 
-function Footer() {
-  return (
-    <footer className="site-footer mt-6">
-      <div className="page-wrap flex flex-col items-center justify-between gap-6 py-10 sm:flex-row">
-        <Wordmark />
-        <nav className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2 text-[0.9rem] text-[var(--sumi-soft)]">
-          <a className="nav-link" href={GITHUB} target="_blank" rel="noreferrer">
-            GitHub
-          </a>
-          <a className="nav-link" href={RELEASES} target="_blank" rel="noreferrer">
-            Releases
-          </a>
-          <a className="nav-link" href={DISCORD} target="_blank" rel="noreferrer">
-            Discord
-          </a>
-          <a className="nav-link" href="https://hanoki.app" target="_blank" rel="noreferrer">
-            hanoki.app
-          </a>
-        </nav>
-        <p className="text-[0.82rem] text-[var(--sumi-faint)]">MIT · made with care</p>
-      </div>
-    </footer>
-  );
-}
+/* ----------------------------------------------------------------- footer */

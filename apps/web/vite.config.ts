@@ -18,11 +18,18 @@ const config = defineConfig({
       prerender: {
         enabled: true,
         crawlLinks: true,
+        // Emit `download.html`, not `download/index.html`. Cloudflare's asset
+        // handler serves a subfolder index only at `/download/` and 307s
+        // `/download` to it — the opposite of how this app's own SSR router
+        // normalizes URLs. Flat files make `/download` a 200 everywhere, so
+        // canonicals, the sitemap and internal links all name a real URL
+        // instead of a redirect.
+        autoSubfolderIndex: false,
       },
-      sitemap: {
-        enabled: true,
-        host: "https://hanoki.app",
-      },
+      // Generated sitemaps use an `https://…/schemas/sitemap/0.9` namespace,
+      // which is not the namespace the protocol defines. public/sitemap.xml is
+      // maintained by hand instead — see the comment in that file.
+      sitemap: { enabled: false },
     }),
     viteReact(),
     babel({ presets: [reactCompilerPreset()] }),
