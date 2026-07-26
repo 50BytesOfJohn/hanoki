@@ -1,14 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createCohere } from "@ai-sdk/cohere";
-import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createGoogle } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
-import { createHuggingFace } from "@ai-sdk/huggingface";
-import { createMistral } from "@ai-sdk/mistral";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createTogetherAI } from "@ai-sdk/togetherai";
-import { createXai } from "@ai-sdk/xai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModel } from "ai";
 import type { ProviderId } from "@shared/providers/catalog";
 import type { SyncProviderModelInput } from "../../models/repository";
@@ -23,14 +12,15 @@ export interface ProviderRequestSpec {
 }
 
 interface SdkProviderRegistryEntry {
-  createLanguageModel: (apiKey: string, providerModelId: string) => LanguageModel;
+  createLanguageModel: (apiKey: string, providerModelId: string) => Promise<LanguageModel>;
   buildModelsRequest: (apiKey: string) => ProviderRequestSpec;
   parseModels: (body: unknown) => SyncProviderModelInput[];
 }
 
 export const sdkProviderRegistry = {
   openrouter: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
       return createOpenRouter({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -51,7 +41,8 @@ export const sdkProviderRegistry = {
     },
   },
   openai: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createOpenAI } = await import("@ai-sdk/openai");
       return createOpenAI({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -62,7 +53,8 @@ export const sdkProviderRegistry = {
     },
   },
   anthropic: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createAnthropic } = await import("@ai-sdk/anthropic");
       return createAnthropic({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -95,7 +87,8 @@ export const sdkProviderRegistry = {
     },
   },
   google: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createGoogle } = await import("@ai-sdk/google");
       return createGoogle({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -138,7 +131,8 @@ export const sdkProviderRegistry = {
     },
   },
   groq: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createGroq } = await import("@ai-sdk/groq");
       return createGroq({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -149,7 +143,8 @@ export const sdkProviderRegistry = {
     },
   },
   xai: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createXai } = await import("@ai-sdk/xai");
       return createXai({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -160,7 +155,8 @@ export const sdkProviderRegistry = {
     },
   },
   mistral: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createMistral } = await import("@ai-sdk/mistral");
       return createMistral({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -175,7 +171,8 @@ export const sdkProviderRegistry = {
     },
   },
   togetherai: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createTogetherAI } = await import("@ai-sdk/togetherai");
       return createTogetherAI({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -189,7 +186,8 @@ export const sdkProviderRegistry = {
     },
   },
   deepseek: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createDeepSeek } = await import("@ai-sdk/deepseek");
       return createDeepSeek({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -200,7 +198,8 @@ export const sdkProviderRegistry = {
     },
   },
   cohere: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createCohere } = await import("@ai-sdk/cohere");
       return createCohere({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {
@@ -224,7 +223,8 @@ export const sdkProviderRegistry = {
     },
   },
   huggingface: {
-    createLanguageModel(apiKey, providerModelId) {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createHuggingFace } = await import("@ai-sdk/huggingface");
       return createHuggingFace({ apiKey })(providerModelId);
     },
     buildModelsRequest(apiKey) {

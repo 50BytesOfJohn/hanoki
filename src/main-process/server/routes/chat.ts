@@ -92,10 +92,10 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       return c.json({ error: "Model not found or not enabled" }, 400);
     }
 
-    let languageModel: ReturnType<typeof createLanguageModel>;
+    let languageModel: Awaited<ReturnType<typeof createLanguageModel>>;
     try {
       const providerRuntime = resolveProviderRuntimeContext(provider);
-      languageModel = createLanguageModel({
+      languageModel = await createLanguageModel({
         providerRow: provider,
         providerRuntime,
         providerModelId: model.providerModelId,

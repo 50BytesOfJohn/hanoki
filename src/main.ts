@@ -5,7 +5,6 @@ import { bootstrapBackend } from "./main-process/app/bootstrap-backend";
 import { createMainWindow } from "./main-process/app/create-main-window";
 import { closeAppDatabase } from "./main-process/db/database";
 import { registerIpcHandlers } from "./main-process/ipc";
-import { createAiServer } from "./main-process/server";
 import { getDefaultAppIdentifier } from "./main-process/system/paths";
 import {
   SYSTEM_EVENT_CHANNEL,
@@ -59,6 +58,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       aiServerState = { status: "starting", port: null, error: null };
       broadcastSystemEvent({ type: "ai-server:starting" });
+      const { createAiServer } = await import("./main-process/server");
       aiServer = await createAiServer({
         onChatTitleUpdated: (event) => {
           broadcastSystemEvent({ type: "chat:title-updated", ...event });

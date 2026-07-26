@@ -46,7 +46,7 @@ import {
   resolveModelId,
 } from "@/features/chat/chat-context";
 import { getChatQueryOptions } from "@/queries/chats";
-import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
+import { useIsActiveChatPane, useIsActiveChatTab } from "@/features/chat/chat-pane-context";
 import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context";
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
@@ -197,6 +197,7 @@ function ActiveChatContent() {
   const canStop = useChatCanStop();
   const isInteractionLocked = useChatIsInteractionLocked();
   const isStreaming = useChatIsStreaming();
+  const isActiveTab = useIsActiveChatTab();
   const isActivePane = useIsActiveChatPane();
   const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(chatId, isStreaming);
   const jumpToMessage = React.useCallback(
@@ -371,7 +372,9 @@ function ActiveChatContent() {
         <ChatMessageHotkeys />
 
         <div className="flex flex-col min-h-full justify-end">
-          <Conversation />
+          <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
+            <Conversation />
+          </React.Activity>
 
           <div
             data-chat-composer-shell="true"

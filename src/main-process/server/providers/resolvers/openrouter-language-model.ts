@@ -1,7 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModelResolver } from "../language-model-types";
 
-export const createOpenRouterLanguageModel: LanguageModelResolver = ({
+export const createOpenRouterLanguageModel: LanguageModelResolver = async ({
   providerRuntime,
   providerModelId,
 }) => {

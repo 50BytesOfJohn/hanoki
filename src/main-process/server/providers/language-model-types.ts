@@ -8,4 +8,4 @@ export interface CreateLanguageModelInput {
   providerModelId: string;
 }
 
-export type LanguageModelResolver = (input: CreateLanguageModelInput) => LanguageModel;
+export type LanguageModelResolver = (input: CreateLanguageModelInput) => Promise<LanguageModel>;

@@ -1,12 +1,11 @@
 import type { LanguageModel } from "ai";
 import type { ProviderId } from "@shared/providers/catalog";
 import type { CreateLanguageModelInput, LanguageModelResolver } from "./language-model-types";
-import { createOllamaLanguageModel } from "./resolvers/ollama-language-model";
 import { getSdkProviderRegistryEntry } from "./sdk-provider-registry";
 
 const languageModelResolvers = buildLanguageModelResolvers();
 
-export function createLanguageModel(input: CreateLanguageModelInput): LanguageModel {
+export async function createLanguageModel(input: CreateLanguageModelInput): Promise<LanguageModel> {
   if (input.providerRow.catalogId !== input.providerRuntime.providerDef.id) {
     throw new Error(
       `Provider runtime context mismatch for provider row "${input.providerRow.id}".`,
@@ -29,12 +28,15 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
     deepseek: createApiKeyLanguageModelResolver("deepseek"),
     cohere: createApiKeyLanguageModelResolver("cohere"),
     huggingface: createApiKeyLanguageModelResolver("huggingface"),
-    ollama: createOllamaLanguageModel,
+    ollama: async (input) => {
+      const { createOllamaLanguageModel } = await import("./resolvers/ollama-language-model");
+      return createOllamaLanguageModel(input);
+    },
   };
 }
 
 function createApiKeyLanguageModelResolver(providerId: Exclude<ProviderId, "ollama">) {
-  return ({ providerRuntime, providerModelId }: CreateLanguageModelInput) => {
+  return async ({ providerRuntime, providerModelId }: CreateLanguageModelInput) => {
     const apiKey = providerRuntime.parsedConfig.apiKey;
     if (typeof apiKey !== "string" || !apiKey) {
       throw new Error(

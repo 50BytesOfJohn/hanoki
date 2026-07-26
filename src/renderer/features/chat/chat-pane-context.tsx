@@ -30,6 +30,12 @@ export function useOptionalChatPane(): ChatPaneContextValue | null {
   return React.useContext(ChatPaneContext);
 }
 
+/** True when this pane belongs to the active tab, including non-focused panes in a split view. */
+export function useIsActiveChatTab(): boolean {
+  const pane = useOptionalChatPane();
+  return useWorkspaceStore((state) => !pane || state.activeTabId === pane.tabId);
+}
+
 /** True when this pane is the focused pane of the active tab. Every tab/pane stays mounted, so
  * pane-scoped hotkeys must gate on this or they fire once per mounted pane. */
 export function useIsActiveChatPane(): boolean {

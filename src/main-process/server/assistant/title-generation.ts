@@ -71,7 +71,7 @@ async function generateChatTitle(
     throw new Error("Send a message before generating a chat title.");
   }
 
-  const languageModel = createSumiLanguageModel(modelTarget);
+  const languageModel = await createSumiLanguageModel(modelTarget);
   if (!languageModel) {
     throw new Error("The configured Sumi title model could not be started.");
   }
@@ -148,7 +148,7 @@ function normalizeGeneratedChatTitle(input: string): string {
   return parsedTitle.value;
 }
 
-function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
+async function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
   const provider = getProviderById(modelTarget.providerId);
   if (!provider) {
     return null;
@@ -156,7 +156,7 @@ function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
 
   try {
     const providerRuntime = resolveProviderRuntimeContext(provider);
-    return createLanguageModel({
+    return await createLanguageModel({
       providerRow: provider,
       providerRuntime,
       providerModelId: modelTarget.providerModelId,

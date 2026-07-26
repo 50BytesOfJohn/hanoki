@@ -3,7 +3,7 @@ import type { ProviderHostPortConfigValue } from "@shared/providers/catalog";
 import { buildOllamaBaseUrl } from "../../../providers/ollama-base-url";
 import type { LanguageModelResolver } from "../language-model-types";
 
-export const createOllamaLanguageModel: LanguageModelResolver = ({
+export const createOllamaLanguageModel: LanguageModelResolver = async ({
   providerRuntime,
   providerModelId,
 }) => {

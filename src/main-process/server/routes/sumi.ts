@@ -53,7 +53,7 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
       return c.text("The configured Sumi model is unavailable.", 400);
     }
 
-    const languageModel = createSumiLanguageModel(modelTarget);
+    const languageModel = await createSumiLanguageModel(modelTarget);
     if (!languageModel) {
       return c.text("The configured Sumi model could not be started.", 400);
     }
@@ -107,7 +107,7 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
   return app;
 }
 
-function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
+async function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
   const provider = getProviderById(modelTarget.providerId);
   if (!provider) {
     return null;
@@ -115,7 +115,7 @@ function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
 
   try {
     const providerRuntime = resolveProviderRuntimeContext(provider);
-    return createLanguageModel({
+    return await createLanguageModel({
       providerRow: provider,
       providerRuntime,
       providerModelId: modelTarget.providerModelId,
