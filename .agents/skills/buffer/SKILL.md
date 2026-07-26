@@ -5,8 +5,7 @@ description: Use Buffer through its official CLI to inspect channels and posts o
 
 # Buffer
 
-- Run the CLI through `./.agents/skills/buffer/scripts/buffer-cli` from the repository root.
-- Use the CLI's `--help` for the current commands and options; do not guess them or duplicate its documentation.
-- Prefer JSON output for agent-readable results and use `--dry-run` before mutations when supported.
-- Show the user the exact channel, content, and timing for approval before publishing or scheduling.
-- On Buffer's free plan, keep at most 10 scheduled posts per channel. Check the existing queue before adding posts and report when it is full.
+- CLI: `./.agents/skills/buffer/scripts/buffer-cli` from repo root.
+- Discover usage via `--help`, `schema describe`, and `context` — do not invent payloads.
+- Prefer `--output json` and `--dry-run` before mutations.
+- Get approval before publishing or scheduling.

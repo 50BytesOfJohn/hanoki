@@ -16,15 +16,18 @@ description: Release the Hanoki Electron app by creating the commit and tag sequ
 
 ## Social Announcement
 
-Publish through [$buffer](/Users/tom/Developer/repos/hanoki/.agents/skills/buffer/SKILL.md) to both `50BytesOfJohn` channels (bluesky `677460164697c1deffd3a5ef`, twitter `677460664697c1deffd6de1e`), org `66a27a5d618c283aaf6e4a9f`.
+Via [$buffer](/Users/tom/Developer/repos/hanoki/.agents/skills/buffer/SKILL.md), publish to both channels after approval (`shareNow`):
 
-- Source the content from the commits in the tag range (`git log <prev-tag>..<new-tag>`).
-- Main post: announcement of the highlights, not a changelog dump. Bug-fix-only release still gets a post — make it worth reading on its own.
-- Thread: one item per notable change, then a final item sweeping up the smaller ones.
-- Skip trivial changes entirely. The changelog covers them; social media only covers what matters.
-- Same content on both channels, trimmed to fit X's limit.
-- Post the full proposal in chat and wait for explicit user approval. After approval publish immediately with `--mode shareNow` — no scheduling.
+| Channel | ID |
+| ------- | -- |
+| Bluesky | `677460164697c1deffd3a5ef` |
+| X       | `677460664697c1deffd6de1e` |
 
+Org: `66a27a5d618c283aaf6e4a9f` (`50BytesOfJohn`).
+
+- Content from `git log <prev-tag>..<new-tag>` — highlights only, not a changelog.
+- Same content both channels; trim for X.
+- Propose in chat, wait for approval, then publish.
 ## Release Rules
 
 - Treat this repo as patch-only for releases unless the user explicitly says otherwise.
@@ -55,15 +58,6 @@ git commit -m "chore(release): bump version to <new-version>"
 git tag -a "v<new-version>" -m "v<new-version>"
 git push origin HEAD
 git push origin "v<new-version>"
-```
-
-Threaded post payload (`thread[0]` must equal `text`):
-
-```bash
-./.agents/skills/buffer/scripts/buffer-cli posts create --json '{
-  "channelId": "<id>", "schedulingType": "automatic", "mode": "shareNow",
-  "text": "<main post>", "thread": ["<main post>", "<item>", "<rest>"]
-}'
 ```
 
 ## Verification
