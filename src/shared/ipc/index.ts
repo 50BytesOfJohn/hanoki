@@ -10,6 +10,7 @@ export const IPC_CHANNELS = {
     create: "workspaces:create",
     setActive: "workspaces:setActive",
     update: "workspaces:update",
+    getSettings: "workspaces:getSettings",
     updateSettings: "workspaces:updateSettings",
     getTabsUiState: "workspaces:getTabsUiState",
     setTabsUiState: "workspaces:setTabsUiState",
@@ -93,6 +94,17 @@ export type ChatFormSubmitBehavior = "enter" | "mod-enter";
 export type ChatSidebarViewMode = "tree" | "activity";
 
 export type ChatTabsPosition = "top" | "sidebar";
+
+/** Sort order of the sidebar folder tree. Per workspace; the activity view is always recency-sorted. */
+export type ChatTreeSortOrder =
+  | "name-asc"
+  | "name-desc"
+  | "updated-desc"
+  | "updated-asc"
+  | "created-desc"
+  | "created-asc";
+
+export type ChatTreeFolderPlacement = "first" | "last" | "mixed";
 
 export interface GlobalChatSettings {
   promptStickyPosition: boolean;
@@ -280,6 +292,8 @@ export interface WorkspaceSettings {
   tabs?: TabStateItem[];
   activeTabId?: string | null;
   sidebarViewMode?: ChatSidebarViewMode;
+  chatTreeSortOrder?: ChatTreeSortOrder;
+  chatTreeFolderPlacement?: ChatTreeFolderPlacement;
   /** Unsent composer documents per chat id. Strings are legacy drafts. */
   chatDrafts?: Record<string, TiptapDocument | string>;
 }
@@ -365,6 +379,7 @@ export interface IpcApi {
   createWorkspace: (name: string) => Promise<WorkspaceInfo>;
   setActiveWorkspace: (id: string) => Promise<ActiveWorkspaceInfo>;
   updateWorkspace: (id: string, input: WorkspaceUpdateInput) => Promise<WorkspaceInfo>;
+  getWorkspaceSettings: (id: string) => Promise<WorkspaceSettings>;
   updateWorkspaceSettings: (
     id: string,
     settingsPatch: WorkspaceSettingsPatch,

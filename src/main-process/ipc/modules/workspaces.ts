@@ -267,6 +267,15 @@ export function registerWorkspaceIpcModule(
     },
   );
 
+  registerInvokeHandler<[string], WorkspaceSettings>(context, registeredChannels, {
+    channel: IPC_CHANNELS.workspaces.getSettings,
+    parseArgs: (args) => {
+      expectArgCount(args, 1);
+      return [parseValidWorkspaceId(args[0])];
+    },
+    handler: ({ services }, _event, id) => services.workspaces.getWorkspaceSettings(id),
+  });
+
   registerInvokeHandler<[string, WorkspaceSettingsPatch], WorkspaceSettings>(
     context,
     registeredChannels,

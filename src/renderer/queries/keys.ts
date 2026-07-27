@@ -4,6 +4,7 @@ export const queryKeys = {
     list: () => [...queryKeys.workspaces.all, "list"] as const,
     active: () => [...queryKeys.workspaces.all, "active"] as const,
     detail: (id: string) => [...queryKeys.workspaces.all, "detail", id] as const,
+    settings: (id: string) => [...queryKeys.workspaces.all, "settings", id] as const,
   },
   settings: {
     all: ["settings"] as const,

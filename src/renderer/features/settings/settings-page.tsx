@@ -18,6 +18,13 @@ import { useUpdateWorkspace } from "@/mutations/workspaces";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { findWorkspaceById, listWorkspacesQueryOptions } from "@/queries/workspaces";
 import type { GlobalChatSettingsUpdateInput, WorkspaceInfo } from "@shared/ipc";
+import {
+  CHAT_TREE_FOLDER_PLACEMENTS,
+  CHAT_TREE_SORT_ORDERS,
+  isChatTreeFolderPlacement,
+  isChatTreeSortOrder,
+} from "@shared/chat/chat-tree-sort";
+import { useChatTreeSort } from "@/features/chat/use-chat-tree-sort";
 import { parseWorkspaceName } from "@shared/workspace/workspace-name";
 import { WORKSPACE_ORB_COLORS } from "@shared/workspace/workspace-orb-colors";
 import {
@@ -233,6 +240,78 @@ function WorkspaceSettings({ workspace }: { workspace: WorkspaceInfo }) {
           currentColor={workspace.color}
         />
       </SettingsSection>
+
+      <SettingsSection title="Chat list">
+        <WorkspaceChatTreeSortRows workspaceId={workspace.id} />
+      </SettingsSection>
+    </>
+  );
+}
+
+function WorkspaceChatTreeSortRows({ workspaceId }: { workspaceId: string }) {
+  const { sortOrder, folderPlacement, isPending, setSortOrder, setFolderPlacement } =
+    useChatTreeSort(workspaceId);
+
+  return (
+    <>
+      <SettingsRow
+        title="Sort chats by"
+        description="Applies to the folder tree. Recent activity is always sorted by latest message."
+        control={
+          <Select
+            value={sortOrder}
+            items={Object.fromEntries(CHAT_TREE_SORT_ORDERS.map((o) => [o.id, o.label]))}
+            disabled={isPending}
+            onValueChange={(value) => {
+              if (isChatTreeSortOrder(value)) {
+                setSortOrder(value);
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Sort chats by" className="w-60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {CHAT_TREE_SORT_ORDERS.map((order) => (
+                  <SelectItem key={order.id} value={order.id}>
+                    {order.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        }
+      />
+      <SettingsRow
+        title="Folder placement"
+        description="Where folders sit relative to chats in the folder tree."
+        control={
+          <Select
+            value={folderPlacement}
+            items={Object.fromEntries(CHAT_TREE_FOLDER_PLACEMENTS.map((p) => [p.id, p.label]))}
+            disabled={isPending}
+            onValueChange={(value) => {
+              if (isChatTreeFolderPlacement(value)) {
+                setFolderPlacement(value);
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Folder placement" className="w-60">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {CHAT_TREE_FOLDER_PLACEMENTS.map((placement) => (
+                  <SelectItem key={placement.id} value={placement.id}>
+                    {placement.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        }
+      />
     </>
   );
 }

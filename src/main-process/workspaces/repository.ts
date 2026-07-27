@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 
 import { DEFAULT_WORKSPACE_ID } from "@shared/workspace/workspace-id";
 import type { ChatLayoutNode, WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
+import { isChatTreeFolderPlacement, isChatTreeSortOrder } from "@shared/chat/chat-tree-sort";
 import { parseTiptapDocument } from "@shared/tiptap/document";
 import { getAppDatabase } from "../db/database";
 import { workspaces } from "../db/schema";
@@ -47,6 +48,8 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     "tabs",
     "activeTabId",
     "sidebarViewMode",
+    "chatTreeSortOrder",
+    "chatTreeFolderPlacement",
     "chatDrafts",
   ]);
 
@@ -105,6 +108,17 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
     record.sidebarViewMode !== undefined &&
     record.sidebarViewMode !== "tree" &&
     record.sidebarViewMode !== "activity"
+  ) {
+    return false;
+  }
+
+  if (record.chatTreeSortOrder !== undefined && !isChatTreeSortOrder(record.chatTreeSortOrder)) {
+    return false;
+  }
+
+  if (
+    record.chatTreeFolderPlacement !== undefined &&
+    !isChatTreeFolderPlacement(record.chatTreeFolderPlacement)
   ) {
     return false;
   }

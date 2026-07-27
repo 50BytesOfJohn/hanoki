@@ -53,6 +53,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 
@@ -80,11 +83,21 @@ import type {
   ChatTreeSnapshot,
 } from "@shared/ipc";
 import {
+  CHAT_TREE_FOLDER_PLACEMENTS,
+  CHAT_TREE_SORT_ORDERS,
+  getChatTreeSortOrderLabel,
+  isChatTreeFolderPlacement,
+  isChatTreeSortOrder,
+  sortChatTreeEntries,
+} from "@shared/chat/chat-tree-sort";
+import type { ChatTreeSortEntry } from "@shared/chat/chat-tree-sort";
+import {
   ChatSidebar,
   ChatSidebarBlock,
   ChatSidebarBlockContent,
   ChatSidebarPanel,
 } from "./chat-sidebar";
+import { useChatTreeSort } from "./use-chat-tree-sort";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTitleUpdates } from "./chat-title-events";
@@ -175,6 +188,8 @@ export function ChatSidebarTree() {
   const viewMode: ChatSidebarViewMode =
     workspaceViewMode ?? globalChatSettings?.sidebarViewMode ?? "tree";
   const workspaceId = workspace?.id;
+  // Sort preferences gate the tree so it never renders in a stale order first.
+  const { isPending: isSortPending } = useChatTreeSort(workspaceId ?? "");
 
   return (
     <ChatSidebar>
@@ -183,7 +198,7 @@ export function ChatSidebarTree() {
           <p className="px-3 py-3 text-xs text-muted-foreground">Select a workspace.</p>
         ) : workspaceState === "loading" ? null : viewMode === "activity" ? (
           <ChatSidebarActivity key={`activity:${workspaceId}`} workspaceId={workspaceId} />
-        ) : (
+        ) : isSortPending ? null : (
           <ChatSidebarTreeInner
             key={workspaceId}
             workspaceId={workspaceId}
@@ -196,15 +211,19 @@ export function ChatSidebarTree() {
 }
 
 function ChatSidebarViewModeMenu({
+  workspaceId,
   viewMode,
   onExpandAll,
   onCollapseAll,
 }: {
+  workspaceId: string;
   viewMode: ChatSidebarViewMode;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
 }) {
   const setSidebarViewMode = useWorkspaceStore((s) => s.setSidebarViewMode);
+  const { sortOrder, folderPlacement, setSortOrder, setFolderPlacement } =
+    useChatTreeSort(workspaceId);
 
   return (
     <DropdownMenu>
@@ -220,7 +239,8 @@ function ChatSidebarViewModeMenu({
       >
         <HugeiconsIcon icon={MoreHorizontalIcon} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="bottom" align="end">
+      {/* Fixed width + start alignment: the active sort label must not move the popup. */}
+      <DropdownMenuContent side="bottom" align="start" className="w-64">
         <DropdownMenuRadioGroup
           value={viewMode}
           onValueChange={(value) => {
@@ -233,6 +253,52 @@ function ChatSidebarViewModeMenu({
           <DropdownMenuRadioItem value="tree">Folder tree</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="activity">Recent activity</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {viewMode === "tree" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="flex-1">Sort</span>
+                <span className="min-w-0 truncate ps-4 text-muted-foreground text-xs">
+                  {getChatTreeSortOrderLabel(sortOrder)}
+                </span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={sortOrder}
+                  onValueChange={(value) => {
+                    if (isChatTreeSortOrder(value)) {
+                      setSortOrder(value);
+                    }
+                  }}
+                >
+                  <DropdownMenuLabel>Sort chats by</DropdownMenuLabel>
+                  {CHAT_TREE_SORT_ORDERS.map((order) => (
+                    <DropdownMenuRadioItem key={order.id} value={order.id}>
+                      {order.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={folderPlacement}
+                  onValueChange={(value) => {
+                    if (isChatTreeFolderPlacement(value)) {
+                      setFolderPlacement(value);
+                    }
+                  }}
+                >
+                  <DropdownMenuLabel>Folder placement</DropdownMenuLabel>
+                  {CHAT_TREE_FOLDER_PLACEMENTS.map((placement) => (
+                    <DropdownMenuRadioItem key={placement.id} value={placement.id}>
+                      {placement.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </>
+        ) : null}
         {onExpandAll && onCollapseAll ? (
           <>
             <DropdownMenuSeparator />
@@ -283,6 +349,9 @@ function ChatSidebarTreeInner({
   );
   const [searchOpen, setSearchOpen] = React.useState(false);
   const selectedItemIdSet = React.useMemo(() => new Set(selectedItems), [selectedItems]);
+
+  const { sortOrder, folderPlacement } = useChatTreeSort(workspaceId);
+  const sortRef = React.useRef({ sortOrder, folderPlacement });
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -423,16 +492,25 @@ function ChatSidebarTreeInner({
       getChildrenWithData: async (itemId) => {
         const parentFolderId = itemId === ROOT_ITEM_ID ? null : itemId.slice("folder:".length);
         const slice = await chatTreeApi.getChildren(workspaceId, parentFolderId);
-        return [
+        const entries: ChatTreeSortEntry<{ id: string; data: ChatTreeNodeData }>[] = [
           ...slice.folders.map((folder) => ({
-            id: `folder:${folder.id}`,
-            data: { kind: "folder" as const, folder },
+            isFolder: true,
+            key: folder,
+            value: { id: `folder:${folder.id}`, data: { kind: "folder" as const, folder } },
           })),
           ...slice.chats.map((chat) => ({
-            id: `chat:${chat.id}`,
-            data: { kind: "chat" as const, chat },
+            isFolder: false,
+            key: { ...chat, name: chat.title },
+            value: { id: `chat:${chat.id}`, data: { kind: "chat" as const, chat } },
           })),
         ];
+
+        // Read through a ref: the loader is memoized by the tree, sort changes rebuild it below.
+        return sortChatTreeEntries(
+          entries,
+          sortRef.current.sortOrder,
+          sortRef.current.folderPlacement,
+        );
       },
     },
   });
@@ -461,6 +539,18 @@ function ChatSidebarTreeInner({
       }),
     [invalidateTree, tree, workspaceId],
   );
+
+  // Children are ordered as they load, so a sort change has to reload the loaded levels.
+  React.useEffect(() => {
+    const applied = sortRef.current;
+    sortRef.current = { sortOrder, folderPlacement };
+    if (applied.sortOrder === sortOrder && applied.folderPlacement === folderPlacement) {
+      return;
+    }
+
+    invalidateTree();
+    tree.rebuildTree();
+  }, [folderPlacement, invalidateTree, sortOrder, tree]);
 
   const openDeleteDialog = React.useCallback((itemIds: readonly string[]) => {
     const itemRefs = itemIds
@@ -605,6 +695,7 @@ function ChatSidebarTreeInner({
             <HugeiconsIcon icon={FolderAddIcon} />
           </Button>
           <ChatSidebarViewModeMenu
+            workspaceId={workspaceId}
             viewMode="tree"
             onExpandAll={() => {
               void tree.expandAll();
@@ -1010,7 +1101,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
           >
             <HugeiconsIcon icon={ChatAdd01Icon} />
           </Button>
-          <ChatSidebarViewModeMenu viewMode="activity" />
+          <ChatSidebarViewModeMenu workspaceId={workspaceId} viewMode="activity" />
         </ChatSidebarSectionHeader>
 
         {sections.length === 0 ? (

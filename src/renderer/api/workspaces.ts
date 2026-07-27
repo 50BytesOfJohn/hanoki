@@ -38,6 +38,15 @@ export const workspaceApi = {
     return window.electronAPI.updateWorkspace(parsedWorkspaceId.value, input);
   },
 
+  getSettings(workspaceId: string) {
+    const parsedWorkspaceId = parseWorkspaceId(workspaceId);
+    if (!parsedWorkspaceId.ok) {
+      throw new Error(parsedWorkspaceId.error);
+    }
+
+    return window.electronAPI.getWorkspaceSettings(parsedWorkspaceId.value);
+  },
+
   updateSettings(workspaceId: string, settingsPatch: WorkspaceSettingsPatch) {
     const parsedWorkspaceId = parseWorkspaceId(workspaceId);
     if (!parsedWorkspaceId.ok) {

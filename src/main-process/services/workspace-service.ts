@@ -26,6 +26,7 @@ export interface WorkspaceService {
   createWorkspace(name: string): WorkspaceInfo;
   setActiveWorkspace(id: string): ActiveWorkspaceInfo;
   updateWorkspace(id: string, input: WorkspaceUpdateInput): WorkspaceInfo;
+  getWorkspaceSettings(id: string): WorkspaceSettings;
   updateWorkspaceSettings(id: string, settingsPatch: WorkspaceSettingsPatch): WorkspaceSettings;
 }
 
@@ -154,6 +155,10 @@ export function createWorkspaceService(): WorkspaceService {
           color: input.color,
         }),
       );
+    },
+
+    getWorkspaceSettings(id: string): WorkspaceSettings {
+      return getWorkspaceSettings(id);
     },
 
     updateWorkspaceSettings(id: string, settingsPatch: WorkspaceSettingsPatch): WorkspaceSettings {

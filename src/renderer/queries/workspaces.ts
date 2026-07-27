@@ -15,6 +15,14 @@ export const activeWorkspaceQueryOptions = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
+export function workspaceSettingsQueryOptions(workspaceId: string) {
+  return queryOptions({
+    queryKey: queryKeys.workspaces.settings(workspaceId),
+    queryFn: () => workspaceApi.getSettings(workspaceId),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
 export function findWorkspaceById(
   workspaces: readonly WorkspaceInfo[] | undefined,
   workspaceId: string | null | undefined,
