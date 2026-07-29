@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/menu";
 import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
+import { ChatActivityPanel } from "./chat-activity-panel";
 import { useChatSidebar } from "./chat-sidebar";
 import { ChatTabsBar, useChatTabsPosition } from "./chat-tabs";
 import { useWorkspaceStore } from "../workspace/store";
@@ -101,17 +102,20 @@ export function ChatToolbar() {
 
       {showTopTabs ? <ChatTabsBar /> : null}
 
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className="text-muted-foreground"
-        aria-label="Settings"
-        onClick={() => {
-          void navigate({ to: "/settings" });
-        }}
-      >
-        <HugeiconsIcon icon={Setting07Icon} className="size-4!" />
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <ChatActivityPanel />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
+          aria-label="Settings"
+          onClick={() => {
+            void navigate({ to: "/settings" });
+          }}
+        >
+          <HugeiconsIcon icon={Setting07Icon} className="size-4!" />
+        </Button>
+      </div>
     </div>
   );
 }

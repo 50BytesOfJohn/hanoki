@@ -21,6 +21,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     tabs: {
       position: "top",
     },
+    activityPanel: {
+      enabled: true,
+    },
   },
   sumi: {
     promptActions: {

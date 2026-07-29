@@ -111,6 +111,7 @@ export interface GlobalChatSettings {
   formSubmitBehavior: ChatFormSubmitBehavior;
   sidebarViewMode: ChatSidebarViewMode;
   tabsPosition: ChatTabsPosition;
+  activityPanelEnabled: boolean;
 }
 
 export interface GlobalChatSettingsUpdateInput {
@@ -118,6 +119,7 @@ export interface GlobalChatSettingsUpdateInput {
   formSubmitBehavior?: ChatFormSubmitBehavior;
   sidebarViewMode?: ChatSidebarViewMode;
   tabsPosition?: ChatTabsPosition;
+  activityPanelEnabled?: boolean;
 }
 
 export interface SumiModelReference {

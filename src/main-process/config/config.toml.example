@@ -18,6 +18,10 @@ stickyPosition = true
 # Enter submits immediately. Use "mod-enter" to require Cmd/Ctrl + Enter.
 submitBehavior = "enter"
 
+[chat.activityPanel]
+# Show the working / unread chat counters in the window toolbar.
+enabled = true
+
 [sumi.promptActions]
 initialized = false
 enabled = false

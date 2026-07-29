@@ -48,6 +48,7 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
     "formSubmitBehavior",
     "sidebarViewMode",
     "tabsPosition",
+    "activityPanelEnabled",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -80,6 +81,13 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
       throw AppError.badRequest('tabsPosition must be "top" or "sidebar".');
     }
     parsedInput.tabsPosition = inputRecord.tabsPosition;
+  }
+
+  if (inputRecord.activityPanelEnabled !== undefined) {
+    if (typeof inputRecord.activityPanelEnabled !== "boolean") {
+      throw AppError.badRequest("activityPanelEnabled must be a boolean.");
+    }
+    parsedInput.activityPanelEnabled = inputRecord.activityPanelEnabled;
   }
 
   return [parsedInput];

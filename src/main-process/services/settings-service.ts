@@ -21,6 +21,7 @@ const DEFAULT_PROMPT_STICKY_POSITION = DEFAULT_CONFIG.chat.prompt.stickyPosition
 const DEFAULT_FORM_SUBMIT_BEHAVIOR = DEFAULT_CONFIG.chat.form.submitBehavior;
 const DEFAULT_SIDEBAR_VIEW_MODE = DEFAULT_CONFIG.chat.sidebar.viewMode;
 const DEFAULT_TABS_POSITION = DEFAULT_CONFIG.chat.tabs.position;
+const DEFAULT_ACTIVITY_PANEL_ENABLED = DEFAULT_CONFIG.chat.activityPanel.enabled;
 const DEFAULT_SUMI_OPENROUTER_MODEL_ID = "~anthropic/claude-haiku-latest";
 
 export interface SettingsService {
@@ -42,6 +43,7 @@ export function createSettingsService(): SettingsService {
         formSubmitBehavior: input.formSubmitBehavior ?? current.formSubmitBehavior,
         sidebarViewMode: input.sidebarViewMode ?? current.sidebarViewMode,
         tabsPosition: input.tabsPosition ?? current.tabsPosition,
+        activityPanelEnabled: input.activityPanelEnabled ?? current.activityPanelEnabled,
       };
 
       updateConfig({
@@ -57,6 +59,9 @@ export function createSettingsService(): SettingsService {
           },
           tabs: {
             position: next.tabsPosition,
+          },
+          activityPanel: {
+            enabled: next.activityPanelEnabled,
           },
         },
       });
@@ -219,6 +224,10 @@ function readGlobalChatSettings(): GlobalChatSettings {
     formSubmitBehavior: resolveChatFormSubmitBehavior(config.chat.form.submitBehavior),
     sidebarViewMode: resolveChatSidebarViewMode(config.chat.sidebar?.viewMode),
     tabsPosition: resolveChatTabsPosition(config.chat.tabs?.position),
+    activityPanelEnabled:
+      typeof config.chat.activityPanel?.enabled === "boolean"
+        ? config.chat.activityPanel.enabled
+        : DEFAULT_ACTIVITY_PANEL_ENABLED,
   };
 }
 

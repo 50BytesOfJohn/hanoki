@@ -87,6 +87,7 @@ function GeneralSettings() {
   const submitBehavior = globalChatSettings?.formSubmitBehavior ?? "enter";
   const sidebarViewMode = globalChatSettings?.sidebarViewMode ?? "tree";
   const tabsPosition = globalChatSettings?.tabsPosition ?? "top";
+  const activityPanelEnabled = globalChatSettings?.activityPanelEnabled ?? true;
 
   function updateSettings(input: GlobalChatSettingsUpdateInput) {
     setUpdateError(null);
@@ -208,6 +209,21 @@ function GeneralSettings() {
                 </SelectGroup>
               </SelectContent>
             </Select>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Activity">
+        <SettingsRow
+          title="Show the activity panel"
+          description="Counters in the title bar for chats that are working and replies you have not read yet."
+          control={
+            <Switch
+              aria-label="Show the activity panel"
+              checked={activityPanelEnabled}
+              disabled={isPending}
+              onCheckedChange={(checked) => updateSettings({ activityPanelEnabled: checked })}
+            />
           }
         />
       </SettingsSection>

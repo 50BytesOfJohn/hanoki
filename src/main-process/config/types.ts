@@ -37,6 +37,9 @@ export interface AppConfig {
     tabs: {
       position: ChatTabsPosition;
     };
+    activityPanel: {
+      enabled: boolean;
+    };
   };
   sumi: {
     promptActions: {
