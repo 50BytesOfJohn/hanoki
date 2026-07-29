@@ -922,7 +922,7 @@ function ChatSidebarTreeInner({
 
 /* ── Activity view ── */
 
-function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
+export function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
   const chats: ChatInfo[] = [];
 
   const walk = (folders: ChatTreeFolderNode[], folderChats: ChatInfo[]) => {

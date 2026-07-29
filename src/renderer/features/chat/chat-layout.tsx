@@ -7,7 +7,6 @@ import {
   PointerSensor,
   pointerWithin,
   useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -53,8 +52,10 @@ import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 import type { ChatLayoutNode, ChatPaneState, ChatPaneView, TabStateItem } from "@shared/ipc";
-import type { PaneDropPosition } from "@/features/workspace/store/layout-tree";
+import { findPaneByChatId, type PaneDropPosition } from "@/features/workspace/store/layout-tree";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
+import { PaneDropOverlay, type PaneDropIntent } from "./chat-pane-drop-overlay";
+import { ChatNewTabPage } from "./chat-new-tab-page";
 import { ChatPaneProvider } from "./chat-pane-context";
 import { ActiveChatView } from "./chat-page";
 import { ChatGraphPage } from "./modules/graph/chat-graph-page";
@@ -62,10 +63,22 @@ import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-pa
 import { ChatSettingsPage } from "./chat-settings-page";
 import { generateSumiChatTitle } from "./sumi-title-generation";
 
-const DROP_ZONES: PaneDropPosition[] = ["center", "left", "right", "top", "bottom"];
+export type NativeChatDrag = { kind: "unsupported" } | { kind: "chat"; chatId: string };
 
-function hasChatDrag(event: React.DragEvent | DragEvent): boolean {
-  return event.dataTransfer?.types.includes(CHAT_DRAG_FORMAT) ?? false;
+// Reads the sidebar's drag payload at `dragstart`, while the DataTransfer is still readable.
+// A folder-only drag carries the format with an empty chat list — panes can't host folders, so
+// it gets a "not here" overlay instead of drop zones.
+function readChatDrag(event: DragEvent): NativeChatDrag | null {
+  const data = event.dataTransfer;
+  if (!data?.types.includes(CHAT_DRAG_FORMAT)) return null;
+  let chatIds: string[] = [];
+  try {
+    chatIds = JSON.parse(data.getData(CHAT_DRAG_FORMAT) || "[]");
+  } catch {
+    chatIds = [];
+  }
+  // Only the first chat is dropped, matching `handleChatDrop`.
+  return chatIds[0] ? { kind: "chat", chatId: chatIds[0] } : { kind: "unsupported" };
 }
 
 export function ChatLayout() {
@@ -84,7 +97,7 @@ function ChatLayoutFrame() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const movePane = useWorkspaceStore((state) => state.movePane);
   const [draggedPaneId, setDraggedPaneId] = React.useState<string | null>(null);
-  const [nativeChatDragging, setNativeChatDragging] = React.useState(false);
+  const [nativeDrag, setNativeDrag] = React.useState<NativeChatDrag | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor),
@@ -96,8 +109,8 @@ function ChatLayoutFrame() {
   // `dragend`/`drop` reset in capture, since the drop handler stops propagation and the
   // drag source can re-render before its bubbling `dragend` is delivered.
   React.useEffect(() => {
-    const onStart = (event: DragEvent) => setNativeChatDragging(hasChatDrag(event));
-    const onStop = () => setNativeChatDragging(false);
+    const onStart = (event: DragEvent) => setNativeDrag(readChatDrag(event));
+    const onStop = () => setNativeDrag(null);
     window.addEventListener("dragstart", onStart);
     window.addEventListener("dragend", onStop, true);
     window.addEventListener("drop", onStop, true);
@@ -147,23 +160,25 @@ function ChatLayoutFrame() {
                       tab={tab}
                       node={tab.layout}
                       draggedPaneId={isActive ? draggedPaneId : null}
-                      nativeChatDragging={isActive && nativeChatDragging}
+                      nativeDrag={isActive ? nativeDrag : null}
                     />
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-lg border border-border bg-surface text-sm text-muted-foreground">
-              Open a chat from the sidebar.
-            </div>
+            <ChatNewTabPage drag={nativeDrag} />
           )}
         </main>
       </div>
       <DragOverlay dropAnimation={null}>
         {draggedPaneId ? (
-          <div className="rounded-md border border-border bg-surface-secondary px-3 py-1.5 text-xs font-medium shadow-lg">
-            Move chat pane
+          <div className="flex cursor-grabbing items-center gap-2 rounded-lg bg-surface-secondary/90 px-2.5 py-1.5 text-[11px] font-medium shadow-2xl ring-1 ring-border backdrop-blur-md">
+            <span className="grid h-3.5 w-4.5 grid-cols-2 gap-[2px]">
+              <span className="rounded-[1.5px] bg-focus" />
+              <span className="rounded-[1.5px] bg-foreground/20" />
+            </span>
+            Moving pane
           </div>
         ) : null}
       </DragOverlay>
@@ -175,23 +190,16 @@ function PaneTree({
   tab,
   node,
   draggedPaneId,
-  nativeChatDragging,
+  nativeDrag,
 }: {
   tab: TabStateItem;
   node: ChatLayoutNode;
   draggedPaneId: string | null;
-  nativeChatDragging: boolean;
+  nativeDrag: NativeChatDrag | null;
 }) {
   const resizeSplit = useWorkspaceStore((state) => state.resizeSplit);
   if (node.type === "pane") {
-    return (
-      <ChatPane
-        tab={tab}
-        pane={node}
-        draggedPaneId={draggedPaneId}
-        nativeChatDragging={nativeChatDragging}
-      />
-    );
+    return <ChatPane tab={tab} pane={node} draggedPaneId={draggedPaneId} nativeDrag={nativeDrag} />;
   }
 
   const defaultLayout = Object.fromEntries(
@@ -221,7 +229,7 @@ function PaneTree({
               tab={tab}
               node={child}
               draggedPaneId={draggedPaneId}
-              nativeChatDragging={nativeChatDragging}
+              nativeDrag={nativeDrag}
             />
           </ResizablePanel>
         </React.Fragment>
@@ -234,12 +242,12 @@ function ChatPane({
   tab,
   pane,
   draggedPaneId,
-  nativeChatDragging,
+  nativeDrag,
 }: {
   tab: TabStateItem;
   pane: ChatPaneState;
   draggedPaneId: string | null;
-  nativeChatDragging: boolean;
+  nativeDrag: NativeChatDrag | null;
 }) {
   const focusPane = useWorkspaceStore((state) => state.focusPane);
   const splitPane = useWorkspaceStore((state) => state.splitPane);
@@ -254,7 +262,17 @@ function ChatPane({
     data: { type: "pane", paneId: pane.id },
   });
   const isFocused = tab.focusedPaneId === pane.id;
-  const showDropZones = nativeChatDragging || draggedPaneId !== null;
+  const dropIntent = React.useMemo<PaneDropIntent | null>(() => {
+    // A pane is never its own drop target.
+    if (draggedPaneId !== null) return draggedPaneId === pane.id ? null : "pane";
+    if (!nativeDrag) return null;
+    if (nativeDrag.kind === "unsupported") return "unsupported";
+    // A tab can't hold the same chat twice — `splitPane` would just refocus the existing pane,
+    // so point at that pane instead of promising a split.
+    const existing = findPaneByChatId(tab.layout, nativeDrag.chatId);
+    if (!existing) return "chat";
+    return existing.id === pane.id ? "already-here" : "already-open";
+  }, [draggedPaneId, nativeDrag, pane.id, tab.layout]);
   const paneContextValue = React.useMemo(
     () => ({ tabId: tab.id, paneId: pane.id, chatId: pane.chatId }),
     [pane.chatId, pane.id, tab.id],
@@ -300,16 +318,12 @@ function ChatPane({
             onClose={() => useWorkspaceStore.getState().closePane(tab.id, pane.id)}
           />
           <PaneContent pane={pane} />
-          {DROP_ZONES.map((position) => (
-            <PaneDropZone
-              key={position}
-              paneId={pane.id}
-              position={position}
-              visible={showDropZones}
-              disabled={draggedPaneId === pane.id}
-              onNativeDrop={handleChatDrop}
-            />
-          ))}
+          <PaneDropOverlay
+            paneId={pane.id}
+            intent={dropIntent}
+            isFocused={isFocused}
+            onDropChat={handleChatDrop}
+          />
         </section>
       </ChatScrollActionsProvider>
     </ChatPaneProvider>
@@ -323,66 +337,6 @@ function PaneContent({ pane }: { pane: ChatPaneState }) {
   if (pane.view === "/chat/pinned-branches") return <PinnedBranchesPage chatId={pane.chatId} />;
   if (pane.view === "/chat/settings") return <ChatSettingsPage chatId={pane.chatId} />;
   return <ActiveChatView chatId={pane.chatId} />;
-}
-
-function PaneDropZone({
-  paneId,
-  position,
-  visible,
-  disabled,
-  onNativeDrop,
-}: {
-  paneId: string;
-  position: PaneDropPosition;
-  visible: boolean;
-  disabled: boolean;
-  onNativeDrop: (event: React.DragEvent, position: PaneDropPosition) => void;
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `drop:${paneId}:${position}`,
-    disabled: disabled || !visible,
-  });
-  // `isOver` only tracks dnd-kit pane drags, and `:hover` is frozen during a native
-  // drag, so native chat drags need their own hover state.
-  const [isNativeOver, setIsNativeOver] = React.useState(false);
-  const enabled = visible && !disabled;
-  const active = enabled && (isOver || isNativeOver);
-  return (
-    <div
-      ref={setNodeRef}
-      aria-hidden="true"
-      className={cn(
-        "absolute rounded-md border border-dashed transition-[background-color,border-color,opacity] duration-100",
-        zoneClassName(position),
-        enabled ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-        active
-          ? "border-solid border-focus/60 bg-focus/20"
-          : "border-focus/25 bg-surface/50 hover:border-focus/40 hover:bg-focus/10",
-      )}
-      onDragEnter={(event) => {
-        if (hasChatDrag(event)) setIsNativeOver(true);
-      }}
-      onDragOver={(event) => {
-        if (!hasChatDrag(event)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-        setIsNativeOver(true);
-      }}
-      onDragLeave={() => setIsNativeOver(false)}
-      onDrop={(event) => {
-        setIsNativeOver(false);
-        onNativeDrop(event, position);
-      }}
-    />
-  );
-}
-
-function zoneClassName(position: PaneDropPosition): string {
-  if (position === "center") return "inset-[24%]";
-  if (position === "left") return "inset-y-[18%] left-2 w-[22%]";
-  if (position === "right") return "inset-y-[18%] right-2 w-[22%]";
-  if (position === "top") return "inset-x-[24%] top-2 h-[22%]";
-  return "inset-x-[24%] bottom-2 h-[22%]";
 }
 
 function parseDropId(id: string): { paneId: string; position: PaneDropPosition } | null {

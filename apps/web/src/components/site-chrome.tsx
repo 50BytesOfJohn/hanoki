@@ -129,7 +129,7 @@ export function Nav() {
 
   return (
     <header id="top" className="site-nav" data-scrolled={scrolled}>
-      <div className="washi drop-in mx-auto grid w-[min(1120px,calc(100%-1.5rem))] grid-cols-[auto_1fr_auto] items-center rounded-full py-2 pl-5 pr-2.5">
+      <div className="washi drop-in mx-auto grid w-[min(1120px,calc(100%-1.5rem))] grid-cols-[1fr_auto_1fr] items-center rounded-full py-2 pl-5 pr-2.5">
         <Wordmark height="h-6" />
         <nav
           aria-label="Main"
@@ -148,7 +148,7 @@ export function Nav() {
             Download
           </Link>
         </nav>
-        <div className="col-start-3 flex items-center gap-1.5">
+        <div className="flex items-center justify-end gap-1.5">
           <ThemeToggle />
           <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
             <a href={GITHUB} target="_blank" rel="noreferrer">

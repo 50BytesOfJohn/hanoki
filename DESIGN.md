@@ -80,6 +80,12 @@ ghost-styled fields — no border or background until hovered.
 - Radius: 6px base (`--radius`), 8px fields; `rounded-lg` for panels only.
 - Motion: 100ms for hover/color, 150ms for layout (sidebar collapse). Never
   animate anything the user waits on; `prefers-reduced-motion` disables all.
+- Entrances/exits use `ease-out-quint` (`cubic-bezier(0.23, 1, 0.32, 1)`) —
+  the element is essentially in place by the time the eye arrives. Built-in
+  `ease-out` is too weak to read as deliberate; `ease-in` is never correct on UI.
+- Ambient motion (the new tab page wash) is the one exception to the duration
+  budget: transform-only, tens of seconds, and `animation-name: none` under
+  reduced motion — the global duration clamp would otherwise strobe it.
 
 ## Rules of thumb
 

@@ -105,6 +105,12 @@
   --motion-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
+/* Entrances and exits: strong ease-out, so the element is basically there by the
+   time the eye arrives. Built-in `ease-out` is too weak to read as deliberate. */
+@theme {
+  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 /*
  * Tailwind theme: maps the Hanoki palette above onto utility tokens.
  * shadcn semantics: `primary` carries the brand accent, `accent` is the
@@ -232,7 +238,38 @@
   box-shadow: 0 0 0 1px var(--focus);
 }
 
+/* Ambient wash behind the new tab page. Transform-only so it stays on the
+   compositor; the softness comes from the gradient itself, never `filter: blur()`. */
+@keyframes hanoki-drift {
+  from {
+    transform: translate3d(-3%, 4%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(4%, -5%, 0) scale(1.18);
+  }
+}
+
 @layer utilities {
+  .ambient-drift {
+    animation: hanoki-drift 26s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+
+  .ambient-drift-reverse {
+    animation: hanoki-drift 38s ease-in-out infinite alternate-reverse;
+    will-change: transform;
+  }
+
+  /* The global reduced-motion rule only clamps duration — on an infinite
+     alternating animation that strobes. Kill the animation itself. */
+  @media (prefers-reduced-motion: reduce) {
+    .ambient-drift,
+    .ambient-drift-reverse {
+      animation-name: none;
+    }
+  }
+
   .scrollbar {
     scrollbar-color: color-mix(in oklch, var(--scrollbar) 55%, transparent) transparent;
     scrollbar-width: thin;
