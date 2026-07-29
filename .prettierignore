@@ -1,2 +1,3 @@
 .agents/
 .claude/skills/
+src/renderer/routeTree.gen.ts

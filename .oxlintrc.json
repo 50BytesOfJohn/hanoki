@@ -9,5 +9,11 @@
     "react/react-in-jsx-scope": "off",
     "import/no-unassigned-import": "off"
   },
-  "ignorePatterns": ["node_modules/**", "dist/**", "build/**", "src/renderer/components/ui/**"]
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "src/renderer/components/ui/**",
+    "src/renderer/routeTree.gen.ts"
+  ]
 }
