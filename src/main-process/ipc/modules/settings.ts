@@ -7,6 +7,7 @@ import {
   type SumiSettings,
   type SumiSettingsUpdateInput,
 } from "@shared/ipc";
+import { syncApplicationMenu } from "../../app/application-menu";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -212,7 +213,12 @@ export function registerSettingsIpcModule(
     {
       channel: IPC_CHANNELS.settings.updateGlobalChat,
       parseArgs: parseGlobalChatSettingsUpdateInput,
-      handler: ({ services }, _event, input) => services.settings.updateGlobalChatSettings(input),
+      handler: ({ services }, _event, input) => {
+        const settings = services.settings.updateGlobalChatSettings(input);
+        // Keep the View menu's checkmarks in step with changes made in the UI.
+        syncApplicationMenu();
+        return settings;
+      },
     },
   );
 

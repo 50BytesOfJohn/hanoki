@@ -1,3 +1,5 @@
+import type { GlobalChatSettings } from "../ipc";
+
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
 export const SYSTEM_STATE_CHANNEL = "system:getState" as const;
 
@@ -21,6 +23,12 @@ export interface ProvidersStartupModelSyncCompletedEvent {
   failedProviders: number;
 }
 
+/** Emitted when global chat settings change outside the renderer, e.g. from the View menu. */
+export interface GlobalChatSettingsUpdatedEvent {
+  type: "settings:global-chat-updated";
+  settings: GlobalChatSettings;
+}
+
 export interface ChatTitleUpdatedEvent {
   type: "chat:title-updated";
   chatId: string;
@@ -32,6 +40,7 @@ export type SystemEvent =
   | AiServerEvent
   | ProviderModelsSyncCompletedEvent
   | ProvidersStartupModelSyncCompletedEvent
+  | GlobalChatSettingsUpdatedEvent
   | ChatTitleUpdatedEvent;
 
 export interface AiServerStateSnapshot {

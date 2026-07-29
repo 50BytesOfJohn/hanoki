@@ -18,6 +18,11 @@ export function SystemEventListener() {
         return;
       }
 
+      if (event.type === "settings:global-chat-updated") {
+        queryClient.setQueryData(queryKeys.settings.globalChat(), event.settings);
+        return;
+      }
+
       if (event.type !== "providers:model-sync:completed") {
         return;
       }

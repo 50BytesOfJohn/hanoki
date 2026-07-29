@@ -248,7 +248,7 @@ function ActivityFooter({
           updateSettings.mutate({ activityPanelEnabled: false });
           toastManager.add({
             title: "Activity panel hidden",
-            description: "Bring it back from Settings → General → Activity.",
+            description: "Bring it back from View → Show Activity Panel, or Settings → General.",
           });
         }}
       >
