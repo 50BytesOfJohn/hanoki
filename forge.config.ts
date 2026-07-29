@@ -128,6 +128,20 @@ const renamedArtifactPath = (makeResult: ForgeMakeResult, artifactPath: string) 
   return path.join(artifactDir, `${releaseName}${artifactExtension}`);
 };
 
+// `@electron-forge/publisher-github` sends an explicit `content-length` header
+// next to the Buffer body, and `fetch` appends its own value derived from that
+// body, yielding a duplicated header ("126273725, 126273725"). Node's bundled
+// undici tolerates it, but the Forge CLI installs undici v7 as the global
+// dispatcher (`@electron/get`'s `initializeProxy`) and v7 rejects the value with
+// "invalid content-length header", failing every asset upload. Drop the
+// redundant header so `fetch` is the only thing that sets it.
+const fetchWithoutExplicitContentLength: typeof fetch = (input, init) => {
+  const headers = new Headers(init?.headers);
+  headers.delete("content-length");
+
+  return fetch(input, { ...init, headers });
+};
+
 const pathExists = async (targetPath: string) => {
   try {
     await access(targetPath);
@@ -243,6 +257,9 @@ const config: ForgeConfig = {
         prerelease: isPrereleaseTag,
         generateReleaseNotes: true,
         force: true,
+        octokitOptions: {
+          request: { fetch: fetchWithoutExplicitContentLength },
+        },
       },
     },
   ],
