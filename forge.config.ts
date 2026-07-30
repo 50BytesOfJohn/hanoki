@@ -21,9 +21,15 @@ const MACOS_ICON_COMPOSER_PATH = path.resolve(__dirname, "assets/icons/icon-comp
 const WINDOWS_ICON_PATH = `${ICON_BASE_PATH}.ico`;
 const LINUX_ICON_PATH = `${ICON_BASE_PATH}.png`;
 const APPLE_CODESIGN_IDENTITY = process.env.APPLE_CODESIGN_IDENTITY;
-const APPLE_ID = process.env.APPLE_ID;
-const APPLE_APP_SPECIFIC_PASSWORD = process.env.APPLE_APP_SPECIFIC_PASSWORD;
-const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID;
+// Keychain holding the Developer ID identity. Only set in CI, where the
+// certificate is imported into a throwaway keychain instead of the login one.
+const APPLE_KEYCHAIN = process.env.APPLE_KEYCHAIN;
+// App Store Connect API key (path to the `.p8`, its key ID and issuer UUID).
+// Preferred over an Apple ID + app-specific password: it does not expire and
+// never prompts for 2FA, which is what makes it usable from CI.
+const APPLE_API_KEY = process.env.APPLE_API_KEY;
+const APPLE_API_KEY_ID = process.env.APPLE_API_KEY_ID;
+const APPLE_API_ISSUER = process.env.APPLE_API_ISSUER;
 const isPrereleaseTag = (process.env.GITHUB_REF_NAME ?? "").includes("-");
 // Derive the GitHub repository from the Actions-provided `GITHUB_REPOSITORY`
 // ("owner/name"), falling back to the canonical repository when run locally.
@@ -33,8 +39,7 @@ const [GITHUB_REPOSITORY_OWNER, GITHUB_REPOSITORY_NAME] = (
 const execFile = promisify(execFileCallback);
 const hasMacDeveloperSigningIdentity = Boolean(APPLE_CODESIGN_IDENTITY);
 const shouldNotarizeMacApp =
-  hasMacDeveloperSigningIdentity &&
-  Boolean(APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID);
+  hasMacDeveloperSigningIdentity && Boolean(APPLE_API_KEY && APPLE_API_KEY_ID && APPLE_API_ISSUER);
 
 const findActoolPath = () => {
   if (process.platform !== "darwin") {
@@ -64,18 +69,21 @@ const packagerIcon =
       : MACOS_LEGACY_ICON_PATH
     : ICON_BASE_PATH;
 
+// `@electron/osx-sign` already defaults to the hardened runtime and picks the
+// right Chromium entitlements per helper binary (renderer/GPU/plugin), so the
+// identity is the only thing worth configuring here.
 const macPackagerConfig = hasMacDeveloperSigningIdentity
   ? {
       osxSign: {
-        hardenedRuntime: true,
         identity: APPLE_CODESIGN_IDENTITY as string,
+        ...(APPLE_KEYCHAIN ? { keychain: APPLE_KEYCHAIN } : {}),
       },
       ...(shouldNotarizeMacApp
         ? {
             osxNotarize: {
-              appleId: APPLE_ID as string,
-              appleIdPassword: APPLE_APP_SPECIFIC_PASSWORD as string,
-              teamId: APPLE_TEAM_ID as string,
+              appleApiKey: APPLE_API_KEY as string,
+              appleApiKeyId: APPLE_API_KEY_ID as string,
+              appleApiIssuer: APPLE_API_ISSUER as string,
             },
           }
         : {}),
@@ -161,6 +169,14 @@ const ensureMacAppSignature = async (appPath: string) => {
   }
 
   await runCodesign(["--verify", "--deep", "--strict", "--verbose=2", appPath]);
+
+  // A valid signature is not enough to launch without a warning: Gatekeeper
+  // also wants a Developer ID identity and a stapled notarization ticket. This
+  // assessment is the only check that proves both, so fail the build here
+  // rather than let users discover it.
+  if (shouldNotarizeMacApp) {
+    await execFile("spctl", ["--assess", "--type", "execute", "--verbose=2", appPath]);
+  }
 };
 
 const config: ForgeConfig = {
