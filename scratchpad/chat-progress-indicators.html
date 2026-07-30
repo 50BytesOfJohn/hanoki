@@ -1,0 +1,1500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hanoki — In-progress chat indicators</title>
+    <style>
+      @font-face {
+        font-family: "Geist";
+        src: url("../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2")
+          format("woff2");
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: dark;
+        --background: oklch(17% 0.004 140);
+        --background-secondary: oklch(15% 0.004 140);
+        --foreground: oklch(92% 0.005 140);
+        --muted: oklch(64% 0.01 140);
+        --surface: oklch(20% 0.0045 140);
+        --surface-secondary: oklch(23% 0.005 140);
+        --surface-tertiary: oklch(26.5% 0.006 140);
+        --overlay: oklch(22% 0.005 140);
+        --border: oklch(27.5% 0.006 140);
+        --separator: oklch(24% 0.005 140);
+        --hover: oklch(26% 0.006 140);
+        --accent: oklch(74% 0.1 150);
+        --accent-soft: oklch(74% 0.1 150 / 14%);
+        --accent-soft-hover: oklch(74% 0.1 150 / 20%);
+        --focus: oklch(70% 0.09 150);
+        --radius: 6px;
+        --motion-ease: cubic-bezier(0.23, 1, 0.32, 1);
+        --preview-speed: 1;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-width: 880px;
+        min-height: 100%;
+        background: var(--background-secondary);
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          radial-gradient(
+            circle at 18% 8%,
+            color-mix(in oklch, var(--accent) 5%, transparent),
+            transparent 25rem
+          ),
+          var(--background-secondary);
+        color: var(--foreground);
+        font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid color-mix(in oklch, var(--focus) 70%, transparent);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 56px 0 72px;
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: color-mix(in oklch, var(--accent) 78%, var(--muted));
+        font-size: 10px;
+        font-weight: 650;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin: 0;
+        font-size: clamp(30px, 4vw, 48px);
+        font-weight: 570;
+        letter-spacing: -0.045em;
+        line-height: 1.04;
+      }
+
+      .lede {
+        max-width: 690px;
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 30px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: color-mix(in oklch, var(--surface) 92%, transparent);
+        box-shadow: 0 20px 60px oklch(0% 0 0 / 16%);
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .control {
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 540;
+        transition:
+          color 100ms ease,
+          background 100ms ease,
+          border-color 100ms ease;
+      }
+
+      .control:hover {
+        background: var(--hover);
+        color: var(--foreground);
+      }
+
+      .control[aria-pressed="true"] {
+        border-color: color-mix(in oklch, var(--accent) 12%, var(--border));
+        background: var(--accent-soft);
+        color: color-mix(in oklch, var(--accent) 82%, var(--foreground));
+      }
+
+      .toolbar-note {
+        padding-right: 8px;
+        color: color-mix(in oklch, var(--muted) 78%, transparent);
+        font-size: 11px;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin: 52px 0 18px;
+      }
+
+      .section-heading h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 590;
+        letter-spacing: -0.025em;
+      }
+
+      .section-heading p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .concept-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .concept-card {
+        position: relative;
+        overflow: hidden;
+        min-width: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        transition:
+          transform 150ms var(--motion-ease),
+          border-color 150ms ease,
+          background 150ms ease;
+      }
+
+      .concept-card::before {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(
+          135deg,
+          color-mix(in oklch, var(--accent) 3%, transparent),
+          transparent 44%
+        );
+        content: "";
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 150ms ease;
+      }
+
+      .concept-card:hover {
+        border-color: color-mix(in oklch, var(--accent) 12%, var(--border));
+        transform: translateY(-1px);
+      }
+
+      .concept-card:hover::before {
+        opacity: 1;
+      }
+
+      .concept-card[data-shortlisted="true"] {
+        border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
+      }
+
+      .specimen {
+        position: relative;
+        display: grid;
+        min-height: 176px;
+        place-items: center;
+        border-bottom: 1px solid var(--separator);
+        background:
+          linear-gradient(var(--separator) 1px, transparent 1px),
+          linear-gradient(90deg, var(--separator) 1px, transparent 1px), var(--background);
+        background-position: center;
+        background-size: 28px 28px;
+      }
+
+      .specimen::after {
+        position: absolute;
+        inset: 16px;
+        border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+        border-radius: 8px;
+        content: "";
+        pointer-events: none;
+      }
+
+      .large-stage {
+        display: grid;
+        width: 84px;
+        height: 84px;
+        place-items: center;
+        border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+        border-radius: 18px;
+        background: color-mix(in oklch, var(--surface-secondary) 88%, transparent);
+        box-shadow:
+          0 20px 46px oklch(0% 0 0 / 22%),
+          inset 0 1px oklch(100% 0 0 / 2.5%);
+      }
+
+      .scale-large {
+        --unit: 8px;
+        --gap: 5px;
+        --indicator-size: 44px;
+        --stroke: 3px;
+        transform: scale(2.15);
+        transform-origin: center;
+      }
+
+      .card-body {
+        position: relative;
+        padding: 16px;
+      }
+
+      .card-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .card-title-row h3 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 620;
+        letter-spacing: -0.015em;
+      }
+
+      .rank {
+        color: color-mix(in oklch, var(--muted) 78%, transparent);
+        font-family: "Geist", ui-monospace, monospace;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.06em;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 9px;
+      }
+
+      .tag {
+        padding: 2px 6px;
+        border: 1px solid var(--separator);
+        border-radius: 999px;
+        background: var(--surface-secondary);
+        color: color-mix(in oklch, var(--muted) 88%, var(--foreground));
+        font-size: 10px;
+        line-height: 1.4;
+      }
+
+      .tag.recommended {
+        border-color: color-mix(in oklch, var(--accent) 20%, var(--separator));
+        background: var(--accent-soft);
+        color: color-mix(in oklch, var(--accent) 78%, var(--foreground));
+      }
+
+      .description {
+        min-height: 39px;
+        margin: 12px 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .actual-label {
+        margin-bottom: 7px;
+        color: color-mix(in oklch, var(--muted) 72%, transparent);
+        font-size: 9px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .chat-row {
+        display: flex;
+        width: 100%;
+        height: 28px;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: var(--radius);
+        background: var(--surface-tertiary);
+        color: var(--foreground);
+        cursor: default;
+        font-size: 13px;
+        text-align: left;
+      }
+
+      .icon-frame {
+        display: flex;
+        width: 14px;
+        height: 16px;
+        flex: 0 0 14px;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+      }
+
+      .chat-title {
+        min-width: 0;
+        overflow: hidden;
+        flex: 1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .activity-label {
+        color: color-mix(in oklch, var(--muted) 68%, transparent);
+        font-size: 10px;
+      }
+
+      .shortlist {
+        height: 24px;
+        margin-left: auto;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: color-mix(in oklch, var(--muted) 82%, transparent);
+        cursor: pointer;
+        font-size: 10px;
+        opacity: 0;
+        transition:
+          opacity 100ms ease,
+          color 100ms ease,
+          background 100ms ease;
+      }
+
+      .concept-card:hover .shortlist,
+      .shortlist:focus-visible,
+      .concept-card[data-shortlisted="true"] .shortlist {
+        opacity: 1;
+      }
+
+      .shortlist:hover {
+        background: var(--hover);
+        color: var(--foreground);
+      }
+
+      .concept-card[data-shortlisted="true"] .shortlist {
+        color: color-mix(in oklch, var(--accent) 80%, var(--foreground));
+      }
+
+      .notes-grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 12px;
+      }
+
+      .note-panel {
+        padding: 20px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .note-panel h3 {
+        margin: 0 0 14px;
+        font-size: 14px;
+        font-weight: 620;
+      }
+
+      .principle-list {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+      }
+
+      .principle {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        gap: 9px;
+      }
+
+      .principle-index {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        place-items: center;
+        border-radius: 5px;
+        background: var(--accent-soft);
+        color: color-mix(in oklch, var(--accent) 80%, var(--foreground));
+        font-size: 9px;
+        font-weight: 700;
+      }
+
+      .principle p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .principle strong {
+        color: color-mix(in oklch, var(--foreground) 86%, var(--muted));
+        font-weight: 580;
+      }
+
+      .sources {
+        display: grid;
+        gap: 2px;
+      }
+
+      .source {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+        min-height: 38px;
+        padding: 6px 8px;
+        border-radius: var(--radius);
+        color: color-mix(in oklch, var(--foreground) 84%, var(--muted));
+        text-decoration: none;
+        transition:
+          background 100ms ease,
+          color 100ms ease;
+      }
+
+      .source:hover {
+        background: var(--hover);
+        color: var(--foreground);
+      }
+
+      .source span {
+        overflow: hidden;
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .source small {
+        color: color-mix(in oklch, var(--muted) 68%, transparent);
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .recommendation {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 14px 16px;
+        border: 1px solid color-mix(in oklch, var(--accent) 22%, var(--border));
+        border-radius: 10px;
+        background: color-mix(in oklch, var(--accent-soft) 72%, var(--surface));
+      }
+
+      .recommendation-mark {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--accent-soft-hover);
+        color: var(--accent);
+        font-weight: 720;
+      }
+
+      .recommendation p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .recommendation strong {
+        color: var(--foreground);
+        font-weight: 620;
+      }
+
+      /* Shared indicator primitives */
+      .indicator {
+        position: relative;
+        display: inline-grid;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+        place-items: center;
+        color: var(--accent);
+        contain: layout paint;
+      }
+
+      .indicator > * {
+        will-change: transform, opacity;
+      }
+
+      /* 01 — Matrix bloom */
+      .matrix {
+        display: grid;
+        width: 12px;
+        height: 12px;
+        grid-template-columns: repeat(3, 2px);
+        grid-template-rows: repeat(3, 2px);
+        gap: 2px;
+      }
+
+      .matrix i {
+        width: 2px;
+        height: 2px;
+        border-radius: 0.6px;
+        background: currentColor;
+        opacity: 0.2;
+        animation: matrix-bloom calc(1.08s / var(--preview-speed)) var(--motion-ease) infinite;
+      }
+
+      .matrix i:nth-child(1) {
+        animation-delay: calc(-0.96s / var(--preview-speed));
+      }
+      .matrix i:nth-child(2),
+      .matrix i:nth-child(4) {
+        animation-delay: calc(-0.84s / var(--preview-speed));
+      }
+      .matrix i:nth-child(3),
+      .matrix i:nth-child(5),
+      .matrix i:nth-child(7) {
+        animation-delay: calc(-0.72s / var(--preview-speed));
+      }
+      .matrix i:nth-child(6),
+      .matrix i:nth-child(8) {
+        animation-delay: calc(-0.6s / var(--preview-speed));
+      }
+      .matrix i:nth-child(9) {
+        animation-delay: calc(-0.48s / var(--preview-speed));
+      }
+
+      @keyframes matrix-bloom {
+        0%,
+        52%,
+        100% {
+          opacity: 0.18;
+          transform: scale(0.72);
+        }
+        22% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* 02 — Branch signal */
+      .branch {
+        width: 13px;
+        height: 13px;
+        overflow: visible;
+      }
+
+      .branch path {
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .branch .branch-line {
+        opacity: 0.24;
+        stroke-width: 1.2;
+      }
+
+      .branch circle {
+        fill: currentColor;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: branch-signal calc(1.28s / var(--preview-speed)) var(--motion-ease) infinite;
+      }
+
+      .branch circle:nth-of-type(1) {
+        animation-delay: calc(-1.02s / var(--preview-speed));
+      }
+      .branch circle:nth-of-type(2) {
+        animation-delay: calc(-0.78s / var(--preview-speed));
+      }
+      .branch circle:nth-of-type(3) {
+        animation-delay: calc(-0.54s / var(--preview-speed));
+      }
+
+      @keyframes branch-signal {
+        0%,
+        58%,
+        100% {
+          opacity: 0.18;
+          transform: scale(0.65);
+        }
+        18% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* 03 — Diagonal relay */
+      .relay {
+        display: grid;
+        width: 12px;
+        height: 12px;
+        grid-template-columns: repeat(2, 4px);
+        grid-template-rows: repeat(2, 4px);
+        gap: 2px;
+      }
+
+      .relay i {
+        width: 4px;
+        height: 4px;
+        border-radius: 1px;
+        background: currentColor;
+        opacity: 0.18;
+        animation: relay calc(1.04s / var(--preview-speed)) var(--motion-ease) infinite;
+      }
+
+      .relay i:nth-child(1) {
+        animation-delay: calc(-0.78s / var(--preview-speed));
+      }
+      .relay i:nth-child(2) {
+        animation-delay: calc(-0.52s / var(--preview-speed));
+      }
+      .relay i:nth-child(3) {
+        animation-delay: calc(-0s / var(--preview-speed));
+      }
+      .relay i:nth-child(4) {
+        animation-delay: calc(-0.26s / var(--preview-speed));
+      }
+
+      @keyframes relay {
+        0%,
+        48%,
+        100% {
+          opacity: 0.16;
+          transform: scale(0.72);
+        }
+        18% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* 04 — Ink scan */
+      .scan {
+        position: relative;
+        width: 12px;
+        height: 10px;
+        overflow: hidden;
+        border-radius: 2px;
+      }
+
+      .scan::before {
+        position: absolute;
+        inset: 1px;
+        background: repeating-linear-gradient(
+          to bottom,
+          color-mix(in oklch, var(--accent) 24%, transparent) 0 1px,
+          transparent 1px 3px
+        );
+        content: "";
+      }
+
+      .scan::after {
+        position: absolute;
+        top: 0;
+        left: 1px;
+        width: 10px;
+        height: 2px;
+        border-radius: 1px;
+        background: currentColor;
+        content: "";
+        animation: ink-scan calc(1.16s / var(--preview-speed)) var(--motion-ease) infinite alternate;
+        box-shadow: 0 0 5px color-mix(in oklch, var(--accent) 34%, transparent);
+      }
+
+      @keyframes ink-scan {
+        from {
+          opacity: 0.45;
+          transform: translateY(0);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(8px);
+        }
+      }
+
+      /* 05 — Seed orbit */
+      .seed-orbit {
+        width: 13px;
+        height: 13px;
+        border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+        border-radius: 50%;
+        animation: orbit-shell calc(1.5s / var(--preview-speed)) linear infinite;
+      }
+
+      .seed-orbit i {
+        position: absolute;
+        top: -1.5px;
+        left: 4px;
+        width: 3px;
+        height: 4px;
+        border-radius: 70% 30% 70% 30%;
+        background: currentColor;
+        transform: rotate(20deg);
+      }
+
+      .seed-orbit::after {
+        position: absolute;
+        inset: 4px;
+        border-radius: 50%;
+        background: color-mix(in oklch, var(--accent) 40%, transparent);
+        content: "";
+        animation: seed-breathe calc(1.5s / var(--preview-speed)) ease-in-out infinite;
+      }
+
+      @keyframes orbit-shell {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes seed-breathe {
+        50% {
+          opacity: 0.35;
+          transform: scale(0.7);
+        }
+      }
+
+      /* 06 — Grove equalizer */
+      .grove {
+        display: flex;
+        width: 12px;
+        height: 12px;
+        align-items: end;
+        justify-content: center;
+        gap: 1.5px;
+      }
+
+      .grove i {
+        width: 1.5px;
+        height: 10px;
+        border-radius: 1px;
+        background: currentColor;
+        opacity: 0.3;
+        transform-origin: 50% 100%;
+        animation: grove calc(0.92s / var(--preview-speed)) var(--motion-ease) infinite alternate;
+      }
+
+      .grove i:nth-child(1) {
+        height: 6px;
+        animation-delay: calc(-0.64s / var(--preview-speed));
+      }
+      .grove i:nth-child(2) {
+        height: 9px;
+        animation-delay: calc(-0.42s / var(--preview-speed));
+      }
+      .grove i:nth-child(3) {
+        height: 12px;
+        animation-delay: calc(-0.2s / var(--preview-speed));
+      }
+      .grove i:nth-child(4) {
+        height: 8px;
+        animation-delay: calc(-0.54s / var(--preview-speed));
+      }
+      .grove i:nth-child(5) {
+        height: 5px;
+        animation-delay: calc(-0.3s / var(--preview-speed));
+      }
+
+      @keyframes grove {
+        from {
+          opacity: 0.22;
+          transform: scaleY(0.35);
+        }
+        to {
+          opacity: 1;
+          transform: scaleY(1);
+        }
+      }
+
+      /* 07 — Folded path */
+      .fold {
+        width: 12px;
+        height: 12px;
+        transform: rotate(45deg);
+      }
+
+      .fold i {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        border-radius: 1px;
+        background: currentColor;
+        opacity: 0.18;
+        animation: fold calc(1.12s / var(--preview-speed)) steps(1, end) infinite;
+      }
+
+      .fold i:nth-child(1) {
+        top: 0;
+        left: 0;
+      }
+      .fold i:nth-child(2) {
+        top: 0;
+        right: 0;
+        animation-delay: calc(-0.84s / var(--preview-speed));
+      }
+      .fold i:nth-child(3) {
+        right: 0;
+        bottom: 0;
+        animation-delay: calc(-0.56s / var(--preview-speed));
+      }
+      .fold i:nth-child(4) {
+        bottom: 0;
+        left: 0;
+        animation-delay: calc(-0.28s / var(--preview-speed));
+      }
+
+      @keyframes fold {
+        0%,
+        24% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        25%,
+        100% {
+          opacity: 0.16;
+          transform: scale(0.72);
+        }
+      }
+
+      /* 08 — Composing cursor */
+      .compose {
+        display: flex;
+        width: 12px;
+        height: 12px;
+        align-items: center;
+        gap: 1.5px;
+      }
+
+      .compose i {
+        width: 2px;
+        height: 2px;
+        border-radius: 0.6px;
+        background: currentColor;
+        animation: compose-dot calc(1s / var(--preview-speed)) var(--motion-ease) infinite;
+      }
+
+      .compose i:nth-child(2) {
+        animation-delay: calc(-0.66s / var(--preview-speed));
+      }
+      .compose i:nth-child(3) {
+        animation-delay: calc(-0.33s / var(--preview-speed));
+      }
+
+      .compose b {
+        width: 1px;
+        height: 9px;
+        margin-left: 0.5px;
+        border-radius: 1px;
+        background: currentColor;
+        animation: cursor-blink calc(1s / var(--preview-speed)) steps(1, end) infinite;
+      }
+
+      @keyframes compose-dot {
+        0%,
+        48%,
+        100% {
+          opacity: 0.18;
+          transform: translateY(0);
+        }
+        20% {
+          opacity: 1;
+          transform: translateY(-1.5px);
+        }
+      }
+
+      @keyframes cursor-blink {
+        0%,
+        52% {
+          opacity: 1;
+        }
+        53%,
+        100% {
+          opacity: 0.16;
+        }
+      }
+
+      body[data-paused="true"] .indicator *,
+      body[data-paused="true"] .indicator *::before,
+      body[data-paused="true"] .indicator *::after {
+        animation-play-state: paused !important;
+      }
+
+      body[data-reduced="true"] .indicator *,
+      body[data-reduced="true"] .indicator *::before,
+      body[data-reduced="true"] .indicator *::after {
+        animation: none !important;
+      }
+
+      body[data-reduced="true"] .indicator {
+        opacity: 0.86;
+      }
+
+      body[data-reduced="true"] .matrix i,
+      body[data-reduced="true"] .relay i,
+      body[data-reduced="true"] .fold i,
+      body[data-reduced="true"] .compose i {
+        opacity: 0.58;
+        transform: none;
+      }
+
+      body[data-reduced="true"] .matrix i:nth-child(5),
+      body[data-reduced="true"] .relay i:nth-child(1),
+      body[data-reduced="true"] .relay i:nth-child(4),
+      body[data-reduced="true"] .fold i:nth-child(1),
+      body[data-reduced="true"] .fold i:nth-child(3),
+      body[data-reduced="true"] .compose b {
+        opacity: 1;
+      }
+
+      body[data-reduced="true"] .branch circle,
+      body[data-reduced="true"] .grove i {
+        opacity: 0.76;
+        transform: none;
+      }
+
+      body[data-reduced="true"] .scan::after {
+        top: 4px;
+        opacity: 0.85;
+        transform: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .indicator *,
+        .indicator *::before,
+        .indicator *::after {
+          animation: none !important;
+        }
+
+        .concept-card,
+        .concept-card::before {
+          transition-duration: 0.01ms;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .shell {
+          width: min(720px, calc(100% - 40px));
+        }
+
+        .concept-grid,
+        .notes-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">Hanoki motion scratchpad · July 2026</p>
+        <h1>Thinking, without looking busy.</h1>
+        <p class="lede">
+          Eight compact signals for chats that are actively generating. Each is tuned for Hanoki’s
+          14px icon frame and shown below at inspection scale and in the exact 28px tree row.
+        </p>
+
+        <div class="toolbar" aria-label="Preview controls">
+          <div class="toolbar-group">
+            <button class="control" id="motion-toggle" type="button" aria-pressed="false">
+              Pause motion
+            </button>
+            <button class="control" id="reduced-toggle" type="button" aria-pressed="false">
+              Reduced-motion preview
+            </button>
+          </div>
+          <div class="toolbar-group" aria-label="Playback speed">
+            <span class="toolbar-note">Playback</span>
+            <button
+              class="control speed-control"
+              type="button"
+              data-speed="0.65"
+              aria-pressed="false"
+            >
+              Calm
+            </button>
+            <button class="control speed-control" type="button" data-speed="1" aria-pressed="true">
+              Normal
+            </button>
+            <button
+              class="control speed-control"
+              type="button"
+              data-speed="1.35"
+              aria-pressed="false"
+            >
+              Quick
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section aria-labelledby="concepts-heading">
+        <div class="section-heading">
+          <h2 id="concepts-heading">Indicator studies</h2>
+          <p>Hover a card to shortlist it</p>
+        </div>
+
+        <div class="concept-grid">
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Matrix bloom animation">
+                  <span class="matrix">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Matrix Bloom</h3>
+                <span class="rank">01</span>
+              </div>
+              <div class="tags">
+                <span class="tag recommended">Recommended</span>
+                <span class="tag">3 × 3</span>
+                <span class="tag">smooth</span>
+              </div>
+              <p class="description">
+                A diagonal wave crosses nine crisp pixels. Familiar at a glance, but quieter and
+                more deliberate than the usual random grid.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="matrix">
+                      <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                    </span>
+                  </span>
+                </span>
+                <span class="chat-title">Explore persistent memory</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Branch signal animation">
+                  <svg class="branch" viewBox="0 0 14 14" aria-hidden="true">
+                    <path class="branch-line" d="M7 12V7M7 7 3 3M7 7l4-4" />
+                    <circle cx="7" cy="12" r="1.3" />
+                    <circle cx="3" cy="3" r="1.3" />
+                    <circle cx="11" cy="3" r="1.3" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Branch Signal</h3>
+                <span class="rank">02</span>
+              </div>
+              <div class="tags">
+                <span class="tag recommended">Hanoki signature</span>
+                <span class="tag">semantic</span>
+                <span class="tag">unique</span>
+              </div>
+              <p class="description">
+                Three nodes exchange a pulse along a tiny branch. It connects “working” to Hanoki’s
+                chat-tree identity instead of borrowing a generic loader.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <svg class="branch" viewBox="0 0 14 14">
+                      <path class="branch-line" d="M7 12V7M7 7 3 3M7 7l4-4" />
+                      <circle cx="7" cy="12" r="1.3" />
+                      <circle cx="3" cy="3" r="1.3" />
+                      <circle cx="11" cy="3" r="1.3" />
+                    </svg>
+                  </span>
+                </span>
+                <span class="chat-title">Plan the agent workspace</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Diagonal relay animation">
+                  <span class="relay"><i></i><i></i><i></i><i></i></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Diagonal Relay</h3>
+                <span class="rank">03</span>
+              </div>
+              <div class="tags">
+                <span class="tag">2 × 2</span>
+                <span class="tag">quiet</span>
+                <span class="tag">high clarity</span>
+              </div>
+              <p class="description">
+                Four larger cells trade emphasis around the diagonals. The simplest grid here, and
+                the most robust on lower-density displays.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="relay"><i></i><i></i><i></i><i></i></span>
+                  </span>
+                </span>
+                <span class="chat-title">Draft release notes</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Ink scan animation">
+                  <span class="scan"></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Ink Scan</h3>
+                <span class="rank">04</span>
+              </div>
+              <div class="tags">
+                <span class="tag">minimal</span>
+                <span class="tag">technical</span>
+                <span class="tag">calm</span>
+              </div>
+              <p class="description">
+                A thin moss beam reads a stack of sumi lines. More “processing” than “loading,” with
+                very little visual mass beside the title.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true"><span class="scan"></span></span>
+                </span>
+                <span class="chat-title">Review workspace indexing</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Seed orbit animation">
+                  <span class="seed-orbit"><i></i></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Seed Orbit</h3>
+                <span class="rank">05</span>
+              </div>
+              <div class="tags">
+                <span class="tag">organic</span>
+                <span class="tag">soft</span>
+                <span class="tag">familiar</span>
+              </div>
+              <p class="description">
+                A single asymmetric seed circles a faint core. It keeps the legibility of a spinner
+                while replacing the mechanical wheel with an organic Hanoki shape.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="seed-orbit"><i></i></span>
+                  </span>
+                </span>
+                <span class="chat-title">Grow a project outline</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Grove equalizer animation">
+                  <span class="grove"><i></i><i></i><i></i><i></i><i></i></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Grove</h3>
+                <span class="rank">06</span>
+              </div>
+              <div class="tags">
+                <span class="tag">expressive</span>
+                <span class="tag">AI-native</span>
+                <span class="tag">lively</span>
+              </div>
+              <p class="description">
+                Five narrow reeds rise independently like a tiny grove—or generated tokens. The most
+                alive option, best if the indicator should be noticeable.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="grove"><i></i><i></i><i></i><i></i><i></i></span>
+                  </span>
+                </span>
+                <span class="chat-title">Compare local models</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Folded path animation">
+                  <span class="fold"><i></i><i></i><i></i><i></i></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Folded Path</h3>
+                <span class="rank">07</span>
+              </div>
+              <div class="tags">
+                <span class="tag">pixel-like</span>
+                <span class="tag">stepped</span>
+                <span class="tag">geometric</span>
+              </div>
+              <p class="description">
+                Four square frames chase around a folded diamond. Its discrete cadence feels closer
+                to a terminal cursor than a continuous app spinner.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="fold"><i></i><i></i><i></i><i></i></span>
+                  </span>
+                </span>
+                <span class="chat-title">Trace the rendering path</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="concept-card" data-shortlisted="false">
+            <div class="specimen">
+              <div class="large-stage">
+                <span class="indicator scale-large" aria-label="Composing cursor animation">
+                  <span class="compose"><i></i><i></i><i></i><b></b></span>
+                </span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="card-title-row">
+                <h3>Composing Cursor</h3>
+                <span class="rank">08</span>
+              </div>
+              <div class="tags">
+                <span class="tag">semantic</span>
+                <span class="tag">compact</span>
+                <span class="tag">conversational</span>
+              </div>
+              <p class="description">
+                Three tiny thoughts resolve into a blinking cursor. It directly suggests that the
+                assistant is composing, not merely waiting on a network request.
+              </p>
+              <div class="actual-label">Actual tree size</div>
+              <div class="chat-row">
+                <span class="icon-frame">
+                  <span class="indicator" aria-hidden="true">
+                    <span class="compose"><i></i><i></i><i></i><b></b></span>
+                  </span>
+                </span>
+                <span class="chat-title">Write a concise response</span>
+                <span class="activity-label">working</span>
+                <button class="shortlist" type="button">Shortlist</button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section aria-labelledby="notes-heading">
+        <div class="section-heading">
+          <h2 id="notes-heading">Research distilled</h2>
+          <p>What shaped the prototypes</p>
+        </div>
+
+        <div class="notes-grid">
+          <div class="note-panel">
+            <h3>Design rules used here</h3>
+            <div class="principle-list">
+              <div class="principle">
+                <span class="principle-index">1</span>
+                <p>
+                  <strong>Communicate state, don’t decorate.</strong> The indicator replaces the
+                  normal chat icon only while generation is active, so motion has a precise meaning.
+                </p>
+              </div>
+              <div class="principle">
+                <span class="principle-index">2</span>
+                <p>
+                  <strong>Design at final size.</strong> At 14px, silhouette and cadence survive;
+                  blur, fine strokes, and complex paths do not. Every option uses a fixed footprint.
+                </p>
+              </div>
+              <div class="principle">
+                <span class="principle-index">3</span>
+                <p>
+                  <strong>Prefer compositor-friendly motion.</strong> The concepts mainly animate
+                  opacity and transform, keeping them smooth while chat streaming taxes the UI.
+                </p>
+              </div>
+              <div class="principle">
+                <span class="principle-index">4</span>
+                <p>
+                  <strong>Keep the loop calm.</strong> Most cycles sit near 1–1.5 seconds with small
+                  amplitude. The title remains the row’s visual anchor.
+                </p>
+              </div>
+              <div class="principle">
+                <span class="principle-index">5</span>
+                <p>
+                  <strong>Reduced motion still communicates.</strong> Each loader becomes a crisp,
+                  static “active” glyph instead of disappearing or strobing.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="note-panel">
+            <h3>Sources & inspiration</h3>
+            <div class="sources">
+              <a class="source" href="https://3pxgrid.com/about.html">
+                <span>3 Pixel Grid — compact delay-array patterns</span><small>2026</small>
+              </a>
+              <a
+                class="source"
+                href="https://animations.dev/learn/animation-theory/the-easing-blueprint"
+              >
+                <span>Animations.dev — easing and perceived speed</span><small>Guide</small>
+              </a>
+              <a class="source" href="https://motion.dev/docs/performance">
+                <span>Motion — animation performance guide</span><small>Docs</small>
+              </a>
+              <a class="source" href="https://www.w3.org/WAI/WCAG22/Techniques/css/C39">
+                <span>W3C — prefers-reduced-motion technique</span><small>WCAG</small>
+              </a>
+              <a
+                class="source"
+                href="https://developer.apple.com/design/human-interface-guidelines/progress-indicators"
+              >
+                <span>Apple HIG — constrained-space activity indicators</span><small>HIG</small>
+              </a>
+              <a
+                class="source"
+                href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Performance/CSS"
+              >
+                <span>MDN — CSS animation and perceived performance</span><small>Docs</small>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="recommendation">
+          <span class="recommendation-mark">01</span>
+          <p>
+            <strong>My first implementation pick is Matrix Bloom.</strong> It is the clearest at
+            14px, feels current without copying a product-specific mark, and its diagonal timing
+            adds enough character for Hanoki. Branch Signal is the more ownable alternative if brand
+            distinctiveness matters more than instant familiarity.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const motionToggle = document.querySelector("#motion-toggle");
+      const reducedToggle = document.querySelector("#reduced-toggle");
+      const speedControls = document.querySelectorAll(".speed-control");
+      const cards = document.querySelectorAll(".concept-card");
+
+      motionToggle.addEventListener("click", () => {
+        const paused = document.body.dataset.paused !== "true";
+        document.body.dataset.paused = String(paused);
+        motionToggle.setAttribute("aria-pressed", String(paused));
+        motionToggle.textContent = paused ? "Resume motion" : "Pause motion";
+      });
+
+      reducedToggle.addEventListener("click", () => {
+        const reduced = document.body.dataset.reduced !== "true";
+        document.body.dataset.reduced = String(reduced);
+        reducedToggle.setAttribute("aria-pressed", String(reduced));
+      });
+
+      speedControls.forEach((control) => {
+        control.addEventListener("click", () => {
+          document.documentElement.style.setProperty("--preview-speed", control.dataset.speed);
+          speedControls.forEach((item) => {
+            item.setAttribute("aria-pressed", String(item === control));
+          });
+        });
+      });
+
+      cards.forEach((card) => {
+        const button = card.querySelector(".shortlist");
+        button.addEventListener("click", () => {
+          const shortlisted = card.dataset.shortlisted !== "true";
+          card.dataset.shortlisted = String(shortlisted);
+          button.textContent = shortlisted ? "Shortlisted" : "Shortlist";
+        });
+      });
+    </script>
+  </body>
+</html>
