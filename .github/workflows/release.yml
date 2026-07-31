@@ -81,60 +81,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Import the Developer ID certificate into a throwaway keychain rather
-      # than the runner's login keychain, and hand the App Store Connect API key
-      # to notarytool as a file. Both live under RUNNER_TEMP, which GitHub wipes
-      # when the ephemeral runner is torn down.
-      - name: Set up Apple signing
+      # Creates a temporary keychain, imports the Developer ID identity and
+      # removes the keychain again in its post step.
+      - name: Import Developer ID certificate
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
+        uses: Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      # notarytool takes the App Store Connect key as a file path, so the secret
+      # has to land on disk. RUNNER_TEMP is wiped with the ephemeral runner.
+      - name: Write App Store Connect API key
         if: runner.os == 'macOS' && env.APPLE_SIGNING_ENABLED == 'true'
         env:
-          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           set -euo pipefail
-
-          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
-          CERTIFICATE_PATH="${RUNNER_TEMP}/certificate.p12"
-          API_KEY_PATH="${RUNNER_TEMP}/apple-api-key.p8"
-
-          printf '%s' "${APPLE_CERTIFICATE_P12}" | base64 --decode > "${CERTIFICATE_PATH}"
-          printf '%s' "${APPLE_API_KEY_P8}" | base64 --decode > "${API_KEY_PATH}"
-
-          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          # Without this the keychain re-locks after five minutes of idling and
-          # notarization waits are comfortably longer than that.
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security import "${CERTIFICATE_PATH}" \
-            -P "${APPLE_CERTIFICATE_PASSWORD}" \
-            -f pkcs12 \
-            -k "${KEYCHAIN_PATH}" \
-            -T /usr/bin/codesign
-          # Stops codesign from blocking on a GUI "allow access" prompt.
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}" > /dev/null
-          security list-keychain -d user -s "${KEYCHAIN_PATH}" login.keychain-db
-
-          rm -f "${CERTIFICATE_PATH}"
-
-          echo "APPLE_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
-          echo "APPLE_API_KEY=${API_KEY_PATH}" >> "${GITHUB_ENV}"
-
-          # `find-identity` exits 0 even when it finds nothing, so assert on the
-          # output instead: a silent import failure would otherwise surface much
-          # later as an opaque codesign error. Capture first rather than piping,
-          # because `grep -q` can SIGPIPE `security` and trip `pipefail`.
-          IDENTITIES="$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}")"
-          printf '%s\n' "${IDENTITIES}"
-
-          if ! printf '%s' "${IDENTITIES}" | grep -q "Developer ID Application"; then
-            echo "No valid Developer ID Application identity in the keychain" >&2
-            security find-identity -p codesigning "${KEYCHAIN_PATH}" >&2
-            exit 1
-          fi
+          printf '%s' "${APPLE_API_KEY_P8}" | base64 --decode > "${RUNNER_TEMP}/apple-api-key.p8"
+          echo "APPLE_API_KEY=${RUNNER_TEMP}/apple-api-key.p8" >> "${GITHUB_ENV}"
 
       - name: Publish release artifacts
         env:

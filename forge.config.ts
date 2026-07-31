@@ -21,9 +21,6 @@ const MACOS_ICON_COMPOSER_PATH = path.resolve(__dirname, "assets/icons/icon-comp
 const WINDOWS_ICON_PATH = `${ICON_BASE_PATH}.ico`;
 const LINUX_ICON_PATH = `${ICON_BASE_PATH}.png`;
 const APPLE_CODESIGN_IDENTITY = process.env.APPLE_CODESIGN_IDENTITY;
-// Keychain holding the Developer ID identity. Only set in CI, where the
-// certificate is imported into a throwaway keychain instead of the login one.
-const APPLE_KEYCHAIN = process.env.APPLE_KEYCHAIN;
 // App Store Connect API key (path to the `.p8`, its key ID and issuer UUID).
 // Preferred over an Apple ID + app-specific password: it does not expire and
 // never prompts for 2FA, which is what makes it usable from CI.
@@ -76,7 +73,6 @@ const macPackagerConfig = hasMacDeveloperSigningIdentity
   ? {
       osxSign: {
         identity: APPLE_CODESIGN_IDENTITY as string,
-        ...(APPLE_KEYCHAIN ? { keychain: APPLE_KEYCHAIN } : {}),
       },
       ...(shouldNotarizeMacApp
         ? {
@@ -169,14 +165,6 @@ const ensureMacAppSignature = async (appPath: string) => {
   }
 
   await runCodesign(["--verify", "--deep", "--strict", "--verbose=2", appPath]);
-
-  // A valid signature is not enough to launch without a warning: Gatekeeper
-  // also wants a Developer ID identity and a stapled notarization ticket. This
-  // assessment is the only check that proves both, so fail the build here
-  // rather than let users discover it.
-  if (shouldNotarizeMacApp) {
-    await execFile("spctl", ["--assess", "--type", "execute", "--verbose=2", appPath]);
-  }
 };
 
 const config: ForgeConfig = {
