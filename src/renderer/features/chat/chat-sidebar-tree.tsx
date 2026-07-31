@@ -15,13 +15,15 @@ import {
   AddSquareIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  Chat01Icon,
   ChatAdd01Icon,
   FolderAddIcon,
   MoreHorizontalIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
+import { ChatBubbleIcon } from "@/components/icons";
+import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { useHotkey } from "@tanstack/react-hotkeys";
 
 import {
@@ -1262,13 +1264,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
 
   return (
     <ChatTreeItemIconFrame className="text-muted-foreground">
-      {isActive ? (
-        <span className="flex size-4 items-center justify-center">
-          <span className="size-2 animate-pulse rounded-full bg-primary" />
-        </span>
-      ) : (
-        <HugeiconsIcon icon={Chat01Icon} />
-      )}
+      {isActive ? <ChatActivityIndicator /> : <ChatBubbleIcon className="size-3.5" />}
     </ChatTreeItemIconFrame>
   );
 }

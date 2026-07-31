@@ -9,7 +9,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Cancel01Icon, Chat01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
+
+import { ChatBubbleIcon } from "@/components/icons";
+import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
@@ -334,13 +337,7 @@ function ChatTabStatusIcon({ chatId }: { chatId: string }) {
 
   return (
     <span className="flex shrink-0 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5">
-      {isStreaming ? (
-        <span className="flex size-3.5 items-center justify-center">
-          <span className="size-2 animate-pulse rounded-full bg-primary" />
-        </span>
-      ) : (
-        <HugeiconsIcon icon={Chat01Icon} />
-      )}
+      {isStreaming ? <ChatActivityIndicator /> : <ChatBubbleIcon className="size-3.5" />}
     </span>
   );
 }
