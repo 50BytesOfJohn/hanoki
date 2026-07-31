@@ -1,5 +1,6 @@
 import type { ProviderId } from "../providers/catalog";
 import type { HanokiUiMessage } from "../chat/message-metadata";
+import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
 import type { TiptapDocument } from "../tiptap/document";
 
@@ -41,6 +42,7 @@ export const IPC_CHANNELS = {
     get: "chats:get",
     create: "chats:create",
     clone: "chats:clone",
+    export: "chats:export",
     updateTitle: "chats:updateTitle",
     updateSettings: "chats:updateSettings",
     move: "chats:move",
@@ -429,6 +431,7 @@ export interface IpcApi {
   deleteFolder: (id: string) => Promise<void>;
   createChat: (workspaceId: string, title: string, folderId?: string | null) => Promise<ChatInfo>;
   cloneChat: (chatId: string) => Promise<ChatInfo>;
+  exportChat: (chatId: string, format: ChatExportFormat) => Promise<ChatExportResult>;
   updateChatTitle: (id: string, title: string) => Promise<ChatInfo>;
   updateChatSettings: (id: string, input: ChatSettingsUpdateInput) => Promise<ChatInfo>;
   moveChat: (id: string, folderId: string | null) => Promise<ChatInfo>;

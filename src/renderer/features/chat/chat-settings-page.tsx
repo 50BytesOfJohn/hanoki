@@ -1,11 +1,23 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { FileExportIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { toastManager } from "@/components/ui/toast";
+import { chatsApi } from "@/api/chats";
 import { ChatEmptyPage } from "@/features/chat/chat-empty-page";
 import {
   SettingsError,
@@ -18,6 +30,11 @@ import { useUpdateChatSettings } from "@/mutations/chats";
 import { getChatQueryOptions } from "@/queries/chats";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
+import {
+  CHAT_EXPORT_FORMATS,
+  DEFAULT_CHAT_EXPORT_FORMAT,
+  isChatExportFormat,
+} from "@shared/chat/chat-export";
 
 export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
   const currentChatId = useWorkspaceStore((state) => (chatId ? null : state.currentChatId));
@@ -85,7 +102,87 @@ export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
           savedPrompt={chat.settings.systemPrompt ?? ""}
         />
       </SettingsSection>
+
+      <SettingsSection title="Export">
+        <ChatExportRow chatId={chat.id} />
+      </SettingsSection>
     </ChatSettingsShell>
+  );
+}
+
+function ChatExportRow({ chatId }: { chatId: string }) {
+  const [format, setFormat] = React.useState(DEFAULT_CHAT_EXPORT_FORMAT);
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function handleExport() {
+    setError(null);
+    setIsExporting(true);
+
+    try {
+      const result = await chatsApi.export(chatId, format);
+      if (result.status === "saved") {
+        toastManager.add({
+          type: "success",
+          title: "Chat exported",
+          description: "The conversation was saved successfully.",
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export the chat.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  return (
+    <SettingsRow
+      title="Save conversation"
+      description="Markdown and PDF export the current branch. JSON preserves every branch and its metadata."
+      htmlFor="chat-export-format"
+    >
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2">
+          <Select
+            value={format}
+            items={Object.fromEntries(CHAT_EXPORT_FORMATS.map((item) => [item.id, item.label]))}
+            disabled={isExporting}
+            onValueChange={(value) => {
+              if (isChatExportFormat(value)) {
+                setFormat(value);
+              }
+            }}
+          >
+            <SelectTrigger id="chat-export-format" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {CHAT_EXPORT_FORMATS.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            disabled={isExporting}
+            onClick={() => void handleExport()}
+          >
+            {isExporting ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <HugeiconsIcon icon={FileExportIcon} data-icon="inline-start" />
+            )}
+            Export
+          </Button>
+        </div>
+        <SettingsError>{error}</SettingsError>
+      </div>
+    </SettingsRow>
   );
 }
 

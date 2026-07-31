@@ -6,6 +6,7 @@ type ChatsApi = Pick<
   | "getChat"
   | "createChat"
   | "cloneChat"
+  | "exportChat"
   | "updateChatTitle"
   | "updateChatSettings"
   | "moveChat"
@@ -18,6 +19,7 @@ export function createChatsApi(): ChatsApi {
     createChat: (workspaceId, title, folderId) =>
       invokeIpc(IPC_CHANNELS.chats.create, workspaceId, title, folderId),
     cloneChat: (chatId) => invokeIpc(IPC_CHANNELS.chats.clone, chatId),
+    exportChat: (chatId, format) => invokeIpc(IPC_CHANNELS.chats.export, chatId, format),
     updateChatTitle: (id, title) => invokeIpc(IPC_CHANNELS.chats.updateTitle, id, title),
     updateChatSettings: (id, input) => invokeIpc(IPC_CHANNELS.chats.updateSettings, id, input),
     moveChat: (id, folderId) => invokeIpc(IPC_CHANNELS.chats.move, id, folderId),

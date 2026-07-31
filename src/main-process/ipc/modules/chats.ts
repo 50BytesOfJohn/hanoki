@@ -1,4 +1,9 @@
 import { IPC_CHANNELS, type ChatInfo, type ChatSettingsUpdateInput } from "@shared/ipc";
+import {
+  isChatExportFormat,
+  type ChatExportFormat,
+  type ChatExportResult,
+} from "@shared/chat/chat-export";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
@@ -6,6 +11,7 @@ import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
+import { exportChatToFile } from "../../chat-export/export-chat";
 
 function expectArgCount(args: unknown[], min: number, max = min): void {
   if (args.length < min || args.length > max) {
@@ -53,6 +59,14 @@ function parseValidChatTitle(input: unknown): string {
   }
 
   return parsed.value;
+}
+
+function parseValidChatExportFormat(input: unknown): ChatExportFormat {
+  if (!isChatExportFormat(input)) {
+    throw AppError.badRequest("Unsupported chat export format.");
+  }
+
+  return input;
 }
 
 function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpdateInput] {
@@ -161,6 +175,16 @@ export function registerChatsIpcModule(
       return [parseValidChatId(args[0])];
     },
     handler: ({ services }, _event, id) => services.chatTree.getChat(id),
+  });
+
+  registerInvokeHandler<[string, ChatExportFormat], ChatExportResult>(context, registeredChannels, {
+    channel: IPC_CHANNELS.chats.export,
+    parseArgs: (args) => {
+      expectArgCount(args, 2);
+      return [parseValidChatId(args[0]), parseValidChatExportFormat(args[1])];
+    },
+    handler: ({ services }, event, chatId, format) =>
+      exportChatToFile({ services, sender: event.sender, chatId, format }),
   });
 
   registerInvokeHandler<[string, string, string | null], ChatInfo>(context, registeredChannels, {

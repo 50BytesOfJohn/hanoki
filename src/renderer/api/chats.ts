@@ -1,3 +1,4 @@
+import type { ChatExportFormat } from "@shared/chat/chat-export";
 import type { ChatSettingsUpdateInput } from "@shared/ipc";
 import "../lib/electron-api";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
@@ -18,6 +19,10 @@ export const chatsApi = {
 
   clone(id: string) {
     return window.electronAPI.cloneChat(id);
+  },
+
+  export(id: string, format: ChatExportFormat) {
+    return window.electronAPI.exportChat(id, format);
   },
 
   updateTitle(id: string, title: string) {
