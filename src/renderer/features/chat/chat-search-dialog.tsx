@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChatBubbleIcon } from "@/components/icons";
+import { Comment02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { chatTreeApi } from "@/api/chat-tree";
 import { queryKeys } from "@/queries/keys";
@@ -78,7 +79,10 @@ export function ChatSearchDialog({
                   onOpenChange(false);
                 }}
               >
-                <ChatBubbleIcon className="size-3.5! shrink-0 text-muted-foreground" />
+                <HugeiconsIcon
+                  icon={Comment02Icon}
+                  className="size-3.5! shrink-0 text-muted-foreground"
+                />
                 <span className="min-w-0 flex-1 truncate">{chat.title}</span>
                 {folderPath ? (
                   <CommandShortcut className="max-w-[40%] truncate tracking-normal">

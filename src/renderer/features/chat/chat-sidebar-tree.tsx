@@ -16,13 +16,14 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ChatAdd01Icon,
+  Folder01Icon,
   FolderAddIcon,
+  Comment02Icon,
   MoreHorizontalIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { ChatBubbleIcon } from "@/components/icons";
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { useHotkey } from "@tanstack/react-hotkeys";
 
@@ -659,7 +660,9 @@ function ChatSidebarTreeInner({
 
   return (
     <>
-      <ChatSidebarBlock className="gap-2 pt-1">
+      {/* No gap: the header owns its own leading, so a gap here would push the label
+          further from its rows than the rows sit from each other. Groups space themselves. */}
+      <ChatSidebarBlock className="pt-1">
         <ChatTabsSection />
 
         <ChatSidebarSectionHeader title="Chats">
@@ -713,7 +716,7 @@ function ChatSidebarTreeInner({
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <ChatTreeView
-              className="relative gap-0.5 pb-8"
+              className="relative pb-8"
               {...mergeProps<"div">(tree.getContainerProps("Chat tree"), {
                 onKeyDown: handleTreeKeyDown,
               })}
@@ -775,8 +778,10 @@ function ChatSidebarTreeInner({
                       {data.kind === "chat" ? (
                         <ChatTreeItemIcon chatId={data.chat.id} />
                       ) : data.kind === "folder" ? (
-                        <ChatTreeItemIconFrame className="text-muted-foreground opacity-50">
-                          <HugeiconsIcon icon={ArrowRight01Icon} />
+                        <ChatTreeItemIconFrame className="text-muted-foreground/60">
+                          <HugeiconsIcon
+                            icon={item.isExpanded() ? ArrowDown01Icon : Folder01Icon}
+                          />
                         </ChatTreeItemIconFrame>
                       ) : null}
                       <Input
@@ -1075,7 +1080,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
 
   return (
     <>
-      <ChatSidebarBlock className="gap-2 pt-1">
+      <ChatSidebarBlock className="pt-1">
         <ChatTabsSection />
 
         <ChatSidebarSectionHeader title="Chats">
@@ -1264,7 +1269,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
 
   return (
     <ChatTreeItemIconFrame className="text-muted-foreground">
-      {isActive ? <ChatActivityIndicator /> : <ChatBubbleIcon className="size-3.5" />}
+      {isActive ? <ChatActivityIndicator /> : <HugeiconsIcon icon={Comment02Icon} />}
     </ChatTreeItemIconFrame>
   );
 }
@@ -1278,7 +1283,9 @@ function ChatTabsSection() {
   }
 
   return (
-    <section className="shrink-0">
+    // pb-2 separates this group from the Chats header below it — the block no
+    // longer supplies a gap, so each group carries its own trailing space.
+    <section className="shrink-0 pb-2">
       <ChatSidebarSectionHeader title="Tabs" />
       <ChatTabsSidebarList />
     </section>
@@ -1304,7 +1311,7 @@ function ChatSidebarSectionHeader({
 
 function ChatTreeView({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("flex flex-col [--tree-indent:12px]", className)} role="tree" {...props} />
+    <div className={cn("flex flex-col [--tree-indent:16px]", className)} role="tree" {...props} />
   );
 }
 
@@ -1332,6 +1339,16 @@ function ChatTreeItemRow({
           ...style,
           "--tree-level": level,
           paddingInlineStart: `calc(var(--tree-indent) * ${level} + 0.5rem)`,
+          // One hairline per ancestor level, each centred on that ancestor's icon
+          // slot. Rows are flush (no gap), so the hairlines read as continuous rails.
+          ...(level > 0 && {
+            backgroundImage:
+              "repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px var(--tree-indent))",
+            // 0.5rem row padding + half of the 20px icon slot.
+            backgroundPosition: "1.125rem 0",
+            backgroundSize: `calc(var(--tree-indent) * ${level}) 100%`,
+            backgroundRepeat: "no-repeat",
+          }),
         } as React.CSSProperties
       }
       {...props}
@@ -1348,8 +1365,14 @@ function ChatTreeDisclosureButton({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  // An empty folder has nothing to disclose, so the slot shows what the row *is*
+  // rather than sitting blank next to chats that do have an icon.
   if (!hasChildren) {
-    return <span className="size-5 shrink-0" aria-hidden />;
+    return (
+      <ChatTreeItemIconFrame className="text-muted-foreground/60">
+        <HugeiconsIcon icon={Folder01Icon} />
+      </ChatTreeItemIconFrame>
+    );
   }
 
   return (
@@ -1372,7 +1395,10 @@ function ChatTreeItemIconFrame({ className, ...props }: React.ComponentProps<"sp
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
+        // size-5 matches the disclosure button in SIDEBAR_ICON_BUTTON_CLASS: chat
+        // icons, folder chevrons and empty-folder icons share one 20px column, so
+        // every label at a given depth starts at the same x.
+        "flex size-5 shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
         className,
       )}
       {...props}

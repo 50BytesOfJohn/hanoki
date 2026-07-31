@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { ChatBubbleIcon } from "@/components/icons";
 import {
   ArrowRight01Icon,
   ChatAdd01Icon,
   FolderOffIcon,
+  Comment02Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -170,7 +170,10 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
                       onClick={() => openTab({ type: "chat", chatId: chat.id })}
                       className="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60"
                     >
-                      <ChatBubbleIcon className="size-3.5 shrink-0 text-muted-foreground/70 transition-colors duration-100 group-hover:text-muted-foreground" />
+                      <HugeiconsIcon
+                        icon={Comment02Icon}
+                        className="size-3.5 shrink-0 text-muted-foreground/70 transition-colors duration-100 group-hover:text-muted-foreground"
+                      />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground transition-colors duration-100 group-hover:text-foreground">
                         {chat.title}
                       </span>
