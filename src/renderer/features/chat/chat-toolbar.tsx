@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/menu";
 import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { listWorkspacesQueryOptions } from "@/queries/workspaces";
+import { UpdateToolbarButton } from "@/features/updates/update-toolbar-button";
 import { ChatActivityPanel } from "./chat-activity-panel";
 import { useChatSidebar } from "./chat-sidebar";
 import { ChatTabsBar, useChatTabsPosition } from "./chat-tabs";
@@ -103,6 +104,7 @@ export function ChatToolbar() {
       {showTopTabs ? <ChatTabsBar /> : null}
 
       <div className="flex shrink-0 items-center gap-1">
+        <UpdateToolbarButton />
         <ChatActivityPanel />
         <Button
           variant="ghost"

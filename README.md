@@ -26,7 +26,7 @@ Grab a release from [GitHub Releases](https://github.com/50BytesOfJohn/hanoki/re
 
 Builds are still **unsigned** (no Apple Developer license yet):
 
-- **No auto-updates** — download new versions manually for now.
+- **Auto-updates** — Apple Silicon builds check GitHub Releases in the background, download quietly, and offer a restart when the new version is staged. Also under **Hanoki → Check for Updates…** and **Settings → General → About**. Needs a signed build; unsigned local builds skip the updater entirely.
 - **Gatekeeper** — macOS will block the first open. Allow it under **System Settings → Privacy & Security**, or right-click the app and choose **Open**.
 - **Keychain** — on first use, macOS may ask for your login keychain password. That's expected; API keys are stored there on purpose.
 

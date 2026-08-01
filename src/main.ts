@@ -4,6 +4,7 @@ import started from "electron-squirrel-startup";
 import { installApplicationMenu } from "./main-process/app/application-menu";
 import { bootstrapBackend } from "./main-process/app/bootstrap-backend";
 import { createMainWindow } from "./main-process/app/create-main-window";
+import { getUpdateState, initUpdater } from "./main-process/app/updater";
 import { closeAppDatabase } from "./main-process/db/database";
 import { registerIpcHandlers } from "./main-process/ipc";
 import { getDefaultAppIdentifier } from "./main-process/system/paths";
@@ -52,7 +53,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function getSystemState(): SystemState {
-    return { aiServer: aiServerState };
+    return { aiServer: aiServerState, update: getUpdateState() };
   }
 
   async function startAiServer() {
@@ -143,6 +144,7 @@ if (!app.requestSingleInstanceLock()) {
           broadcast: broadcastSystemEvent,
         });
         ipcMain.handle(SYSTEM_STATE_CHANNEL, () => getSystemState());
+        initUpdater({ broadcast: broadcastSystemEvent });
         openMainWindow();
         startProviderModelSyncOnStartup();
         void startAiServer();

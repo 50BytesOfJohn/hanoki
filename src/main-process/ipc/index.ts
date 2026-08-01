@@ -7,6 +7,7 @@ import { registerMessagesIpcModule } from "./modules/messages";
 import { registerModelsIpcModule } from "./modules/models";
 import { registerProvidersIpcModule } from "./modules/providers";
 import { registerSettingsIpcModule } from "./modules/settings";
+import { registerUpdatesIpcModule } from "./modules/updates";
 import { registerWorkspaceIpcModule } from "./modules/workspaces";
 
 export function registerIpcHandlers(context: IpcHandlerContext): void {
@@ -20,4 +21,5 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   registerMessagesIpcModule(context, registeredChannels);
   registerModelsIpcModule(context, registeredChannels);
   registerProvidersIpcModule(context, registeredChannels);
+  registerUpdatesIpcModule(context, registeredChannels);
 }

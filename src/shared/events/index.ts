@@ -36,12 +36,40 @@ export interface ChatTitleUpdatedEvent {
   title: string;
 }
 
+/**
+ * Auto-update lifecycle, mirrored from Electron's `autoUpdater` in the main process.
+ *
+ * - `unsupported` — no updater on this build (dev, or a platform Squirrel does not cover).
+ * - `idle` → `checking` → (`downloading` → `ready`) | back to `idle`.
+ * - `error` is terminal until the next check; the app keeps running on the current version.
+ */
+export type UpdateStatus = "unsupported" | "idle" | "checking" | "downloading" | "ready" | "error";
+
+export interface UpdateStateSnapshot {
+  status: UpdateStatus;
+  /** Version the app is running right now. Always present, including when unsupported. */
+  currentVersion: string;
+  /** Release name of the downloaded update, once `status` is `ready`. */
+  readyVersion: string | null;
+  /** Release notes of the downloaded update, when GitHub provided them. */
+  releaseNotes: string | null;
+  error: string | null;
+  /** Set while a user-initiated check is in flight, so the UI can show a spinner. */
+  checkedManually: boolean;
+}
+
+export interface UpdateStateChangedEvent {
+  type: "update:state";
+  update: UpdateStateSnapshot;
+}
+
 export type SystemEvent =
   | AiServerEvent
   | ProviderModelsSyncCompletedEvent
   | ProvidersStartupModelSyncCompletedEvent
   | GlobalChatSettingsUpdatedEvent
-  | ChatTitleUpdatedEvent;
+  | ChatTitleUpdatedEvent
+  | UpdateStateChangedEvent;
 
 export interface AiServerStateSnapshot {
   status: "idle" | "starting" | "ready" | "error";
@@ -51,4 +79,5 @@ export interface AiServerStateSnapshot {
 
 export interface SystemState {
   aiServer: AiServerStateSnapshot;
+  update: UpdateStateSnapshot;
 }

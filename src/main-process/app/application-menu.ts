@@ -2,6 +2,7 @@ import { Menu, type MenuItemConstructorOptions } from "electron";
 
 import { getConfig } from "../config";
 import type { AppServices } from "../services";
+import { checkForUpdates } from "./updater";
 import type { SystemEvent } from "@shared/events";
 
 /**
@@ -37,9 +38,38 @@ export function syncApplicationMenu(): void {
   }
 }
 
+/**
+ * Electron's `appMenu` role, expanded by hand so "Check for Updates…" can sit
+ * in its customary spot right under "About". Everything else is the role's own
+ * default layout.
+ */
+function buildAppMenu(): MenuItemConstructorOptions {
+  return {
+    role: "appMenu",
+    submenu: [
+      { role: "about" },
+      { type: "separator" },
+      {
+        label: "Check for Updates…",
+        click: () => {
+          checkForUpdates();
+        },
+      },
+      { type: "separator" },
+      { role: "services" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit" },
+    ],
+  };
+}
+
 function buildTemplate(): MenuItemConstructorOptions[] {
   return [
-    ...(isMac ? ([{ role: "appMenu" }] satisfies MenuItemConstructorOptions[]) : []),
+    ...(isMac ? ([buildAppMenu()] satisfies MenuItemConstructorOptions[]) : []),
     { role: "fileMenu" },
     { role: "editMenu" },
     {

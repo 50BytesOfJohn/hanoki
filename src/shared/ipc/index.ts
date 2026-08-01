@@ -70,6 +70,11 @@ export const IPC_CHANNELS = {
     update: "models:update",
     setProviderEnabled: "models:setProviderEnabled",
   },
+  updates: {
+    check: "updates:check",
+    install: "updates:install",
+    openReleases: "updates:openReleases",
+  },
 } as const;
 
 export interface WorkspaceInfo {
@@ -450,4 +455,7 @@ export interface IpcApi {
     providerId: string,
     isEnabled: boolean,
   ) => Promise<SetProviderModelsEnabledResult>;
+  checkForUpdates: () => Promise<import("../events").UpdateStateSnapshot>;
+  installUpdate: () => Promise<void>;
+  openReleasesPage: () => Promise<void>;
 }

@@ -8,6 +8,7 @@ import { createMessagesApi } from "./messages";
 import { createModelsApi } from "./models";
 import { createProvidersApi } from "./providers";
 import { createSettingsApi } from "./settings";
+import { createUpdatesApi } from "./updates";
 import { createWorkspaceApi } from "./workspaces";
 
 export function createElectronApi(): IpcApi {
@@ -21,6 +22,7 @@ export function createElectronApi(): IpcApi {
     ...createMessagesApi(),
     ...createModelsApi(),
     ...createProvidersApi(),
+    ...createUpdatesApi(),
     ...createEventsApi(),
   };
 }

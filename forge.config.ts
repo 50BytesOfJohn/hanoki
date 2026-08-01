@@ -5,12 +5,14 @@ import { promisify } from "node:util";
 import type { ForgeConfig, ForgeMakeResult } from "@electron-forge/shared-types";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
+import { MakerZIP } from "@electron-forge/maker-zip";
 import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
+import { macArtifactName } from "./src/shared/release/mac-artifact-name";
 
 const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = "com.hanoki.app";
@@ -106,6 +108,11 @@ const renamedArtifactPath = (makeResult: ForgeMakeResult, artifactPath: string) 
   const artifactName = path.basename(artifactPath);
   const artifactExtension = path.extname(artifactPath).toLowerCase();
   const releaseName = `hanoki-${platformName}-${version}`;
+
+  // macOS names carry the architecture because the auto-updater routes on it.
+  if (makeResult.platform === "darwin") {
+    return path.join(artifactDir, macArtifactName(makeResult.arch, version, artifactExtension));
+  }
 
   if (makeResult.platform === "win32") {
     if (artifactName === "RELEASES") {
@@ -235,6 +242,9 @@ const config: ForgeConfig = {
       },
       ["darwin"],
     ),
+    // Squirrel.Mac updates from a zipped .app, not a dmg — this is the artifact
+    // update.electronjs.org hands the running app. See src/main-process/app/updater.ts.
+    new MakerZIP({}, ["darwin"]),
     new MakerRpm({
       options: {
         homepage: APP_WEBSITE,

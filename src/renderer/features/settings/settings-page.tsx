@@ -25,6 +25,7 @@ import {
   isChatTreeSortOrder,
 } from "@shared/chat/chat-tree-sort";
 import { useChatTreeSort } from "@/features/chat/use-chat-tree-sort";
+import { UpdateSettingsSection } from "@/features/updates/update-settings-section";
 import { parseWorkspaceName } from "@shared/workspace/workspace-name";
 import { WORKSPACE_ORB_COLORS } from "@shared/workspace/workspace-orb-colors";
 import {
@@ -227,6 +228,8 @@ function GeneralSettings() {
           }
         />
       </SettingsSection>
+
+      <UpdateSettingsSection />
 
       <SettingsError>{updateError}</SettingsError>
     </>
