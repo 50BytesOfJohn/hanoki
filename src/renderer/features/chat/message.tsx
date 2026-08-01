@@ -325,7 +325,7 @@ const DeleteMessageButton = React.memo(function DeleteMessageButton({
           </AlertDialogHeader>
 
           {hasSiblings && (
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-surface-secondary px-3 py-2.5">
+            <label className="flex items-start gap-2.5 rounded-lg bg-surface-secondary px-3 py-2.5">
               <Checkbox
                 checked={deleteAllVersions}
                 onCheckedChange={(checked) => setDeleteAllVersions(checked === true)}

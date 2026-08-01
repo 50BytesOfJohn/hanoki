@@ -61,8 +61,11 @@ export function WindowChrome({
           />
           {toolbar ? (
             <div
+              // min-w-0 is load-bearing: without it the wrapper's automatic minimum
+              // size grows with the toolbar's content (the tab strip), so a full strip
+              // pushes the trailing controls past the window edge instead of shrinking.
               className={cn(
-                "pointer-events-auto max-w-full w-full",
+                "pointer-events-auto min-w-0 flex-1",
                 windowToolbarInteractiveSelectors,
               )}
             >

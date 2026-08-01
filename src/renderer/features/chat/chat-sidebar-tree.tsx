@@ -1235,7 +1235,7 @@ function ChatActivityListItem({
           }
         }}
         className={cn(
-          "group/tree-item relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+          "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
           "hover:bg-hover",
           isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
         )}

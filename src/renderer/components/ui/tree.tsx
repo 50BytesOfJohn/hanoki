@@ -100,7 +100,7 @@ function TreeItemActions({ className, render, ...props }: useRender.ComponentPro
 function TreeItemAction({ className, render, ...props }: useRender.ComponentProps<"button">) {
   const defaultProps = {
     className: cn(
-      "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-transparent text-muted-foreground outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
+      "inline-flex size-6 shrink-0 items-center justify-center rounded-md border-transparent text-muted-foreground outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:shrink-0",
       className,
     ),
     "data-slot": "tree-item-action",

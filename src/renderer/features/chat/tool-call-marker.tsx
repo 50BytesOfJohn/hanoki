@@ -325,7 +325,7 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
           <Marker
             render={<button type="button" />}
             className={cn(
-              "my-2 w-fit cursor-pointer text-xs transition-colors hover:text-foreground",
+              "my-2 w-fit text-xs transition-colors hover:text-foreground",
               isError && "text-destructive hover:text-destructive",
             )}
           />

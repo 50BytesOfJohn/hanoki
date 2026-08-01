@@ -9,6 +9,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -31,6 +32,7 @@ export function ChatToolbar() {
   const { data: workspaces = [] } = useQuery(listWorkspacesQueryOptions);
   const workspace = useWorkspaceStore((s) => s.workspace);
   const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace);
+  const hasTabs = useWorkspaceStore((s) => s.tabs.length > 0);
   const { isMobile, open, openMobile, toggleSidebar } = useChatSidebar();
   const isSidebarOpen = isMobile ? openMobile : open;
   const tabsPosition = useChatTabsPosition();
@@ -103,7 +105,15 @@ export function ChatToolbar() {
 
       {showTopTabs ? <ChatTabsBar /> : null}
 
-      <div className="flex shrink-0 items-center gap-1">
+      {/* Trailing cluster: app-level controls that must never be pushed out by tabs.
+          Tighter than the leading gap so the two icon buttons read as one group. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {/* A full strip shrinks its tabs until they truncate, so the last tab ends
+            flush against this cluster — the hairline keeps them from reading as one
+            row of controls. Nothing to fence off when the strip is empty. */}
+        {showTopTabs && hasTabs ? (
+          <Separator orientation="vertical" className="mr-1.5 h-4!" />
+        ) : null}
         <UpdateToolbarButton />
         <ChatActivityPanel />
         <Button
@@ -115,7 +125,7 @@ export function ChatToolbar() {
             void navigate({ to: "/settings" });
           }}
         >
-          <HugeiconsIcon icon={Setting07Icon} className="size-4!" />
+          <HugeiconsIcon icon={Setting07Icon} className="size-3.5!" />
         </Button>
       </div>
     </div>

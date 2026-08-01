@@ -3,11 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
   AlertCircleIcon,
+  Archive02Icon,
+  Archive04Icon,
   Chatting01Icon,
   Loading03Icon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+
+import { ChatActivityIndicator } from "./chat-activity-indicator";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,12 +37,19 @@ import {
 import { useWorkspaceStore } from "../workspace/store";
 
 /**
- * Toolbar counters for chats in this workspace that are working, or that replied
- * while the user was elsewhere. The trigger has a fixed width, so counts ticking
- * over never nudge the tab strip beside it.
+ * One 24px slot in the toolbar for chats in this workspace that are working, or
+ * that replied while the user was elsewhere — the same box as the settings button
+ * beside it, so the tab strip that flexes into the remaining space never resizes.
+ * Two side-by-side counters cost ~80px of fixed width, nearly all of it empty in
+ * the common case; a single slot spends the space it occupies.
  *
- * ponytail: tool approval lands as a third counter — add its kind to the activity
- * store, one `<ActivityCount>` below, and a clause in `summarize`.
+ * The states are a priority, not a sum: in-flight work outranks a reply you have
+ * not read, which outranks nothing to do. Because that hides unread behind work,
+ * the working state carries a corner dot when unread is also non-zero. Exact
+ * counts live in the tooltip and the popover — the slot only carries the state.
+ *
+ * ponytail: tool approval lands as a fourth state — slot it above `unread` in the
+ * chain below, add a clause to `summarize`, and give it a distinct glyph.
  */
 export function ChatActivityPanel() {
   const { data: settings } = useQuery(globalChatSettingsQueryOptions);
@@ -63,22 +74,33 @@ export function ChatActivityPanel() {
               render={
                 <Button
                   variant="ghost"
-                  size="xs"
+                  size="icon-xs"
                   aria-label={`Chat activity — ${summary}`}
-                  className="w-20 shrink-0 justify-center gap-0 px-1 tabular-nums"
+                  className="relative shrink-0 text-muted-foreground"
                 />
               }
             >
-              <ActivityCount count={workingCount} tone="working">
-                <HugeiconsIcon
-                  icon={Loading03Icon}
-                  strokeWidth={2}
-                  className={cn("size-3!", workingCount > 0 && "animate-spin")}
-                />
-              </ActivityCount>
-              <ActivityCount count={unreadCount} tone="unread">
-                <span className="size-1.5 rounded-full bg-current" />
-              </ActivityCount>
+              {workingCount > 0 ? (
+                // The same board the tab strip and the tree use for a streaming
+                // chat — one vocabulary for "this is working", wherever it shows.
+                <ChatActivityIndicator className="text-primary" />
+              ) : unreadCount > 0 ? (
+                <HugeiconsIcon icon={Archive02Icon} className="size-3.5!" />
+              ) : (
+                <HugeiconsIcon icon={Archive04Icon} className="size-3.5!" />
+              )}
+              {/* Work outranks unread in the slot, so the badge is what keeps unread
+                  visible while something streams. Absolute, so it never widens the
+                  fixed slot. Capped at 9+ — three glyphs would spill onto the gear,
+                  and the exact number is one hover away in the tooltip. */}
+              {unreadCount > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute top-0 right-0 flex h-3 min-w-3 items-center justify-center rounded-full bg-foreground/75 px-0.5 font-mono text-[9px] leading-none font-medium text-background"
+                >
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              ) : null}
             </PopoverTrigger>
           }
         />
@@ -111,31 +133,6 @@ function summarize(workingCount: number, unreadCount: number): string {
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(" · ") : "All caught up";
-}
-
-function ActivityCount({
-  count,
-  tone,
-  children,
-}: {
-  count: number;
-  tone: "working" | "unread";
-  children: React.ReactNode;
-}) {
-  return (
-    // Each slot is a fixed 2.25rem so counts changing width never resize the trigger.
-    <span
-      aria-hidden
-      className={cn(
-        "flex w-9 items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-100",
-        count === 0 && "text-muted-foreground/40",
-        count > 0 && (tone === "working" ? "text-primary" : "text-foreground"),
-      )}
-    >
-      {children}
-      {count > 99 ? "99+" : count}
-    </span>
-  );
 }
 
 /* ── Popover body ── */

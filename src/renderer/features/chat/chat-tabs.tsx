@@ -9,7 +9,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Cancel01Icon, Comment02Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon } from "@hugeicons/core-free-icons";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -281,15 +281,18 @@ function ChatTabItem({
               }
             }}
             className={cn(
-              "group/tab relative flex h-7 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1 text-[13px] outline-hidden select-none transition-colors duration-100",
+              "group/tab relative flex h-7 items-center gap-1.5 rounded-md pl-2 pr-1 text-[13px] outline-hidden select-none transition-colors duration-100",
               "hover:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60",
               isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
-              isHorizontal && "w-fit min-w-0 max-w-44 shrink basis-44 text-[12.5px]",
+              // Chrome's model: tabs shrink evenly from 11rem down to a 7rem floor,
+              // then the strip scrolls. Below the floor a title is unreadable, and a
+              // strip of identical stubs is worse than scrolling.
+              isHorizontal && "w-fit min-w-28 max-w-44 shrink basis-44 text-[12.5px]",
               isDragging && "z-10 opacity-80 shadow-sm",
             )}
           >
-            <ChatTabStatusIcon chatId={focusedPane.chatId} />
             <span className="min-w-0 flex-1 truncate">{title}</span>
+            <ChatTabStatusOverlay chatId={focusedPane.chatId} />
             {paneCount > 1 ? (
               <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                 {paneCount}
@@ -330,13 +333,27 @@ function ChatTabItem({
   );
 }
 
-function ChatTabStatusIcon({ chatId }: { chatId: string }) {
+/*
+ * Streaming marker. Floats over the left of the title instead of taking a slot
+ * in the row, so a tab doesn't resize when a stream starts or ends. `bg-inherit`
+ * picks up whatever the tab is currently painted (active / hover / nothing), and
+ * the mask fades that scrim out to the right so the title emerges from under it.
+ */
+function ChatTabStatusOverlay({ chatId }: { chatId: string }) {
   const status = useChatStatus(chatId);
-  const isStreaming = status === "streaming" || status === "submitted";
+  if (status !== "streaming" && status !== "submitted") {
+    return null;
+  }
 
   return (
-    <span className="flex shrink-0 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5">
-      {isStreaming ? <ChatActivityIndicator /> : <HugeiconsIcon icon={Comment02Icon} />}
+    <span
+      className="pointer-events-none absolute inset-y-px left-px flex items-center rounded-md bg-inherit pl-2 pr-4 text-muted-foreground backdrop-blur-[2px]"
+      style={{
+        maskImage: "linear-gradient(to right, #000 60%, transparent)",
+        WebkitMaskImage: "linear-gradient(to right, #000 60%, transparent)",
+      }}
+    >
+      <ChatActivityIndicator />
     </span>
   );
 }
