@@ -9,11 +9,7 @@ import {
 } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
 import type { ChatTitleUpdatedEvent } from "@shared/events";
-import {
-  normalizeChatMessageMetadata,
-  type ChatMessageMetadata,
-  type HanokiUiMessage,
-} from "@shared/chat/message-metadata";
+import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import {
   getChatById,
@@ -43,6 +39,10 @@ import {
   getTiptapMessageDisplayText,
   normalizeAssistantTiptapParts,
 } from "@shared/tiptap/extensions";
+import {
+  persistGeneratedAssistantMessage,
+  persistRequestUserMessage,
+} from "../chat-message-persistence";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -158,16 +158,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       !listAllMessagesByChatId(chat.id).some((message) => message.role === "user");
 
     if (mode !== "continue-message" && lastRequestMessage?.role === "user") {
-      const parentId = lastRequestMessage.metadata?.parentId ?? null;
-
-      upsertMessage({
-        id: lastRequestMessage.id,
-        chatId: chat.id,
-        parentId,
-        role: "user",
-        parts: lastRequestMessage.parts,
-        metadata: { parentId },
-      });
+      persistRequestUserMessage(chat.id, messages);
 
       const titleGeneration = readSumiSettings().titleGeneration;
       if (shouldAutoGenerateTitle && titleGeneration.enabled && titleGeneration.autoGenerate) {
@@ -420,24 +411,15 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           return;
         }
 
-        const parentId = normalizeChatMessageMetadata(
-          responseMessage.metadata,
-          responseParentId,
-        ).parentId;
-
-        upsertMessage({
-          id: responseMessage.id,
+        persistGeneratedAssistantMessage({
           chatId: chat.id,
-          parentId,
-          role: "assistant",
-          parts: normalizedResponseParts,
-          metadata: { parentId, ...capturedResponseMetadata },
-        });
-
-        setChatCurrentBranch(chat.id, null, {
-          settingsPatch: {
-            modelId: model.id,
+          message: {
+            ...responseMessage,
+            parts: normalizedResponseParts,
           },
+          fallbackParentId: responseParentId,
+          responseMetadata: capturedResponseMetadata,
+          modelId: model.id,
         });
       },
     });
