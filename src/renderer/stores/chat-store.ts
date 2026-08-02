@@ -1,6 +1,10 @@
 import * as React from "react";
 import { Chat } from "@ai-sdk/react";
-import { DefaultChatTransport, type ChatStatus } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type ChatStatus,
+} from "ai";
 import { create } from "zustand";
 
 import { chatMessageMetadataSchema, type HanokiUiMessage } from "@shared/chat/message-metadata";
@@ -35,6 +39,9 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       generateId: createUuidV7,
       transport: createChatTransport(apiUrl, chatId),
       messageMetadataSchema: chatMessageMetadataSchema,
+      // Once every pending tool approval has an answer, resume the generation
+      // automatically instead of making the user send another message.
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
       onFinish: ({ message, messages }) => {
         if (message.role !== "assistant") {
           return;

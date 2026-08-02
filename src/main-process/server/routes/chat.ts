@@ -27,12 +27,14 @@ import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
 import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
-import { readSumiSettings } from "../../services/settings-service";
+import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
 import { generateSumiChatTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
 import { createHanokiTools, HANOKI_TOOL_NAMES } from "../assistant/hanoki-tools";
+import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
 import {
   isHanokiToolEnabledForRequest,
+  isTerminalToolEnabledForRequest,
   isWebToolEnabledForRequest,
   parseTiptapDocument,
   validateTiptapMessageParts,
@@ -111,7 +113,15 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     const lastRequestMessage = messages.at(-1);
     let continuationTargetMessage: ReturnType<typeof getMessageById> = null;
-    let responseParentId = lastRequestMessage?.id ?? null;
+    // A trailing assistant message means the client is resuming after a tool
+    // approval: the SDK continues that same message, so the response inherits
+    // its parent rather than descending from it.
+    let responseParentId =
+      lastRequestMessage?.role === "assistant"
+        ? (lastRequestMessage.metadata?.parentId ??
+          getMessageById(lastRequestMessage.id)?.parentId ??
+          null)
+        : (lastRequestMessage?.id ?? null);
 
     if (mode === "continue-message") {
       if (!targetMessageId) {
@@ -204,10 +214,31 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.settings.hanokiEnabled),
       latestUserMessage,
     );
-    const tools = { ...webTools, ...createHanokiTools(chat.workspaceId) };
+    // The app-wide mode gates the tool entirely; the chat still has to opt in
+    // via the tools menu or an @Terminal mention, same as the web tools.
+    const terminalSettings = readTerminalToolSettings();
+    const isTerminalEnabledForRequest =
+      terminalSettings.mode !== "disabled" &&
+      isTerminalToolEnabledForRequest(Boolean(chat.settings.terminalEnabled), latestUserMessage);
+    const needsTerminalApproval =
+      terminalSettings.mode === "ask" && !chat.settings.terminalAutoApprove;
+
+    const tools = {
+      ...webTools,
+      ...createHanokiTools(chat.workspaceId),
+      ...createTerminalTools({
+        chatId: chat.id,
+        configuredCwd: terminalSettings.workingDirectory,
+      }),
+    };
     const activeTools: (keyof typeof tools)[] = [];
     if (isWebEnabledForRequest) activeTools.push("webSearch", "webFetch");
     if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
+    if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
+
+    const toolApproval = needsTerminalApproval
+      ? Object.fromEntries(TERMINAL_TOOL_NAMES.map((name) => [name, "user-approval" as const]))
+      : undefined;
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
@@ -223,6 +254,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       temperature: chat.settings.modelConfig?.temperature,
       tools,
       activeTools,
+      ...(toolApproval ? { toolApproval } : {}),
       stopWhen: isStepCount(100),
       onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
         currentCallId = startedCallId;

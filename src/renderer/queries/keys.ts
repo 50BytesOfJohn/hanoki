@@ -10,6 +10,7 @@ export const queryKeys = {
     all: ["settings"] as const,
     globalChat: () => [...queryKeys.settings.all, "globalChat"] as const,
     sumi: () => [...queryKeys.settings.all, "sumi"] as const,
+    tools: () => [...queryKeys.settings.all, "tools"] as const,
   },
   chatTree: {
     all: ["chatTree"] as const,

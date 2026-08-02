@@ -3,7 +3,13 @@ import { invokeIpc } from "../invoke";
 
 type SettingsApi = Pick<
   IpcApi,
-  "getGlobalChatSettings" | "updateGlobalChatSettings" | "getSumiSettings" | "updateSumiSettings"
+  | "getGlobalChatSettings"
+  | "updateGlobalChatSettings"
+  | "getSumiSettings"
+  | "updateSumiSettings"
+  | "getToolSettings"
+  | "updateTerminalToolSettings"
+  | "pickTerminalWorkingDirectory"
 >;
 
 export function createSettingsApi(): SettingsApi {
@@ -12,5 +18,10 @@ export function createSettingsApi(): SettingsApi {
     updateGlobalChatSettings: (input) => invokeIpc(IPC_CHANNELS.settings.updateGlobalChat, input),
     getSumiSettings: () => invokeIpc(IPC_CHANNELS.settings.getSumi),
     updateSumiSettings: (input) => invokeIpc(IPC_CHANNELS.settings.updateSumi, input),
+    getToolSettings: () => invokeIpc(IPC_CHANNELS.settings.getTools),
+    updateTerminalToolSettings: (input) =>
+      invokeIpc(IPC_CHANNELS.settings.updateTerminalTool, input),
+    pickTerminalWorkingDirectory: () =>
+      invokeIpc(IPC_CHANNELS.settings.pickTerminalWorkingDirectory),
   };
 }

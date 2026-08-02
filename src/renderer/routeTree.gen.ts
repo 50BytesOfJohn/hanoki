@@ -19,6 +19,7 @@ import { Route as ChatSettingsRouteImport } from "./routes/chat/settings"
 import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
 import { Route as SettingsAppearanceRouteImport } from "./routes/settings/appearance"
 import { Route as SettingsSumiRouteImport } from "./routes/settings/sumi"
+import { Route as SettingsToolsRouteImport } from "./routes/settings/tools"
 import { Route as SettingsWebRouteImport } from "./routes/settings/web"
 import { Route as SettingsWorkspaceIdIndexRouteImport } from "./routes/settings/$workspaceId/index"
 import { Route as SettingsWorkspaceIdSettingRouteImport } from "./routes/settings/$workspaceId/$setting"
@@ -78,6 +79,11 @@ const SettingsSumiRoute = SettingsSumiRouteImport.update({
   path: "/sumi",
   getParentRoute: () => SettingsRouteRoute,
 } as any)
+const SettingsToolsRoute = SettingsToolsRouteImport.update({
+  id: "/tools",
+  path: "/tools",
+  getParentRoute: () => SettingsRouteRoute,
+} as any)
 const SettingsWebRoute = SettingsWebRouteImport.update({
   id: "/web",
   path: "/web",
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   "/chat/settings": typeof ChatSettingsRoute
   "/settings/appearance": typeof SettingsAppearanceRoute
   "/settings/sumi": typeof SettingsSumiRoute
+  "/settings/tools": typeof SettingsToolsRoute
   "/settings/web": typeof SettingsWebRoute
   "/chat/": typeof ChatIndexRoute
   "/settings/": typeof SettingsIndexRoute
@@ -151,6 +158,7 @@ export interface FileRoutesByTo {
   "/chat/settings": typeof ChatSettingsRoute
   "/settings/appearance": typeof SettingsAppearanceRoute
   "/settings/sumi": typeof SettingsSumiRoute
+  "/settings/tools": typeof SettingsToolsRoute
   "/settings/web": typeof SettingsWebRoute
   "/chat": typeof ChatIndexRoute
   "/settings": typeof SettingsIndexRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   "/chat/settings": typeof ChatSettingsRoute
   "/settings/appearance": typeof SettingsAppearanceRoute
   "/settings/sumi": typeof SettingsSumiRoute
+  "/settings/tools": typeof SettingsToolsRoute
   "/settings/web": typeof SettingsWebRoute
   "/chat/": typeof ChatIndexRoute
   "/settings/": typeof SettingsIndexRoute
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | "/chat/settings"
     | "/settings/appearance"
     | "/settings/sumi"
+    | "/settings/tools"
     | "/settings/web"
     | "/chat/"
     | "/settings/"
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
     | "/chat/settings"
     | "/settings/appearance"
     | "/settings/sumi"
+    | "/settings/tools"
     | "/settings/web"
     | "/chat"
     | "/settings"
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | "/chat/settings"
     | "/settings/appearance"
     | "/settings/sumi"
+    | "/settings/tools"
     | "/settings/web"
     | "/chat/"
     | "/settings/"
@@ -318,6 +330,13 @@ declare module "@tanstack/react-router" {
       path: "/sumi"
       fullPath: "/settings/sumi"
       preLoaderRoute: typeof SettingsSumiRouteImport
+      parentRoute: typeof SettingsRouteRoute
+    }
+    "/settings/tools": {
+      id: "/settings/tools"
+      path: "/tools"
+      fullPath: "/settings/tools"
+      preLoaderRoute: typeof SettingsToolsRouteImport
       parentRoute: typeof SettingsRouteRoute
     }
     "/settings/web": {
@@ -413,6 +432,7 @@ const SettingsProvidersNewRouteWithChildren =
 interface SettingsRouteRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsSumiRoute: typeof SettingsSumiRoute
+  SettingsToolsRoute: typeof SettingsToolsRoute
   SettingsWebRoute: typeof SettingsWebRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   SettingsWorkspaceIdSettingRoute: typeof SettingsWorkspaceIdSettingRoute
@@ -425,6 +445,7 @@ interface SettingsRouteRouteChildren {
 const SettingsRouteRouteChildren: SettingsRouteRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsSumiRoute: SettingsSumiRoute,
+  SettingsToolsRoute: SettingsToolsRoute,
   SettingsWebRoute: SettingsWebRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SettingsWorkspaceIdSettingRoute: SettingsWorkspaceIdSettingRoute,

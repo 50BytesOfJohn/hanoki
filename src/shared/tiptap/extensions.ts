@@ -5,13 +5,17 @@ import type { Extensions } from "@tiptap/core";
 
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import {
-  HANOKI_TOOL_ID,
-  HANOKI_TOOL_LABEL,
+  CHAT_TOOL_LABELS,
   WEB_TOOL_LABEL,
   createTiptapMessageParts,
+  isChatToolId,
   parseTiptapDocument,
   type TiptapDocument,
 } from "./document";
+
+function getToolLabel(toolId: unknown): string {
+  return isChatToolId(toolId) ? CHAT_TOOL_LABELS[toolId] : WEB_TOOL_LABEL;
+}
 
 interface MessageTiptapExtensionOptions {
   suggestion?: MentionOptions["suggestion"];
@@ -26,10 +30,9 @@ export function createMessageTiptapExtensions({
       HTMLAttributes: {
         class: "tiptap-tool-mention",
       },
-      renderText: ({ node }) =>
-        `@${node.attrs.id === HANOKI_TOOL_ID ? HANOKI_TOOL_LABEL : WEB_TOOL_LABEL}`,
+      renderText: ({ node }) => `@${getToolLabel(node.attrs.id)}`,
       renderHTML: ({ node }) => {
-        const label = node.attrs.id === HANOKI_TOOL_ID ? HANOKI_TOOL_LABEL : WEB_TOOL_LABEL;
+        const label = getToolLabel(node.attrs.id);
         return [
           "span",
           {

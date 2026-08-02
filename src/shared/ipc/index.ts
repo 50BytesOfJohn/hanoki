@@ -21,6 +21,9 @@ export const IPC_CHANNELS = {
     updateGlobalChat: "settings:updateGlobalChat",
     getSumi: "settings:getSumi",
     updateSumi: "settings:updateSumi",
+    getTools: "settings:getTools",
+    updateTerminalTool: "settings:updateTerminalTool",
+    pickTerminalWorkingDirectory: "settings:pickTerminalWorkingDirectory",
   },
   contextMenu: {
     execute: "contextMenu:execute",
@@ -166,6 +169,32 @@ export interface SumiSettingsUpdateInput {
   titleGeneration?: SumiTitleGenerationSettingsUpdateInput;
 }
 
+/**
+ * - `disabled`: the terminal tool does not exist anywhere in the app.
+ * - `ask`: available, but every call waits for approval in the chat.
+ * - `always`: available, and calls run without asking.
+ */
+export type TerminalToolMode = "disabled" | "ask" | "always";
+
+export const TERMINAL_TOOL_MODES: readonly TerminalToolMode[] = ["disabled", "ask", "always"];
+
+export interface TerminalToolSettings {
+  mode: TerminalToolMode;
+  /** Directory new chats start in. Absolute path; defaults to the home folder. */
+  workingDirectory: string;
+  /** The login shell commands will run in, for display in settings. */
+  shell: string;
+}
+
+export interface TerminalToolSettingsUpdateInput {
+  mode?: TerminalToolMode;
+  workingDirectory?: string;
+}
+
+export interface ToolSettings {
+  terminal: TerminalToolSettings;
+}
+
 export type ContextMenuCommand =
   | "undo"
   | "redo"
@@ -208,6 +237,9 @@ export interface ChatSettings {
   modelConfig?: ChatModelConfig;
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
+  terminalEnabled?: boolean;
+  /** Set by "Allow for this chat" on an approval card; skips further prompts. */
+  terminalAutoApprove?: boolean;
 }
 
 export interface ChatModelConfig {
@@ -222,6 +254,8 @@ export interface ChatSettingsUpdateInput {
   };
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
+  terminalEnabled?: boolean;
+  terminalAutoApprove?: boolean;
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {
@@ -397,6 +431,12 @@ export interface IpcApi {
   updateGlobalChatSettings: (input: GlobalChatSettingsUpdateInput) => Promise<GlobalChatSettings>;
   getSumiSettings: () => Promise<SumiSettings>;
   updateSumiSettings: (input: SumiSettingsUpdateInput) => Promise<SumiSettings>;
+  getToolSettings: () => Promise<ToolSettings>;
+  updateTerminalToolSettings: (
+    input: TerminalToolSettingsUpdateInput,
+  ) => Promise<TerminalToolSettings>;
+  /** Opens a native folder picker. Resolves to null when the user cancels. */
+  pickTerminalWorkingDirectory: () => Promise<string | null>;
   executeContextMenuCommand: (input: ContextMenuCommandInput) => Promise<void>;
   getChatTree: (workspaceId: string) => Promise<ChatTreeSnapshot>;
   getChatTreeChildren: (

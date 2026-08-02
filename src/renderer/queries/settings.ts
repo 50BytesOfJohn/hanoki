@@ -13,3 +13,9 @@ export const sumiSettingsQueryOptions = queryOptions({
   queryFn: () => settingsApi.getSumi(),
   staleTime: Number.POSITIVE_INFINITY,
 });
+
+export const toolSettingsQueryOptions = queryOptions({
+  queryKey: queryKeys.settings.tools(),
+  queryFn: () => settingsApi.getTools(),
+  staleTime: Number.POSITIVE_INFINITY,
+});

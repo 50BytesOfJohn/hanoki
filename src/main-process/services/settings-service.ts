@@ -1,15 +1,25 @@
+import { statSync } from "node:fs";
 import { DEFAULT_CONFIG } from "../config/defaults";
 import { getConfig, updateConfig } from "../config";
-import type {
-  ChatFormSubmitBehavior,
-  ChatSidebarViewMode,
-  ChatTabsPosition,
-  GlobalChatSettings,
-  GlobalChatSettingsUpdateInput,
-  SumiModelReference,
-  SumiSettings,
-  SumiSettingsUpdateInput,
+import {
+  TERMINAL_TOOL_MODES,
+  type ChatFormSubmitBehavior,
+  type ChatSidebarViewMode,
+  type ChatTabsPosition,
+  type GlobalChatSettings,
+  type GlobalChatSettingsUpdateInput,
+  type SumiModelReference,
+  type SumiSettings,
+  type SumiSettingsUpdateInput,
+  type TerminalToolMode,
+  type TerminalToolSettings,
+  type TerminalToolSettingsUpdateInput,
+  type ToolSettings,
 } from "@shared/ipc";
+import {
+  getDefaultWorkingDirectory,
+  getShellDisplayName,
+} from "../server/assistant/terminal-tools";
 import { listProviders } from "../providers/repository";
 import { getModelById } from "../models/repository";
 import { AppError } from "../ipc/core/errors";
@@ -29,6 +39,8 @@ export interface SettingsService {
   updateGlobalChatSettings(input: GlobalChatSettingsUpdateInput): GlobalChatSettings;
   getSumiSettings(): SumiSettings;
   updateSumiSettings(input: SumiSettingsUpdateInput): SumiSettings;
+  getToolSettings(): ToolSettings;
+  updateTerminalToolSettings(input: TerminalToolSettingsUpdateInput): TerminalToolSettings;
 }
 
 export function createSettingsService(): SettingsService {
@@ -67,6 +79,32 @@ export function createSettingsService(): SettingsService {
       });
 
       return next;
+    },
+    getToolSettings() {
+      return { terminal: readTerminalToolSettings() };
+    },
+    updateTerminalToolSettings(input) {
+      const current = readTerminalToolSettings();
+      const mode = input.mode ?? current.mode;
+      if (!TERMINAL_TOOL_MODES.includes(mode)) {
+        throw AppError.badRequest(`Unsupported terminal tool mode "${mode}".`);
+      }
+
+      let workingDirectory = current.workingDirectory;
+      if (input.workingDirectory !== undefined) {
+        const candidate = input.workingDirectory.trim();
+        if (!candidate) {
+          throw AppError.badRequest("The working folder cannot be empty.");
+        }
+        if (!isExistingDirectory(candidate)) {
+          throw AppError.badRequest(`"${candidate}" is not a folder that exists.`);
+        }
+        workingDirectory = candidate;
+      }
+
+      updateConfig({ tools: { terminal: { mode, workingDirectory } } });
+
+      return { mode, workingDirectory, shell: getShellDisplayName() };
     },
     getSumiSettings() {
       return readSumiSettings();
@@ -137,6 +175,34 @@ export function createSettingsService(): SettingsService {
         },
       };
     },
+  };
+}
+
+function isExistingDirectory(candidatePath: string): boolean {
+  try {
+    return statSync(candidatePath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reads terminal tool settings, falling back to the home folder when the
+ * configured directory has been renamed or deleted since it was chosen.
+ */
+export function readTerminalToolSettings(): TerminalToolSettings {
+  const config = getConfig().tools?.terminal;
+  const mode: TerminalToolMode =
+    typeof config?.mode === "string" && TERMINAL_TOOL_MODES.includes(config.mode)
+      ? config.mode
+      : DEFAULT_CONFIG.tools.terminal.mode;
+  const configured = config?.workingDirectory?.trim();
+
+  return {
+    mode,
+    workingDirectory:
+      configured && isExistingDirectory(configured) ? configured : getDefaultWorkingDirectory(),
+    shell: getShellDisplayName(),
   };
 }
 

@@ -25,6 +25,12 @@ export const DEFAULT_CONFIG: AppConfig = {
       enabled: true,
     },
   },
+  tools: {
+    terminal: {
+      // Off until the user turns it on: this grants unsandboxed shell access.
+      mode: "disabled",
+    },
+  },
   sumi: {
     promptActions: {
       initialized: false,

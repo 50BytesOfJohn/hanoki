@@ -5,6 +5,7 @@ import {
   AiMagicIcon,
   AiWebBrowsingIcon,
   ArrowLeft01Icon,
+  ComputerTerminal01Icon,
   PaintBrush02Icon,
   SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
@@ -43,6 +44,11 @@ const chatFeaturesNavItems = [
     to: "/settings/web",
     label: "Web search & fetch",
     icon: AiWebBrowsingIcon,
+  },
+  {
+    to: "/settings/tools",
+    label: "Tools & MCP",
+    icon: ComputerTerminal01Icon,
   },
 ] as const;
 

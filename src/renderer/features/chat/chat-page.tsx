@@ -6,6 +6,7 @@ import {
   Add01Icon,
   AiWebBrowsingIcon,
   Cancel01Icon,
+  ComputerTerminal01Icon,
   Database02Icon,
   SentIcon,
 } from "@hugeicons/core-free-icons";
@@ -55,7 +56,7 @@ import { useUpdateChatSettings } from "@/mutations/chats";
 import { cn } from "@/lib/utils";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
-import { globalChatSettingsQueryOptions } from "@/queries/settings";
+import { globalChatSettingsQueryOptions, toolSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
 import type { ProviderModelInfo } from "@shared/ipc";
 import {
@@ -480,8 +481,11 @@ function ChatToolsMenu() {
   const isInteractionLocked = useChatIsInteractionLocked();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const updateChatSettings = useUpdateChatSettings();
+  const { data: toolSettings } = useQuery(toolSettingsQueryOptions);
   const webEnabled = chat?.settings.webEnabled ?? false;
   const hanokiEnabled = chat?.settings.hanokiEnabled ?? false;
+  const terminalEnabled = chat?.settings.terminalEnabled ?? false;
+  const isTerminalAvailable = toolSettings?.terminal.mode !== "disabled";
 
   return (
     <DropdownMenu>
@@ -493,7 +497,7 @@ function ChatToolsMenu() {
             size="icon-sm"
             className="text-foreground"
             aria-label="Chat tools"
-            aria-pressed={webEnabled || hanokiEnabled}
+            aria-pressed={webEnabled || hanokiEnabled || terminalEnabled}
             disabled={isInteractionLocked}
           />
         }
@@ -534,6 +538,24 @@ function ChatToolsMenu() {
               Hanoki
             </span>
           </DropdownMenuCheckboxItem>
+          {isTerminalAvailable ? (
+            <DropdownMenuCheckboxItem
+              variant="switch"
+              checked={terminalEnabled}
+              disabled={updateChatSettings.isPending}
+              onCheckedChange={(checked) => {
+                updateChatSettings.mutate({
+                  id: chatId,
+                  input: { terminalEnabled: checked },
+                });
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <HugeiconsIcon icon={ComputerTerminal01Icon} />
+                Terminal
+              </span>
+            </DropdownMenuCheckboxItem>
+          ) : null}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,11 +1,17 @@
+import { BrowserWindow, dialog } from "electron";
 import {
   IPC_CHANNELS,
+  TERMINAL_TOOL_MODES,
   type ChatFormSubmitBehavior,
   type GlobalChatSettings,
   type GlobalChatSettingsUpdateInput,
   type SumiModelReference,
   type SumiSettings,
   type SumiSettingsUpdateInput,
+  type TerminalToolMode,
+  type TerminalToolSettings,
+  type TerminalToolSettingsUpdateInput,
+  type ToolSettings,
 } from "@shared/ipc";
 import { syncApplicationMenu } from "../../app/application-menu";
 import type { IpcHandlerContext } from "../core/context";
@@ -160,6 +166,33 @@ function parseSumiSettingsUpdateInput(args: unknown[]): [SumiSettingsUpdateInput
   return [parsedInput];
 }
 
+function parseTerminalToolSettingsUpdateInput(args: unknown[]): [TerminalToolSettingsUpdateInput] {
+  expectArgCount(args, 1);
+
+  const rawInput = expectRecord(args[0], "Terminal tool settings update payload");
+  expectAllowedKeys(rawInput, ["mode", "workingDirectory"]);
+  const parsedInput: TerminalToolSettingsUpdateInput = {};
+
+  if (rawInput.mode !== undefined) {
+    if (
+      typeof rawInput.mode !== "string" ||
+      !TERMINAL_TOOL_MODES.includes(rawInput.mode as TerminalToolMode)
+    ) {
+      throw AppError.badRequest(`mode must be one of: ${TERMINAL_TOOL_MODES.join(", ")}.`);
+    }
+    parsedInput.mode = rawInput.mode as TerminalToolMode;
+  }
+
+  if (rawInput.workingDirectory !== undefined) {
+    if (typeof rawInput.workingDirectory !== "string") {
+      throw AppError.badRequest("workingDirectory must be a string.");
+    }
+    parsedInput.workingDirectory = rawInput.workingDirectory;
+  }
+
+  return [parsedInput];
+}
+
 function parseSumiModelReference(value: unknown, label: string): SumiModelReference {
   const model = expectRecord(value, label);
   expectAllowedKeys(model, ["providerId", "providerModelId"]);
@@ -235,5 +268,45 @@ export function registerSettingsIpcModule(
     channel: IPC_CHANNELS.settings.updateSumi,
     parseArgs: parseSumiSettingsUpdateInput,
     handler: ({ services }, _event, input) => services.settings.updateSumiSettings(input),
+  });
+
+  registerInvokeHandler<[], ToolSettings>(context, registeredChannels, {
+    channel: IPC_CHANNELS.settings.getTools,
+    parseArgs: (args) => {
+      expectArgCount(args, 0);
+      return [];
+    },
+    handler: ({ services }) => services.settings.getToolSettings(),
+  });
+
+  registerInvokeHandler<[TerminalToolSettingsUpdateInput], TerminalToolSettings>(
+    context,
+    registeredChannels,
+    {
+      channel: IPC_CHANNELS.settings.updateTerminalTool,
+      parseArgs: parseTerminalToolSettingsUpdateInput,
+      handler: ({ services }, _event, input) => services.settings.updateTerminalToolSettings(input),
+    },
+  );
+
+  registerInvokeHandler<[], string | null>(context, registeredChannels, {
+    channel: IPC_CHANNELS.settings.pickTerminalWorkingDirectory,
+    parseArgs: (args) => {
+      expectArgCount(args, 0);
+      return [];
+    },
+    handler: async ({ services }, event) => {
+      const parentWindow = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.OpenDialogOptions = {
+        title: "Choose a working folder",
+        defaultPath: services.settings.getToolSettings().terminal.workingDirectory,
+        properties: ["openDirectory", "createDirectory"],
+      };
+      const result = parentWindow
+        ? await dialog.showOpenDialog(parentWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
   });
 }

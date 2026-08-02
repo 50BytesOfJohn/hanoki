@@ -4,7 +4,20 @@ export const WEB_TOOL_ID = "web" as const;
 export const WEB_TOOL_LABEL = "Web" as const;
 export const HANOKI_TOOL_ID = "hanoki" as const;
 export const HANOKI_TOOL_LABEL = "Hanoki" as const;
-export type ChatToolId = typeof WEB_TOOL_ID | typeof HANOKI_TOOL_ID;
+export const TERMINAL_TOOL_ID = "terminal" as const;
+export const TERMINAL_TOOL_LABEL = "Terminal" as const;
+
+export const CHAT_TOOL_LABELS = {
+  [WEB_TOOL_ID]: WEB_TOOL_LABEL,
+  [HANOKI_TOOL_ID]: HANOKI_TOOL_LABEL,
+  [TERMINAL_TOOL_ID]: TERMINAL_TOOL_LABEL,
+} as const;
+
+export type ChatToolId = keyof typeof CHAT_TOOL_LABELS;
+
+export function isChatToolId(value: unknown): value is ChatToolId {
+  return typeof value === "string" && value in CHAT_TOOL_LABELS;
+}
 
 const BLOCK_NODE_TYPES = new Set([
   "paragraph",
@@ -170,6 +183,16 @@ export function isHanokiToolEnabledForRequest(
   );
 }
 
+export function isTerminalToolEnabledForRequest(
+  chatWideTerminalEnabled: boolean,
+  latestUserMessage: Pick<HanokiUiMessage, "parts"> | undefined,
+): boolean {
+  return (
+    chatWideTerminalEnabled ||
+    Boolean(latestUserMessage && getSelectedToolIds(latestUserMessage).includes(TERMINAL_TOOL_ID))
+  );
+}
+
 export function validateTiptapMessageParts(message: unknown): string | null {
   if (!isRecord(message) || !Array.isArray(message.parts)) {
     return "Message parts must be an array.";
@@ -247,10 +270,7 @@ function validateNode(
   }
 
   if (nodeType === "mention") {
-    if (
-      !isRecord(input.attrs) ||
-      (input.attrs.id !== WEB_TOOL_ID && input.attrs.id !== HANOKI_TOOL_ID)
-    ) {
+    if (!isRecord(input.attrs) || !isChatToolId(input.attrs.id)) {
       return `${path} contains an unsupported mention ID.`;
     }
     if (input.content !== undefined) {
@@ -363,9 +383,9 @@ function renderNode(
   }
   if (node.type === "mention") {
     const toolId = node.attrs?.id;
-    if (toolId !== WEB_TOOL_ID && toolId !== HANOKI_TOOL_ID) return "";
-    const label = toolId === WEB_TOOL_ID ? WEB_TOOL_LABEL : HANOKI_TOOL_LABEL;
+    if (!isChatToolId(toolId)) return "";
     selectedToolIds.add(toolId);
+    const label = CHAT_TOOL_LABELS[toolId];
     return mode === "display" ? `@${label}` : `${label} tool`;
   }
 

@@ -86,6 +86,8 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     "modelConfig",
     "webEnabled",
     "hanokiEnabled",
+    "terminalEnabled",
+    "terminalAutoApprove",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -159,6 +161,22 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     parsedInput.hanokiEnabled = inputRecord.hanokiEnabled;
+  }
+
+  if (inputRecord.terminalEnabled !== undefined) {
+    if (typeof inputRecord.terminalEnabled !== "boolean") {
+      throw AppError.badRequest("terminalEnabled must be a boolean.");
+    }
+
+    parsedInput.terminalEnabled = inputRecord.terminalEnabled;
+  }
+
+  if (inputRecord.terminalAutoApprove !== undefined) {
+    if (typeof inputRecord.terminalAutoApprove !== "boolean") {
+      throw AppError.badRequest("terminalAutoApprove must be a boolean.");
+    }
+
+    parsedInput.terminalAutoApprove = inputRecord.terminalAutoApprove;
   }
 
   return [chatId, parsedInput];

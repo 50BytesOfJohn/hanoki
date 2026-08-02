@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { GlobalChatSettings, GlobalChatSettingsUpdateInput } from "@shared/ipc";
 import type { SumiSettings, SumiSettingsUpdateInput } from "@shared/ipc";
+import type { TerminalToolSettingsUpdateInput, ToolSettings } from "@shared/ipc";
 import { settingsApi } from "../api/settings";
 import { queryKeys } from "../queries/keys";
 
@@ -79,6 +80,20 @@ export function useUpdateSumiSettings() {
         queryKey: queryKeys.settings.sumi(),
         exact: true,
       });
+    },
+  });
+}
+
+export function useUpdateTerminalToolSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: TerminalToolSettingsUpdateInput) => settingsApi.updateTerminalTool(input),
+    onSuccess: (terminal) => {
+      queryClient.setQueryData<ToolSettings>(queryKeys.settings.tools(), { terminal });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.tools(), exact: true });
     },
   });
 }

@@ -11,15 +11,26 @@ import type {
   SuggestionOptions,
   SuggestionProps,
 } from "@tiptap/suggestion";
-import { AiWebBrowsingIcon, Database02Icon } from "@hugeicons/core-free-icons";
+import {
+  AiWebBrowsingIcon,
+  ComputerTerminal01Icon,
+  Database02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "@/lib/utils";
+import { queryClient } from "@/lib/query-client";
+import { queryKeys } from "@/queries/keys";
+import type { ToolSettings } from "@shared/ipc";
 import {
+  CHAT_TOOL_LABELS,
   HANOKI_TOOL_ID,
   HANOKI_TOOL_LABEL,
+  TERMINAL_TOOL_ID,
+  TERMINAL_TOOL_LABEL,
   WEB_TOOL_ID,
   WEB_TOOL_LABEL,
+  isChatToolId,
   parseTiptapDocument,
   type ChatToolId,
   type TiptapDocument,
@@ -46,7 +57,25 @@ const TOOL_SUGGESTIONS: ToolSuggestionItem[] = [
     description: "Workspace data",
     icon: Database02Icon,
   },
+  {
+    id: TERMINAL_TOOL_ID,
+    label: TERMINAL_TOOL_LABEL,
+    description: "Commands & files",
+    icon: ComputerTerminal01Icon,
+  },
 ];
+
+function getComposerToolLabel(toolId: unknown): string {
+  return isChatToolId(toolId) ? CHAT_TOOL_LABELS[toolId] : WEB_TOOL_LABEL;
+}
+
+/** Hides tools the user has switched off app-wide, so they can't be mentioned. */
+function getAvailableToolSuggestions(): ToolSuggestionItem[] {
+  const toolSettings = queryClient.getQueryData<ToolSettings>(queryKeys.settings.tools());
+  const isTerminalAvailable = toolSettings?.terminal.mode !== "disabled";
+
+  return TOOL_SUGGESTIONS.filter((item) => item.id !== TERMINAL_TOOL_ID || isTerminalAvailable);
+}
 const toolSuggestionPluginKey = new PluginKey("hanoki-tool-mention");
 
 const ToolSuggestionList = React.forwardRef<
@@ -133,7 +162,9 @@ const toolSuggestion: Omit<SuggestionOptions<ToolSuggestionItem, MentionNodeAttr
   offset: { mainAxis: 8 },
   items: ({ query }) => {
     const normalizedQuery = query.trim().toLowerCase();
-    return TOOL_SUGGESTIONS.filter((item) => item.label.toLowerCase().startsWith(normalizedQuery));
+    return getAvailableToolSuggestions().filter((item) =>
+      item.label.toLowerCase().startsWith(normalizedQuery),
+    );
   },
   render: () => {
     let component: ReactRenderer<
@@ -178,10 +209,9 @@ const composerExtensions = [
     HTMLAttributes: {
       class: "tiptap-tool-mention",
     },
-    renderText: ({ node }) =>
-      `@${node.attrs.id === HANOKI_TOOL_ID ? HANOKI_TOOL_LABEL : WEB_TOOL_LABEL}`,
+    renderText: ({ node }) => `@${getComposerToolLabel(node.attrs.id)}`,
     renderHTML: ({ node }) => {
-      const label = node.attrs.id === HANOKI_TOOL_ID ? HANOKI_TOOL_LABEL : WEB_TOOL_LABEL;
+      const label = getComposerToolLabel(node.attrs.id);
       return ["span", { class: "tiptap-tool-mention", "data-tool-id": node.attrs.id }, `@${label}`];
     },
     suggestion: toolSuggestion,

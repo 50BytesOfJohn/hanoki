@@ -23,6 +23,7 @@ type ChatContextState = {
   continuationError: string | null;
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
+  respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
   stopGeneration: () => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
@@ -37,8 +38,11 @@ type ChatContextState = {
   deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<void>;
 };
 
+type ChatApprovalResponder = Chat<HanokiUiMessage>["addToolApprovalResponse"];
+
 type ChatTransportRefs = {
   sendMessage: ChatSendMessage | null;
+  addToolApprovalResponse: ChatApprovalResponder | null;
   regenerate: ChatRegenerate | null;
   stopChat: (() => Promise<void>) | null;
   stopContinuation: (() => void) | null;
@@ -134,6 +138,23 @@ function createChatContextStore({
       return transportRefs.sendMessage(message, {
         ...options,
         body: { ...options?.body, modelId: currentModelId },
+      });
+    },
+    respondToToolApproval: ({ id, approved, reason }) => {
+      const { modelId: currentModelId } = get();
+      if (!transportRefs.addToolApprovalResponse || !currentModelId) {
+        return;
+      }
+
+      transportRefs.markTabTouched?.();
+
+      // `sendAutomaticallyWhen` resumes the generation as soon as the last
+      // approval is answered, so the model id has to ride along with it.
+      void transportRefs.addToolApprovalResponse({
+        id,
+        approved,
+        ...(reason ? { reason } : {}),
+        options: { body: { modelId: currentModelId } },
       });
     },
     regenerateMessage: (options) => {
@@ -425,6 +446,7 @@ export function ChatContextProvider({
   const wasStoppedRef = React.useRef(false);
   const transportRefs = React.useRef<ChatTransportRefs>({
     sendMessage: null,
+    addToolApprovalResponse: null,
     regenerate: null,
     stopChat: null,
     stopContinuation: null,
@@ -447,6 +469,7 @@ export function ChatContextProvider({
 
   const store = storeRef.current;
   transportRefs.current.sendMessage = chat.sendMessage;
+  transportRefs.current.addToolApprovalResponse = chat.addToolApprovalResponse;
   transportRefs.current.regenerate = chat.regenerate;
   transportRefs.current.stopChat = chat.stop;
   transportRefs.current.getMessages = () => chat.messages;
@@ -675,6 +698,10 @@ export function useChatSendMessage() {
 
 export function useChatStop() {
   return useChatContext((state) => state.stopGeneration);
+}
+
+export function useChatRespondToToolApproval() {
+  return useChatContext((state) => state.respondToToolApproval);
 }
 
 export function useChatRegenerateMessage() {

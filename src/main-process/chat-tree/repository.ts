@@ -16,6 +16,8 @@ type ChatSettings = {
   };
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
+  terminalEnabled?: boolean;
+  terminalAutoApprove?: boolean;
 };
 type ChatSettingsPatch = Omit<Partial<ChatSettings>, "modelConfig"> & {
   modelConfig?: {
@@ -157,6 +159,14 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.hanokiEnabled = hanokiEnabled;
   }
 
+  if (typeof record.terminalEnabled === "boolean") {
+    normalizedSettings.terminalEnabled = record.terminalEnabled;
+  }
+
+  if (typeof record.terminalAutoApprove === "boolean") {
+    normalizedSettings.terminalAutoApprove = record.terminalAutoApprove;
+  }
+
   return normalizedSettings;
 }
 
@@ -198,6 +208,14 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
 
   if ("hanokiEnabled" in settingsPatch) {
     nextSettings.hanokiEnabled = settingsPatch.hanokiEnabled ?? false;
+  }
+
+  if ("terminalEnabled" in settingsPatch) {
+    nextSettings.terminalEnabled = settingsPatch.terminalEnabled ?? false;
+  }
+
+  if ("terminalAutoApprove" in settingsPatch) {
+    nextSettings.terminalAutoApprove = settingsPatch.terminalAutoApprove ?? false;
   }
 
   return nextSettings;
