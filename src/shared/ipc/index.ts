@@ -170,13 +170,15 @@ export interface SumiSettingsUpdateInput {
 }
 
 /**
- * - `disabled`: the terminal tool does not exist anywhere in the app.
- * - `ask`: available, but every call waits for approval in the chat.
- * - `always`: available, and calls run without asking.
+ * - `ask`: every call waits for approval in the chat.
+ * - `always`: calls run without asking.
+ *
+ * There is no off switch: a chat only gets the tool when it opts in via the
+ * tools menu or an @Terminal mention, so that is already the on/off control.
  */
-export type TerminalToolMode = "disabled" | "ask" | "always";
+export type TerminalToolMode = "ask" | "always";
 
-export const TERMINAL_TOOL_MODES: readonly TerminalToolMode[] = ["disabled", "ask", "always"];
+export const TERMINAL_TOOL_MODES: readonly TerminalToolMode[] = ["ask", "always"];
 
 export interface TerminalToolSettings {
   mode: TerminalToolMode;

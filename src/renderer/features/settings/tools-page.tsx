@@ -26,20 +26,14 @@ import {
 
 /*
  * Wording note: this page is read by people who have never opened a terminal.
- * Every mode says what happens on *their computer*, not what happens to the
- * tool, and the risky mode says plainly what it gives up.
+ * Both modes say what happens on *their computer*, not what happens to the
+ * tool, and the risky one says plainly what it gives up.
  */
 const TERMINAL_MODES: ReadonlyArray<{
   value: TerminalToolMode;
   label: string;
   description: string;
 }> = [
-  {
-    value: "disabled",
-    label: "Off",
-    description:
-      "The assistant cannot run commands or open your files. Nothing on your computer can change.",
-  },
   {
     value: "ask",
     label: "Ask me every time",
@@ -59,7 +53,7 @@ export function ToolsPage() {
   const updateTerminal = useUpdateTerminalToolSettings();
   const [error, setError] = React.useState<string | null>(null);
   const terminal = toolSettings?.terminal;
-  const mode = terminal?.mode ?? "disabled";
+  const mode = terminal?.mode ?? "ask";
   const isBusy = isPending || updateTerminal.isPending;
 
   function update(input: Parameters<typeof updateTerminal.mutate>[0]) {
@@ -96,11 +90,7 @@ export function ToolsPage() {
         <SettingsRow
           icon={<HugeiconsIcon icon={ComputerTerminal01Icon} className="size-4" />}
           title="When the assistant wants to run something"
-          description={
-            mode === "disabled"
-              ? "Turn this on to let the assistant use your terminal."
-              : `Runs in ${terminal?.shell ?? "your login shell"}, with your normal settings and installed programs.`
-          }
+          description={`Runs in ${terminal?.shell ?? "your login shell"}, with your normal settings and installed programs.`}
         >
           <RadioGroup
             value={mode}
@@ -132,22 +122,20 @@ export function ToolsPage() {
           </RadioGroup>
         </SettingsRow>
 
-        {mode !== "disabled" ? (
-          <SettingsRow
-            icon={<HugeiconsIcon icon={FolderOpenIcon} className="size-4" />}
-            title="Starting folder"
-            description="Where commands begin. This is a starting point, not a limit — the assistant can still reach files elsewhere on your computer."
-            control={
-              <Button variant="secondary" disabled={isBusy} onClick={chooseWorkingDirectory}>
-                Change
-              </Button>
-            }
-          >
-            <p className="truncate rounded-md bg-surface-secondary px-2.5 py-1.5 font-mono text-xs text-muted-foreground">
-              {terminal?.workingDirectory ?? "…"}
-            </p>
-          </SettingsRow>
-        ) : null}
+        <SettingsRow
+          icon={<HugeiconsIcon icon={FolderOpenIcon} className="size-4" />}
+          title="Starting folder"
+          description="Where commands begin. This is a starting point, not a limit — the assistant can still reach files elsewhere on your computer."
+          control={
+            <Button variant="secondary" disabled={isBusy} onClick={chooseWorkingDirectory}>
+              Change
+            </Button>
+          }
+        >
+          <p className="truncate rounded-md bg-surface-secondary px-2.5 py-1.5 font-mono text-xs text-muted-foreground">
+            {terminal?.workingDirectory ?? "…"}
+          </p>
+        </SettingsRow>
       </SettingsSection>
 
       {mode === "always" ? (
@@ -173,8 +161,9 @@ export function ToolsPage() {
       </SettingsSection>
 
       <p className="px-0.5 text-xs text-muted-foreground">
-        Even when turned on here, the assistant only gets these tools in chats where you switch them
-        on — from the tools menu next to the message box, or by typing @Terminal.
+        The assistant only gets the terminal in chats where you switch it on — from the tools menu
+        next to the message box, or by typing @Terminal. This setting decides what happens once you
+        have.
       </p>
     </SettingsPageShell>
   );

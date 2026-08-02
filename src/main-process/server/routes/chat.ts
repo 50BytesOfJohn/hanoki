@@ -214,12 +214,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.settings.hanokiEnabled),
       latestUserMessage,
     );
-    // The app-wide mode gates the tool entirely; the chat still has to opt in
-    // via the tools menu or an @Terminal mention, same as the web tools.
+    // The chat opts in via the tools menu or an @Terminal mention, same as the
+    // web tools; the app-wide setting only decides whether calls need approval.
     const terminalSettings = readTerminalToolSettings();
-    const isTerminalEnabledForRequest =
-      terminalSettings.mode !== "disabled" &&
-      isTerminalToolEnabledForRequest(Boolean(chat.settings.terminalEnabled), latestUserMessage);
+    const isTerminalEnabledForRequest = isTerminalToolEnabledForRequest(
+      Boolean(chat.settings.terminalEnabled),
+      latestUserMessage,
+    );
     const needsTerminalApproval =
       terminalSettings.mode === "ask" && !chat.settings.terminalAutoApprove;
 
