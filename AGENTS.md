@@ -10,7 +10,6 @@ Project is an AI chat desktop app using Electron Forge.
 - Always run lint and format at the end of each task using `pnpm lint` and `pnpm fmt`
 - Use Hugeicons for icons only. If MCP is available use it to find icons.
 - When possible use well known libraries. Avoid implementing custom solutions if a package that does it exists
-- Always commit to main, if not explicitly asked otherwise
 
 # Documentation
 
