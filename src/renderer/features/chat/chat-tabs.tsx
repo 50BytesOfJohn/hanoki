@@ -291,8 +291,10 @@ function ChatTabItem({
               isDragging && "z-10 opacity-80 shadow-sm",
             )}
           >
-            <span className="min-w-0 flex-1 truncate">{title}</span>
-            <ChatTabStatusOverlay chatId={focusedPane.chatId} />
+            <span className="flex min-w-0 flex-1 items-center">
+              <ChatTabActivitySlot chatId={focusedPane.chatId} />
+              <span className="truncate">{title}</span>
+            </span>
             {paneCount > 1 ? (
               <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                 {paneCount}
@@ -334,26 +336,38 @@ function ChatTabItem({
 }
 
 /*
- * Streaming marker. Floats over the left of the title instead of taking a slot
- * in the row, so a tab doesn't resize when a stream starts or ends. `bg-inherit`
- * picks up whatever the tab is currently painted (active / hover / nothing), and
- * the mask fades that scrim out to the right so the title emerges from under it.
+ * Streaming marker. A slot that widens from nothing to the indicator's width, so
+ * the title slides right to make room instead of being covered up. The tab keeps
+ * its size either way: its width comes from flex-basis, not from its content.
+ *
+ * Always mounted, toggled by `data-active`, so both directions animate and a
+ * stream that stops and restarts mid-transition retargets instead of snapping —
+ * transitions interrupt cleanly, keyframes would restart from zero.
  */
-function ChatTabStatusOverlay({ chatId }: { chatId: string }) {
+function ChatTabActivitySlot({ chatId }: { chatId: string }) {
   const status = useChatStatus(chatId);
-  if (status !== "streaming" && status !== "submitted") {
-    return null;
-  }
+  const isActive = status === "streaming" || status === "submitted";
 
   return (
     <span
-      className="pointer-events-none absolute inset-y-px left-px flex items-center rounded-md bg-inherit pl-2 pr-4 text-muted-foreground backdrop-blur-[2px]"
-      style={{
-        maskImage: "linear-gradient(to right, #000 60%, transparent)",
-        WebkitMaskImage: "linear-gradient(to right, #000 60%, transparent)",
-      }}
+      aria-hidden={!isActive}
+      data-active={isActive || undefined}
+      className={cn(
+        // 1.25rem = the 14px indicator plus the gap it needs before the title.
+        "flex w-0 shrink-0 items-center overflow-hidden text-muted-foreground",
+        "transition-[width] duration-200 ease-out-quint motion-reduce:transition-none",
+        "data-active:w-5",
+      )}
     >
-      <ChatActivityIndicator />
+      <ChatActivityIndicator
+        paused={!isActive}
+        // Fades faster than the slot opens, so the space is already there when
+        // the marker lands rather than the marker fighting the sliding title.
+        className={cn(
+          "scale-90 opacity-0 transition duration-150 ease-out-quint motion-reduce:transition-none",
+          isActive && "scale-100 opacity-100",
+        )}
+      />
     </span>
   );
 }

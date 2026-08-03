@@ -51,11 +51,18 @@ export function nextGeneration(board: Board): Board {
   });
 }
 
-export function ChatActivityIndicator({ className }: { className?: string }) {
+export function ChatActivityIndicator({
+  className,
+  paused = false,
+}: {
+  className?: string;
+  /** Kept mounted for an exit animation but not streaming: stop the generations. */
+  paused?: boolean;
+}) {
   const [state, setState] = useState(() => ({ board: seedBoard(), generation: 0 }));
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return; // leave the seeded board on screen, static
     }
 
@@ -73,7 +80,7 @@ export function ChatActivityIndicator({ className }: { className?: string }) {
     }, GENERATION_MS);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [paused]);
 
   return (
     <span
