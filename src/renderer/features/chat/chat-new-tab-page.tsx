@@ -7,7 +7,7 @@ import {
   ArrowRight01Icon,
   ChatAdd01Icon,
   FolderOffIcon,
-  Comment02Icon,
+  MessagesSquare,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -127,19 +127,13 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
           <img
             src={markUrl}
             alt=""
-            width={56}
-            height={56}
+            width={96}
+            height={96}
             draggable={false}
-            className={cn("size-14 select-none", ENTER)}
+            className={cn("size-24 select-none", ENTER)}
           />
-          <h1 className={cn("mt-4 font-heading text-[15px] font-medium", ENTER)} style={delay(40)}>
-            Hanoki
-          </h1>
-          <p className={cn("mt-1 text-[13px] text-muted-foreground", ENTER)} style={delay(40)}>
-            Pick up where you left off, or start something new.
-          </p>
 
-          <div className={cn("mt-6 flex items-center gap-2", ENTER)} style={delay(80)}>
+          <div className={cn("mt-6 flex items-center gap-2", ENTER)} style={delay(40)}>
             <Button size="sm" disabled={!workspaceId} onClick={() => void createChat()}>
               <HugeiconsIcon icon={ChatAdd01Icon} />
               New chat
@@ -159,10 +153,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
 
           {recents.length > 0 ? (
             <div className={cn("mt-9 w-full", ENTER)} style={delay(120)}>
-              <p className="px-2 text-[10px] font-medium tracking-wider text-muted-foreground/80 uppercase">
-                Recent
-              </p>
-              <ul className="mt-1.5">
+              <ul>
                 {recents.map((chat, index) => (
                   <li key={chat.id} className={ENTER} style={delay(160 + index * 30)}>
                     <button
@@ -171,7 +162,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
                       className="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60"
                     >
                       <HugeiconsIcon
-                        icon={Comment02Icon}
+                        icon={MessagesSquare}
                         className="size-3.5 shrink-0 text-muted-foreground/70 transition-colors duration-100 group-hover:text-muted-foreground"
                       />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground transition-colors duration-100 group-hover:text-foreground">
@@ -190,10 +181,6 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
               </ul>
             </div>
           ) : null}
-
-          <p className={cn("mt-9 text-[11px] text-muted-foreground/60", ENTER)} style={delay(200)}>
-            Drag a chat here from the sidebar to open it.
-          </p>
         </div>
       )}
 

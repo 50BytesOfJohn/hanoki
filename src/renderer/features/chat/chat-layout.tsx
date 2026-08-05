@@ -20,6 +20,7 @@ import {
   ArrowUp03Icon,
   Cancel01Icon,
   Chatting01Icon,
+  Menu01Icon,
   PinIcon,
   SlidersHorizontalIcon,
   WorkflowSquare03Icon,
@@ -416,7 +417,7 @@ function ChatPanelHeader({
               }
             >
               <HugeiconsIcon
-                icon={AiBeautifyIcon}
+                icon={Menu01Icon}
                 className={cn("size-3.5!", isGeneratingTitle && "animate-pulse")}
               />
             </DropdownMenuTrigger>

@@ -1,11 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  Add01Icon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  Setting07Icon,
-} from "@hugeicons/core-free-icons";
+import { Add01Icon, Setting07Icon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
@@ -58,10 +53,7 @@ export function ChatToolbar() {
           aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           onClick={toggleSidebar}
         >
-          <HugeiconsIcon
-            icon={isSidebarOpen ? PanelLeftCloseIcon : PanelLeftOpenIcon}
-            className="size-4!"
-          />
+          <HugeiconsIcon icon={SidebarLeftIcon} className="size-4!" />
         </Button>
 
         <DropdownMenu>

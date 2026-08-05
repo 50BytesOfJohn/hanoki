@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Comment02Icon } from "@hugeicons/core-free-icons";
+import { MessagesSquare } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { chatTreeApi } from "@/api/chat-tree";
@@ -80,7 +80,7 @@ export function ChatSearchDialog({
                 }}
               >
                 <HugeiconsIcon
-                  icon={Comment02Icon}
+                  icon={MessagesSquare}
                   className="size-3.5! shrink-0 text-muted-foreground"
                 />
                 <span className="min-w-0 flex-1 truncate">{chat.title}</span>

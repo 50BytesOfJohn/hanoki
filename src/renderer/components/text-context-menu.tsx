@@ -173,18 +173,31 @@ function shortcut(key: string): string {
   return IS_MAC ? `⌘${key}` : `Ctrl+${key}`;
 }
 
+function resolveCopyAllText(copyAllText: string | (() => string) | undefined): string {
+  if (copyAllText == null) {
+    return "";
+  }
+  return typeof copyAllText === "function" ? copyAllText() : copyAllText;
+}
+
 export function TextContextMenu({
   children,
+  copyAllText,
   extraItems,
   forceOpen = false,
 }: {
   children: React.ReactElement;
+  /** When there is no selection, Copy uses this full text instead of staying disabled. */
+  copyAllText?: string | (() => string);
   extraItems?: React.ReactNode;
   forceOpen?: boolean;
 }) {
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const selectionSnapshotRef = React.useRef<SelectionSnapshot | null>(null);
   const [menuState, setMenuState] = React.useState(EMPTY_MENU_STATE);
+
+  const canCopyAll = copyAllText != null;
+  const canCopy = menuState.hasSelection || canCopyAll;
 
   const execute = React.useCallback(
     (command: ContextMenuCommand) => {
@@ -196,6 +209,18 @@ export function TextContextMenu({
     },
     [menuState.selectionText],
   );
+
+  const handleCopy = React.useCallback(() => {
+    if (menuState.hasSelection) {
+      execute("copy");
+      return;
+    }
+
+    const text = resolveCopyAllText(copyAllText);
+    if (text.length > 0) {
+      void navigator.clipboard.writeText(text);
+    }
+  }, [copyAllText, execute, menuState.hasSelection]);
 
   return (
     <ContextMenu
@@ -240,7 +265,7 @@ export function TextContextMenu({
                 Cut
                 <ContextMenuShortcut>{shortcut("X")}</ContextMenuShortcut>
               </ContextMenuItem>
-              <ContextMenuItem disabled={!menuState.hasSelection} onClick={() => execute("copy")}>
+              <ContextMenuItem disabled={!canCopy} onClick={handleCopy}>
                 Copy
                 <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
               </ContextMenuItem>
@@ -268,8 +293,8 @@ export function TextContextMenu({
           </>
         ) : (
           <ContextMenuGroup>
-            <ContextMenuItem disabled={!menuState.hasSelection} onClick={() => execute("copy")}>
-              Copy
+            <ContextMenuItem disabled={!canCopy} onClick={handleCopy}>
+              {menuState.hasSelection ? "Copy" : "Copy as Text"}
               <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuGroup>
@@ -292,7 +317,7 @@ export function TextContextMenu({
         {extraItems ? (
           <>
             <ContextMenuSeparator />
-            <ContextMenuGroup>{extraItems}</ContextMenuGroup>
+            {extraItems}
           </>
         ) : null}
       </ContextMenuContent>

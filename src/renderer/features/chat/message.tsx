@@ -1,22 +1,11 @@
 import * as React from "react";
 import { code } from "@streamdown/code";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +21,6 @@ import type { ChatMessageMetadata, HanokiUiMessage } from "@shared/chat/message-
 import type { EditMessageBehavior } from "@shared/ipc";
 import {
   useChatContinueMessage,
-  useChatDeleteMessage,
   useChatRegenerateMessage,
   useChatStartEditingMessage,
   useChatStopEditingMessage,
@@ -40,10 +28,6 @@ import {
   useChatSwitchBranch,
 } from "@/features/chat/chat-context";
 import { useChatScrollToBottom } from "@/features/chat/chat-scroll-context";
-import { messagesApi } from "@/api/messages";
-import { queryKeys } from "@/queries/keys";
-import { CURRENT_BRANCH_QUERY_KEY } from "@/queries/chats";
-import { useChatStore } from "@/stores/chat-store";
 import { listProviderModelsQueryOptions, listProvidersQueryOptions } from "@/queries/providers";
 
 import "streamdown/styles.css";
@@ -75,7 +59,7 @@ import {
 } from "@shared/tiptap/extensions";
 import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
-import { MessageContextMenu } from "./message-context-menu";
+import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 
 const STREAMDOWN_PLUGINS = { code };
 const USER_MESSAGE_CARD_CLASS_NAME =
@@ -83,55 +67,6 @@ const USER_MESSAGE_CARD_CLASS_NAME =
 const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full text-sm";
 /* Quiet toolbar buttons: ghost variant with muted text until hovered */
 const TOOLBAR_BUTTON_CLASS = "text-muted-foreground";
-
-// --- Pin hook ---
-
-function usePinMessage(chatId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ messageId, pinned }: { messageId: string; pinned: boolean }) =>
-      messagesApi.setMessagePinned(messageId, pinned),
-    onSuccess: (_result, { messageId, pinned }) => {
-      // Update the AI SDK Chat instance so the rendered messages reflect the new pin state
-      const chatSession = useChatStore.getState().chatEntries.get(chatId);
-      if (chatSession) {
-        chatSession.messages = chatSession.messages.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                metadata: {
-                  parentId: m.metadata?.parentId ?? null,
-                  ...m.metadata,
-                  pinned,
-                },
-              }
-            : m,
-        );
-      }
-      // Keep the TanStack Query cache in sync too
-      queryClient.setQueryData<HanokiUiMessage[]>(
-        queryKeys.chats.messages(chatId, CURRENT_BRANCH_QUERY_KEY),
-        (prev) =>
-          prev?.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  metadata: {
-                    parentId: m.metadata?.parentId ?? null,
-                    ...m.metadata,
-                    pinned,
-                  },
-                }
-              : m,
-          ),
-      );
-      // Invalidate the pinned branches list
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.chats.pinnedBranches(),
-      });
-    },
-  });
-}
 
 // --- Text parts ---
 
@@ -268,38 +203,7 @@ const DeleteMessageButton = React.memo(function DeleteMessageButton({
   isInteractionLocked,
   message,
 }: DeleteMessageButtonProps) {
-  const deleteMessage = useChatDeleteMessage();
-  const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = React.useState(false);
-  const [deleteAllVersions, setDeleteAllVersions] = React.useState(false);
-  const [isDeleting, setIsDeleting] = React.useState(false);
-
-  const siblingCount = message.metadata?.siblings?.length ?? 0;
-  const hasSiblings = siblingCount > 1;
-
-  const handleOpenChange = (open: boolean) => {
-    if (isDeleting) {
-      return;
-    }
-    setIsOpen(open);
-    if (!open) {
-      setDeleteAllVersions(false);
-    }
-  };
-
-  const handleConfirm = async () => {
-    setIsDeleting(true);
-    try {
-      await deleteMessage(message.id, deleteAllVersions ? "branch" : "message");
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.chats.pinnedBranches(),
-      });
-      setIsOpen(false);
-      setDeleteAllVersions(false);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   return (
     <>
@@ -314,45 +218,7 @@ const DeleteMessageButton = React.memo(function DeleteMessageButton({
         <HugeiconsIcon icon={Delete02Icon} />
       </Button>
 
-      <AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
-        <AlertDialogContent className="sm:max-w-[420px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes this message and every reply that follows it in this branch.
-              This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {hasSiblings && (
-            <label className="flex items-start gap-2.5 rounded-lg bg-surface-secondary px-3 py-2.5">
-              <Checkbox
-                checked={deleteAllVersions}
-                onCheckedChange={(checked) => setDeleteAllVersions(checked === true)}
-                disabled={isDeleting}
-                className="mt-0.5"
-              />
-              <span className="flex flex-col gap-0.5 text-sm">
-                <span className="font-medium">Delete all {siblingCount} versions</span>
-                <span className="text-xs text-muted-foreground">
-                  Also removes the other branches of this message and all of their replies.
-                </span>
-              </span>
-            </label>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={isDeleting}
-              onClick={() => void handleConfirm()}
-            >
-              {deleteAllVersions ? "Delete all versions" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteMessageDialog message={message} open={isOpen} onOpenChange={setIsOpen} />
     </>
   );
 });
@@ -919,7 +785,11 @@ const UserMessage = React.memo(function UserMessage({
 
   return (
     <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
-      <MessageContextMenu messageId={message.id}>
+      <MessageContextMenu
+        chatId={chatId}
+        isInteractionLocked={isInteractionLocked}
+        message={message}
+      >
         <div className={USER_MESSAGE_CARD_CLASS_NAME}>
           {isEditing && draft ? (
             <MessageTiptapEditor
@@ -975,8 +845,8 @@ const AssistantMessage = React.memo(function AssistantMessage({
   const startEditingMessage = useChatStartEditingMessage();
   const stopEditingMessage = useChatStopEditingMessage();
   const submitEditedMessage = useChatSubmitEditedMessage();
-  // While animating the display text is only needed for the "has prior text"
-  // check below, and computing it re-parses the streamed markdown every chunk.
+  // While animating the display text is only needed for the toolbar copy button,
+  // and computing it re-parses the streamed markdown every chunk.
   const messageText = React.useMemo(
     () => (isAnimating ? "" : getTiptapMessageDisplayText(message)),
     [isAnimating, message],
@@ -989,7 +859,11 @@ const AssistantMessage = React.memo(function AssistantMessage({
       className="group/message flex flex-col items-start gap-2"
       data-chat-message-id={message.id}
     >
-      <MessageContextMenu messageId={message.id}>
+      <MessageContextMenu
+        chatId={chatId}
+        isInteractionLocked={isInteractionLocked}
+        message={message}
+      >
         <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME}>
           {isEditing && draft ? (
             <MessageTiptapEditor

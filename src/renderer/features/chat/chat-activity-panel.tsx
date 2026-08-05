@@ -6,7 +6,6 @@ import {
   Archive02Icon,
   Archive04Icon,
   Chatting01Icon,
-  Loading03Icon,
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -56,6 +55,7 @@ export function ChatActivityPanel() {
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const entries = useWorkspaceChatActivity(workspaceId);
   const [isOpen, setIsOpen] = React.useState(false);
+  const updateSettings = useUpdateGlobalChatSettings();
 
   if (settings && !settings.activityPanelEnabled) {
     return null;
@@ -108,19 +108,51 @@ export function ChatActivityPanel() {
       </Tooltip>
 
       <PopoverContent align="end" className="w-80 gap-0 p-0">
-        <div className="flex items-baseline justify-between gap-2 px-3 pt-2.5 pb-2">
-          <PopoverTitle className="text-[13px]">Activity</PopoverTitle>
-          <span className="truncate text-xs text-muted-foreground">{summary}</span>
+        {/* Header: title + rare hide control on the left; mark-all on the right only
+            when it applies. Keeps the accidental-hide target away from the common
+            action and off the bottom edge of the list. */}
+        <div className="flex items-center gap-2 px-2 pt-2 pb-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 pl-1">
+            <PopoverTitle className="truncate text-[13px]">Activity</PopoverTitle>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Hide activity panel"
+                    className="shrink-0 text-muted-foreground"
+                    onClick={() => {
+                      updateSettings.mutate({ activityPanelEnabled: false });
+                      toastManager.add({
+                        title: "Activity panel hidden",
+                        description:
+                          "Bring it back from View → Show Activity Panel, or Settings → General.",
+                      });
+                    }}
+                  >
+                    <HugeiconsIcon icon={ViewOffSlashIcon} className="size-3!" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">Hide panel</TooltipContent>
+            </Tooltip>
+          </div>
+          {unreadCount > 0 ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="shrink-0 text-muted-foreground"
+              onClick={() => {
+                if (workspaceId) useChatActivityStore.getState().markWorkspaceRead(workspaceId);
+              }}
+            >
+              Mark all read
+            </Button>
+          ) : null}
         </div>
         <Separator />
         <ActivityList entries={entries} onOpenChat={() => setIsOpen(false)} />
-        <Separator />
-        <ActivityFooter
-          canMarkRead={unreadCount > 0}
-          onMarkRead={() => {
-            if (workspaceId) useChatActivityStore.getState().markWorkspaceRead(workspaceId);
-          }}
-        />
       </PopoverContent>
     </Popover>
   );
@@ -193,7 +225,8 @@ function ActivityRow({ entry, onOpenChat }: { entry: ChatActivityEntry; onOpenCh
         )}
       >
         {entry.kind === "working" ? (
-          <HugeiconsIcon icon={Loading03Icon} strokeWidth={2} className="size-3.5! animate-spin" />
+          // Same Conway board as tabs / tree / toolbar — one "working" glyph everywhere.
+          <ChatActivityIndicator />
         ) : entry.outcome === "error" ? (
           <HugeiconsIcon icon={AlertCircleIcon} className="size-3.5!" />
         ) : (
@@ -215,45 +248,6 @@ function describe(entry: ChatActivityEntry): string {
   if (entry.kind === "working") return `Working · ${elapsed} so far`;
   if (entry.outcome === "error") return `Stopped on an error · ${elapsed} ago`;
   return `Replied · ${elapsed} ago`;
-}
-
-function ActivityFooter({
-  canMarkRead,
-  onMarkRead,
-}: {
-  canMarkRead: boolean;
-  onMarkRead: () => void;
-}) {
-  const updateSettings = useUpdateGlobalChatSettings();
-
-  return (
-    <div className="flex items-center justify-between gap-2 p-1">
-      <Button
-        variant="ghost"
-        size="xs"
-        className="text-muted-foreground"
-        disabled={!canMarkRead}
-        onClick={onMarkRead}
-      >
-        Mark all read
-      </Button>
-      <Button
-        variant="ghost"
-        size="xs"
-        className="text-muted-foreground"
-        onClick={() => {
-          updateSettings.mutate({ activityPanelEnabled: false });
-          toastManager.add({
-            title: "Activity panel hidden",
-            description: "Bring it back from View → Show Activity Panel, or Settings → General.",
-          });
-        }}
-      >
-        <HugeiconsIcon icon={ViewOffSlashIcon} />
-        Hide panel
-      </Button>
-    </div>
-  );
 }
 
 /** Keeps the elapsed times in an open popover honest. Only runs while it is open. */

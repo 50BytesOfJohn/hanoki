@@ -12,15 +12,23 @@ import {
 } from "@headless-tree/core";
 import type { ItemInstance } from "@headless-tree/core";
 import {
-  AddSquareIcon,
+  Add01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
   ChatAdd01Icon,
+  Copy01Icon,
+  Delete02Icon,
   Folder01Icon,
   FolderAddIcon,
-  Comment02Icon,
+  LayoutBottomIcon,
+  LayoutLeftIcon,
+  LayoutRightIcon,
+  LayoutTopIcon,
+  MessagesSquare,
   MoreHorizontalIcon,
+  PencilEdit01Icon,
   Search01Icon,
+  SplitIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -44,7 +52,11 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -144,35 +156,67 @@ function ChatTreeItemContextMenu({
       <ContextMenuContent className="w-48">
         {itemKind === "folder" ? (
           <ContextMenuGroup>
-            <ContextMenuItem onClick={() => onAction("add-folder")}>Add Folder</ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("add-chat")}>Add Chat</ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-folder")}>
+              <HugeiconsIcon icon={FolderAddIcon} />
+              Add Folder
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-chat")}>
+              <HugeiconsIcon icon={ChatAdd01Icon} />
+              Add Chat
+            </ContextMenuItem>
           </ContextMenuGroup>
         ) : (
           <ContextMenuGroup>
-            <ContextMenuItem onClick={() => onAction("open-in-focused-pane")}>
-              Open in Focused Pane
-            </ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("open-in-new-tab")}>
+              <HugeiconsIcon icon={Add01Icon} />
               Open in New Tab
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("open-to-left")}>
-              Open to the Left
+            <ContextMenuItem inset onClick={() => onAction("open-in-focused-pane")}>
+              Open in Focused Pane
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("open-to-right")}>
-              Open to the Right
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("open-above")}>Open Above</ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("open-below")}>Open Below</ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("clone")}>Clone</ContextMenuItem>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <HugeiconsIcon icon={SplitIcon} />
+                Open in Split View
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-44">
+                <ContextMenuGroup>
+                  <ContextMenuItem onClick={() => onAction("open-to-left")}>
+                    <HugeiconsIcon icon={LayoutLeftIcon} />
+                    Open to the Left
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onAction("open-to-right")}>
+                    <HugeiconsIcon icon={LayoutRightIcon} />
+                    Open to the Right
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onAction("open-above")}>
+                    <HugeiconsIcon icon={LayoutTopIcon} />
+                    Open Above
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onAction("open-below")}>
+                    <HugeiconsIcon icon={LayoutBottomIcon} />
+                    Open Below
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
           </ContextMenuGroup>
         )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem onClick={() => onAction("rename")}>Rename</ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup>
+          <ContextMenuLabel>Manage</ContextMenuLabel>
+          {itemKind === "chat" ? (
+            <ContextMenuItem onClick={() => onAction("clone")}>
+              <HugeiconsIcon icon={Copy01Icon} />
+              Clone
+            </ContextMenuItem>
+          ) : null}
+          <ContextMenuItem onClick={() => onAction("rename")}>
+            <HugeiconsIcon icon={PencilEdit01Icon} />
+            Rename
+          </ContextMenuItem>
           <ContextMenuItem variant="destructive" onClick={() => onAction("delete")}>
+            <HugeiconsIcon icon={Delete02Icon} />
             Delete
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -844,22 +888,6 @@ function ChatSidebarTreeInner({
                       >
                         <ChatTreeItemIcon chatId={data.chat.id} />
                         <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          className={cn(
-                            SIDEBAR_ICON_BUTTON_CLASS,
-                            "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
-                          )}
-                          aria-label={`Open ${data.chat.title} in new tab`}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openChatInTab(data.chat.id);
-                          }}
-                        >
-                          <HugeiconsIcon icon={AddSquareIcon} />
-                        </Button>
                       </ChatTreeItemRow>
                     </ChatTreeItemContextMenu>
                   );
@@ -1242,22 +1270,6 @@ function ChatActivityListItem({
       >
         <ChatTreeItemIcon chatId={chat.id} />
         <ChatTreeItemLabel>{chat.title}</ChatTreeItemLabel>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          className={cn(
-            SIDEBAR_ICON_BUTTON_CLASS,
-            "opacity-0 transition-opacity group-hover/tree-item:opacity-100 focus-visible:opacity-100",
-          )}
-          aria-label={`Open ${chat.title} in new tab`}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onOpenInTab();
-          }}
-        >
-          <HugeiconsIcon icon={AddSquareIcon} />
-        </Button>
       </div>
     </ChatTreeItemContextMenu>
   );
@@ -1269,7 +1281,7 @@ function ChatTreeItemIcon({ chatId }: { chatId: string }) {
 
   return (
     <ChatTreeItemIconFrame className="text-muted-foreground">
-      {isActive ? <ChatActivityIndicator /> : <HugeiconsIcon icon={Comment02Icon} />}
+      {isActive ? <ChatActivityIndicator /> : <HugeiconsIcon icon={MessagesSquare} />}
     </ChatTreeItemIconFrame>
   );
 }
