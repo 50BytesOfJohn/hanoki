@@ -32,6 +32,10 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
       const { createOllamaLanguageModel } = await import("./resolvers/ollama-language-model");
       return createOllamaLanguageModel(input);
     },
+    codex: async (input) => {
+      const { createCodexLanguageModel } = await import("./resolvers/codex-language-model");
+      return createCodexLanguageModel(input);
+    },
   };
 }
 

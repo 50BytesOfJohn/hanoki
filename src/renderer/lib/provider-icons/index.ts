@@ -62,6 +62,7 @@ const HuggingFaceIcon = createRemoteProviderIcon({
 
 export const providerIconsById = {
   anthropic: AnthropicIcon,
+  codex: OpenAiIcon,
   cohere: CohereIcon,
   deepseek: DeepSeekIcon,
   google: GoogleIcon,

@@ -7,6 +7,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { messagesApi } from "@/api/messages";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
+import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
 import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
@@ -265,6 +266,10 @@ function createChatContextStore({
         for await (const streamedMessage of readUIMessageStream<HanokiUiMessage>({
           message: structuredClone(targetMessage) as HanokiUiMessage,
           stream,
+          // The server reports failures as an `error` chunk. Without this the
+          // SDK hands it to `onError` and keeps going, so the loop ends as if
+          // the continuation succeeded and the failure is never shown.
+          terminateOnError: true,
         })) {
           const mergedMessage = mergeContinuationMessage(targetMessage, streamedMessage);
           lastStreamedContinuationMessage = structuredClone(mergedMessage) as HanokiUiMessage;
@@ -293,7 +298,10 @@ function createChatContextStore({
           continuationError: null,
         }));
       } catch (error) {
-        if (isAbortError(error)) {
+        // Stopping is not a failure: the user keeps whatever streamed so far.
+        // The signal is checked directly because an aborted read can surface as
+        // a DOMException, a wrapped cause, or a plain fetch error.
+        if (continuationAbortController.signal.aborted || isAbortError(error)) {
           const optimisticMessages = lastStreamedContinuationMessage
             ? replaceMessageById(
                 baselineMessages,
@@ -868,89 +876,10 @@ function mergeContinuationMessage(
 
   return {
     ...streamedMessage,
-    parts: mergeContinuationParts(originalMessage.parts, streamedMessage.parts),
+    parts: appendContinuationParts(
+      originalMessage.parts,
+      getContinuationParts(originalMessage.parts, streamedMessage.parts),
+    ),
     metadata: mergedMetadata,
   };
-}
-
-function mergeContinuationParts(
-  originalParts: HanokiUiMessage["parts"],
-  responseParts: HanokiUiMessage["parts"],
-): HanokiUiMessage["parts"] {
-  const continuationSuffix = extractContinuationSuffixParts(originalParts, responseParts);
-
-  if (continuationSuffix.length === 0) {
-    return structuredClone(originalParts) as HanokiUiMessage["parts"];
-  }
-
-  const mergedParts = structuredClone(originalParts) as HanokiUiMessage["parts"];
-  const lastOriginalTextIndex = findLastTextPartIndex(mergedParts);
-  const firstSuffixTextIndex = findFirstTextPartIndex(continuationSuffix);
-
-  if (lastOriginalTextIndex === -1 || firstSuffixTextIndex === -1) {
-    return [...mergedParts, ...continuationSuffix];
-  }
-
-  const suffixPrefixParts = continuationSuffix.slice(0, firstSuffixTextIndex);
-  const suffixFirstTextPart = continuationSuffix[firstSuffixTextIndex];
-  const suffixRemainingParts = continuationSuffix.slice(firstSuffixTextIndex + 1);
-  const originalLastTextPart = mergedParts[lastOriginalTextIndex];
-
-  if (
-    !suffixFirstTextPart ||
-    suffixFirstTextPart.type !== "text" ||
-    !originalLastTextPart ||
-    originalLastTextPart.type !== "text"
-  ) {
-    return [...mergedParts, ...continuationSuffix];
-  }
-
-  const nextLastTextPart = {
-    ...originalLastTextPart,
-    text: `${originalLastTextPart.text}${suffixFirstTextPart.text}`,
-    providerMetadata: suffixFirstTextPart.providerMetadata ?? originalLastTextPart.providerMetadata,
-    state: suffixFirstTextPart.state ?? originalLastTextPart.state,
-  };
-
-  mergedParts[lastOriginalTextIndex] = nextLastTextPart;
-
-  return [...mergedParts, ...suffixPrefixParts, ...suffixRemainingParts];
-}
-
-function extractContinuationSuffixParts(
-  originalParts: HanokiUiMessage["parts"],
-  responseParts: HanokiUiMessage["parts"],
-): HanokiUiMessage["parts"] {
-  if (!startsWithParts(responseParts, originalParts)) {
-    return structuredClone(responseParts) as HanokiUiMessage["parts"];
-  }
-
-  return structuredClone(responseParts.slice(originalParts.length)) as HanokiUiMessage["parts"];
-}
-
-function startsWithParts(
-  candidateParts: readonly HanokiUiMessage["parts"][number][],
-  prefixParts: readonly HanokiUiMessage["parts"][number][],
-) {
-  if (candidateParts.length < prefixParts.length) {
-    return false;
-  }
-
-  return prefixParts.every(
-    (part, index) => JSON.stringify(candidateParts[index]) === JSON.stringify(part),
-  );
-}
-
-function findFirstTextPartIndex(parts: readonly HanokiUiMessage["parts"][number][]) {
-  return parts.findIndex((part) => part.type === "text");
-}
-
-function findLastTextPartIndex(parts: readonly HanokiUiMessage["parts"][number][]) {
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
-    if (parts[index]?.type === "text") {
-      return index;
-    }
-  }
-
-  return -1;
 }

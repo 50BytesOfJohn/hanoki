@@ -3,7 +3,7 @@ import type { ProviderId } from "@shared/providers/catalog";
 import type { SyncProviderModelInput } from "../../models/repository";
 
 type ActiveModelLifecycleStatus = SyncProviderModelInput["lifecycleStatus"];
-export type ApiKeyProviderId = Exclude<ProviderId, "ollama">;
+export type ApiKeyProviderId = Exclude<ProviderId, "ollama" | "codex">;
 
 export interface ProviderRequestSpec {
   url: string;
@@ -242,7 +242,7 @@ export const sdkProviderRegistry = {
 export function getSdkProviderRegistryEntry(
   providerId: ProviderId,
 ): SdkProviderRegistryEntry | null {
-  if (providerId === "ollama") {
+  if (providerId === "ollama" || providerId === "codex") {
     return null;
   }
 

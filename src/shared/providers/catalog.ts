@@ -1,6 +1,7 @@
 export type ProviderId =
   | "openrouter"
   | "openai"
+  | "codex"
   | "anthropic"
   | "google"
   | "groq"
@@ -48,7 +49,7 @@ export interface SupportedProviderDefinition {
 }
 
 function createApiKeyProviderDefinition(
-  id: Exclude<ProviderId, "ollama">,
+  id: Exclude<ProviderId, "ollama" | "codex">,
   name: string,
   description: string,
 ): SupportedProviderDefinition {
@@ -114,6 +115,15 @@ export const SUPPORTED_PROVIDERS: readonly SupportedProviderDefinition[] = [
     "Hugging Face",
     "Use Hugging Face API keys to access hosted chat models.",
   ),
+  {
+    id: "codex",
+    name: "Codex (ChatGPT login)",
+    description:
+      "Reuse the Codex CLI sign-in on this device. Requests run against your ChatGPT plan limits and are limited to Codex coding models.",
+    isAvailable: true,
+    supportsCredentialTest: true,
+    configFields: {},
+  },
   {
     id: "ollama",
     name: "Ollama",

@@ -33,6 +33,7 @@ import {
   type TiptapDocument,
 } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";
+import { TIPTAP_MESSAGE_PROSE_CLASS } from "./tiptap-message-content";
 import type { ChatFormSubmitBehavior } from "@shared/ipc";
 
 interface ToolSuggestionItem {
@@ -318,7 +319,11 @@ export function MessageTiptapEditor({ className, document, onChange }: MessageTi
     editorProps: {
       attributes: {
         "aria-label": "Edit message",
-        class: cn("min-h-10 whitespace-pre-wrap outline-none", className),
+        class: cn(
+          TIPTAP_MESSAGE_PROSE_CLASS,
+          "min-h-10 whitespace-pre-wrap outline-none",
+          className,
+        ),
       },
     },
     onUpdate: ({ editor: currentEditor }) => {

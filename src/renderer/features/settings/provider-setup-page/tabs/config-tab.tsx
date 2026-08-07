@@ -36,11 +36,17 @@ export function ProviderSetupConfigForm({
   onTest,
   onSave,
 }: ProviderSetupConfigFormProps) {
+  const hasConfigFields = Object.keys(provider.configFields).length > 0;
+
   return (
     <div className="space-y-8">
       <SettingsSection
         title="Configuration"
-        description="Credentials are encrypted and stored securely on this device."
+        description={
+          hasConfigFields
+            ? "Credentials are encrypted and stored securely on this device."
+            : "This provider needs no configuration — it uses credentials already on this device."
+        }
       >
         {Object.entries(provider.configFields).map(([key, field]) => {
           switch (field.type) {

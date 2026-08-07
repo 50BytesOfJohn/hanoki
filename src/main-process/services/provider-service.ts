@@ -30,6 +30,8 @@ import {
   type ProviderModelSyncContext,
   type SyncProviderModelInput,
 } from "../models/repository";
+import { getCodexCredentials } from "../providers/codex-auth";
+import { fetchCodexModels } from "../providers/codex-models";
 import { buildOllamaBaseUrl } from "../providers/ollama-base-url";
 import {
   createProvider,
@@ -116,6 +118,10 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
 
       if (input.providerId === "ollama") {
         return testOllamaCredentials(getRequiredDraftHostPortConfigValue(config, "endpoint"));
+      }
+
+      if (input.providerId === "codex") {
+        return testCodexCredentials();
       }
 
       if (input.providerId === "openrouter") {
@@ -581,6 +587,10 @@ async function fetchModelsForProviderSync(
     return fetchOllamaModelsForSync(input);
   }
 
+  if (input.providerDef.id === "codex") {
+    return fetchCodexModelsForSync();
+  }
+
   const providerEntry = getSdkProviderRegistryEntry(input.providerDef.id);
   if (!providerEntry) {
     throw new Error(`Provider "${input.providerDef.id}" does not support model sync.`);
@@ -651,6 +661,43 @@ async function fetchOllamaModelsForSync({
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function fetchCodexModelsForSync(): Promise<SyncProviderModelInput[]> {
+  const credentials = await getCodexCredentials();
+  const models = await fetchCodexModels(credentials, { forceRefresh: true });
+
+  return models.map((model) => ({
+    providerModelId: model.slug,
+    canonicalModelId: "unknown",
+    displayName: model.displayName,
+    metadata: model.metadata,
+    lifecycleStatus: "active",
+  }));
+}
+
+async function testCodexCredentials(): Promise<ProviderCredentialTestResult> {
+  try {
+    const credentials = await getCodexCredentials();
+    const models = await fetchCodexModels(credentials, { forceRefresh: true });
+    const account = credentials.email ?? "your ChatGPT account";
+    const plan = credentials.planType ? ` (${credentials.planType} plan)` : "";
+
+    return {
+      providerId: "codex",
+      ok: true,
+      message: `Using the Codex CLI sign-in for ${account}${plan}. ${models.length} models available.`,
+    };
+  } catch (error) {
+    return {
+      providerId: "codex",
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Codex sign-in check failed due to an unknown error.",
+    };
   }
 }
 
