@@ -1,9 +1,8 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "ignorePatterns": [
-    "node_modules/**",
-    "dist/**",
-    "build/**",
+    ".agents/**",
+    ".claude/skills/**",
     "apps/web/src/routeTree.gen.ts",
     "src/renderer/routeTree.gen.ts"
   ]

@@ -868,8 +868,8 @@ function mergeContinuationMessage(
 ): HanokiUiMessage {
   const mergedMetadata = normalizeChatMessageMetadata(
     {
-      ...(originalMessage.metadata ?? {}),
-      ...(streamedMessage.metadata ?? {}),
+      ...originalMessage.metadata,
+      ...streamedMessage.metadata,
     },
     originalMessage.metadata?.parentId ?? null,
   );

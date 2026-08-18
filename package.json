@@ -37,6 +37,8 @@
     "fmt:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
+    "check": "pnpm fmt:check && pnpm lint",
+    "fix": "pnpm fmt && pnpm lint:fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ."
   },
