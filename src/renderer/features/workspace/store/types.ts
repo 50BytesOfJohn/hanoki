@@ -1,9 +1,15 @@
-import type { ChatPaneView, ChatSidebarViewMode, TabStateItem, WorkspaceInfo } from "@shared/ipc";
+import type {
+  ChatPaneView,
+  ChatSidebarViewMode,
+  ItemType,
+  TabStateItem,
+  WorkspaceInfo,
+} from "@shared/ipc";
 import type { StateCreator } from "zustand";
 import "zustand/middleware/immer";
 import type { TiptapDocument } from "@shared/tiptap/document";
 
-export type TabContent = { type: "chat"; chatId: string };
+export type TabContent = { type: ItemType; itemId: string };
 export type Tab = TabStateItem;
 
 export type WorkspaceState = "idle" | "loading";
@@ -45,13 +51,14 @@ export interface TabsSlice extends TabsSliceValue {
   closeAllTabs: () => void;
   moveTab: (tabId: string, toIndex: number) => void;
   selectTab: (tabId: string) => void;
-  openChatInFocusedPane: (chatId: string) => void;
+  openItemInFocusedPane: (itemId: string, itemType: ItemType) => void;
   focusPane: (tabId: string, paneId: string) => void;
   setPaneView: (tabId: string, paneId: string, view: ChatPaneView, graphMessageId?: string) => void;
   splitPane: (
     tabId: string,
     paneId: string,
-    chatId: string,
+    itemId: string,
+    itemType: ItemType,
     direction: "left" | "right" | "top" | "bottom",
   ) => void;
   movePane: (
@@ -63,7 +70,7 @@ export interface TabsSlice extends TabsSliceValue {
   closePane: (tabId: string, paneId: string) => void;
   resizeSplit: (tabId: string, splitId: string, sizes: Record<string, number>) => void;
   focusAdjacentPane: (direction: "left" | "right" | "up" | "down") => void;
-  removeTabsByChatIds: (chatIds: readonly string[]) => void;
+  removeTabsByItemIds: (itemIds: readonly string[]) => void;
 }
 
 export interface TreeSliceValue {

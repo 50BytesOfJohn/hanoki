@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ChatPaneState } from "@shared/ipc";
+import type { ItemPaneState } from "@shared/ipc";
 import { findPane, getPanes, insertPane, movePane, removePane, resizeSplit } from "./layout-tree";
 
-function pane(id: string, chatId = id): ChatPaneState {
-  return { id, type: "pane", chatId, view: "/chat" };
+function pane(id: string, itemId = id): ItemPaneState {
+  return { id, type: "pane", itemId, itemType: "chat", view: "/chat" };
 }
 
 describe("chat layout tree", () => {
@@ -13,7 +13,7 @@ describe("chat layout tree", () => {
 
     expect(nested.type).toBe("split");
     expect(getPanes(nested).map((item) => item.id)).toEqual(["a", "b", "c"]);
-    expect(findPane(nested, "c")?.chatId).toBe("c");
+    expect(findPane(nested, "c")?.itemId).toBe("c");
     if (nested.type === "split") expect(nested.children[1].type).toBe("split");
   });
 

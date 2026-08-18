@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ChatTreeItemRef } from "@shared/ipc";
 
 import { chatTreeApi } from "../api/chat-tree";
-import { chatsApi } from "../api/chats";
+import { itemsApi } from "../api/items";
 import { foldersApi } from "../api/folders";
 import { queryKeys } from "../queries/keys";
 import { useWorkspaceStore } from "../features/workspace/store";
@@ -28,14 +28,15 @@ export function useRenameChatTreeItem() {
       if (itemId.startsWith("folder:")) {
         return foldersApi.updateName(itemId.slice("folder:".length), name);
       }
-      return chatsApi.updateTitle(itemId.slice("chat:".length), name);
+      return itemsApi.updateTitle(itemId.slice("item:".length), name);
     },
     onSuccess: (_result, variables) => {
-      if (!variables.itemId.startsWith("chat:")) {
+      if (!variables.itemId.startsWith("item:")) {
         return;
       }
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.items.all });
     },
   });
 }
@@ -59,7 +60,7 @@ export function useDeleteChat() {
     mutationFn: async ({ workspaceId, id }: { workspaceId: string; id: string }) =>
       deleteItems.mutateAsync({
         workspaceId,
-        items: [{ kind: "chat", id }],
+        items: [{ kind: "item", id }],
       }),
   });
 }
@@ -67,7 +68,7 @@ export function useDeleteChat() {
 export function useDeleteChatTreeItems() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const removeTabsByChatIds = useWorkspaceStore((s) => s.removeTabsByChatIds);
+  const removeTabsByItemIds = useWorkspaceStore((s) => s.removeTabsByItemIds);
   const removeExpandedNodes = useWorkspaceStore((s) => s.removeExpandedNodes);
 
   return useMutation({
@@ -76,9 +77,9 @@ export function useDeleteChatTreeItems() {
     onSuccess: (result) => {
       const currentChatId = useWorkspaceStore.getState().currentChatId;
       const deletedCurrentChat =
-        currentChatId !== null && result.deletedChatIds.includes(currentChatId);
+        currentChatId !== null && result.deletedItemIds.includes(currentChatId);
 
-      removeTabsByChatIds(result.deletedChatIds);
+      removeTabsByItemIds(result.deletedItemIds);
       removeExpandedNodes(result.deletedFolderIds);
 
       if (deletedCurrentChat) {
@@ -87,6 +88,7 @@ export function useDeleteChatTreeItems() {
 
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.items.all });
     },
   });
 }
@@ -98,9 +100,9 @@ export function useMoveFolder() {
   });
 }
 
-export function useMoveChat() {
+export function useMoveItem() {
   return useMutation({
     mutationFn: ({ id, folderId }: { id: string; folderId: string | null }) =>
-      chatsApi.move(id, folderId),
+      itemsApi.move(id, folderId),
   });
 }

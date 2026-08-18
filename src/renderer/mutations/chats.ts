@@ -58,10 +58,10 @@ export function useUpdateChatSettings() {
       const previous = queryClient.getQueryData<ChatInfo>(queryKeys.chats.byId(id));
       if (previous) {
         const { modelConfig: modelConfigPatch, ...settingsPatch } = input;
-        const settings = { ...previous.settings, ...settingsPatch };
+        const settings = { ...previous.data.settings, ...settingsPatch };
 
         if (modelConfigPatch && "temperature" in modelConfigPatch) {
-          const modelConfig = { ...previous.settings.modelConfig };
+          const modelConfig = { ...previous.data.settings.modelConfig };
           if (modelConfigPatch.temperature === null) {
             delete modelConfig.temperature;
           } else if (modelConfigPatch.temperature !== undefined) {
@@ -77,7 +77,7 @@ export function useUpdateChatSettings() {
 
         queryClient.setQueryData<ChatInfo>(queryKeys.chats.byId(id), {
           ...previous,
-          settings,
+          data: { ...previous.data, settings },
         });
       }
 

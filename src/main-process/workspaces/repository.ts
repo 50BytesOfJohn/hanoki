@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 
 import { DEFAULT_WORKSPACE_ID } from "@shared/workspace/workspace-id";
-import type { ChatLayoutNode, WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
+import type { ItemLayoutNode, WorkspaceSettings, WorkspaceSettingsPatch } from "@shared/ipc";
 import { isChatTreeFolderPlacement, isChatTreeSortOrder } from "@shared/chat/chat-tree-sort";
 import { parseTiptapDocument } from "@shared/tiptap/document";
 import { getAppDatabase } from "../db/database";
@@ -86,7 +86,7 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
         return (
           typeof tabRecord.id !== "string" ||
           tabRecord.id.trim().length === 0 ||
-          tabRecord.type !== "chat" ||
+          tabRecord.type !== "item" ||
           !isChatLayoutNode(tabRecord.layout) ||
           typeof tabRecord.focusedPaneId !== "string" ||
           tabRecord.focusedPaneId.trim().length === 0
@@ -139,21 +139,24 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
   return true;
 }
 
-function isChatLayoutNode(value: unknown, depth = 0): value is ChatLayoutNode {
+function isChatLayoutNode(value: unknown, depth = 0): value is ItemLayoutNode {
   if (depth > 20 || !value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   if (record.type === "pane") {
     return (
       Object.keys(record).every((key) =>
-        ["id", "type", "chatId", "view", "graphMessageId"].includes(key),
+        ["id", "type", "itemId", "itemType", "view", "graphMessageId"].includes(key),
       ) &&
       typeof record.id === "string" &&
       record.id.trim().length > 0 &&
-      typeof record.chatId === "string" &&
-      record.chatId.trim().length > 0 &&
-      ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"].includes(
-        record.view as string,
-      ) &&
+      typeof record.itemId === "string" &&
+      record.itemId.trim().length > 0 &&
+      (record.itemType === "chat" || record.itemType === "terminal") &&
+      (record.itemType === "terminal"
+        ? record.view === "/terminal"
+        : ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"].includes(
+            record.view as string,
+          )) &&
       (record.graphMessageId === undefined || typeof record.graphMessageId === "string")
     );
   }

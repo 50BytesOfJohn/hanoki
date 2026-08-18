@@ -1,24 +1,15 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { homedir } from "node:os";
 
+import type { ChatItemData, ChatSettings, TerminalItemData } from "@shared/ipc";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
-import { chats, folders, messages } from "../db/schema";
+import { folders, items, messages } from "../db/schema";
 import { getWorkspaceById } from "../workspaces/repository";
 import { listAllMessagesByChatId, upsertMessage } from "../messages/repository";
 
 type FolderTableRow = typeof folders.$inferSelect;
-type ChatTableRow = typeof chats.$inferSelect;
-type ChatSettings = {
-  modelId?: string | null;
-  systemPrompt?: string | null;
-  modelConfig?: {
-    temperature?: number;
-  };
-  webEnabled?: boolean;
-  hanokiEnabled?: boolean;
-  terminalEnabled?: boolean;
-  terminalAutoApprove?: boolean;
-};
+type ItemTableRow = typeof items.$inferSelect;
 type ChatSettingsPatch = Omit<Partial<ChatSettings>, "modelConfig"> & {
   modelConfig?: {
     temperature?: number | null;
@@ -35,14 +26,32 @@ export interface FolderRow {
 }
 
 export interface ChatRow {
+  type: "chat";
   id: string;
   workspaceId: string;
   folderId: string | null;
   title: string;
-  settings: ChatSettings;
+  data: ChatItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface TerminalRow {
+  type: "terminal";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: TerminalItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ItemRow = ChatRow | TerminalRow;
 
 export interface ChatTreeFolderNode {
   id: string;
@@ -52,25 +61,25 @@ export interface ChatTreeFolderNode {
   createdAt: number;
   updatedAt: number;
   folders: ChatTreeFolderNode[];
-  chats: ChatRow[];
+  items: ItemRow[];
 }
 
 export interface ChatTreeSnapshot {
   workspaceId: string;
   rootFolders: ChatTreeFolderNode[];
-  rootChats: ChatRow[];
+  rootItems: ItemRow[];
 }
 
 export interface ChatTreeFolderListItem extends FolderRow {
   childFolderCount: number;
-  childChatCount: number;
+  childItemCount: number;
 }
 
 export interface ChatTreeChildrenSlice {
   workspaceId: string;
   parentFolderId: string | null;
   folders: ChatTreeFolderListItem[];
-  chats: ChatRow[];
+  items: ItemRow[];
 }
 
 export interface DeleteFolderRecursiveResult {
@@ -80,15 +89,15 @@ export interface DeleteFolderRecursiveResult {
 
 export interface DeleteChatTreeItemsResult {
   workspaceId: string;
-  deletedChatIds: string[];
+  deletedItemIds: string[];
   deletedFolderIds: string[];
 }
 
 export interface MoveChatTreeItemsResult {
   workspaceId: string;
-  movedItems: { kind: "chat" | "folder"; id: string }[];
-  unchangedItems: { kind: "chat" | "folder"; id: string }[];
-  skippedItems: { kind: "chat" | "folder"; id: string; reason: string }[];
+  movedItems: { kind: "item" | "folder"; id: string }[];
+  unchangedItems: { kind: "item" | "folder"; id: string }[];
+  skippedItems: { kind: "item" | "folder"; id: string; reason: string }[];
 }
 
 function toFolderRow(row: FolderTableRow): FolderRow {
@@ -102,16 +111,72 @@ function toFolderRow(row: FolderTableRow): FolderRow {
   };
 }
 
-function toChatRow(row: ChatTableRow): ChatRow {
+function normalizeJsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function normalizeChatData(value: unknown): ChatItemData {
+  const data = normalizeJsonObject(value);
   return {
+    ...data,
+    settings: normalizeChatSettings(data.settings),
+    ...(typeof data.currentBranchId === "string" ? { currentBranchId: data.currentBranchId } : {}),
+  };
+}
+
+function normalizeTerminalData(value: unknown): TerminalItemData {
+  const data = normalizeJsonObject(value);
+  const fallbackShell =
+    process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "/bin/sh";
+  return {
+    ...data,
+    workingDirectory: typeof data.workingDirectory === "string" ? data.workingDirectory : homedir(),
+    shell: typeof data.shell === "string" ? data.shell : fallbackShell,
+    columns:
+      typeof data.columns === "number" && Number.isInteger(data.columns) && data.columns > 0
+        ? data.columns
+        : 80,
+    rows:
+      typeof data.rows === "number" && Number.isInteger(data.rows) && data.rows > 0
+        ? data.rows
+        : 24,
+    scrollback: typeof data.scrollback === "string" ? data.scrollback : "",
+    scrollbackVersion:
+      typeof data.scrollbackVersion === "number" && Number.isInteger(data.scrollbackVersion)
+        ? data.scrollbackVersion
+        : 0,
+  };
+}
+
+function toItemRow(row: ItemTableRow): ItemRow {
+  const common = {
     id: row.id,
     workspaceId: row.workspaceId,
     folderId: row.folderId,
     title: row.title,
-    settings: normalizeChatSettings(row.settings),
+    metadata: normalizeJsonObject(row.metadata),
+    extensions: normalizeJsonObject(row.extensions),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+
+  if (row.type === "chat") {
+    return { ...common, type: "chat", data: normalizeChatData(row.data) };
+  }
+  if (row.type === "terminal") {
+    return { ...common, type: "terminal", data: normalizeTerminalData(row.data) };
+  }
+  throw new Error(`Item "${row.id}" has unsupported type "${row.type}".`);
+}
+
+function toChatRow(row: ItemTableRow): ChatRow {
+  const item = toItemRow(row);
+  if (item.type !== "chat") {
+    throw new Error(`Item "${row.id}" is not a chat.`);
+  }
+  return item;
 }
 
 function normalizeChatSettings(value: unknown): ChatSettings {
@@ -242,8 +307,17 @@ function requireFolderById(id: string): FolderRow {
 }
 
 export function getChatById(id: string): ChatRow | null {
-  const row = getAppDatabase().select().from(chats).where(eq(chats.id, id)).get();
+  const row = getAppDatabase()
+    .select()
+    .from(items)
+    .where(and(eq(items.id, id), eq(items.type, "chat")))
+    .get();
   return row ? toChatRow(row) : null;
+}
+
+export function getItemById(id: string): ItemRow | null {
+  const row = getAppDatabase().select().from(items).where(eq(items.id, id)).get();
+  return row ? toItemRow(row) : null;
 }
 
 function requireChatById(id: string): ChatRow {
@@ -253,6 +327,12 @@ function requireChatById(id: string): ChatRow {
   }
 
   return chat;
+}
+
+function requireItemById(id: string): ItemRow {
+  const item = getItemById(id);
+  if (!item) throw new Error(`Item "${id}" does not exist.`);
+  return item;
 }
 
 function wouldFolderParentCreateCycle(
@@ -341,14 +421,14 @@ function warnInvalidFolderParent(
   );
 }
 
-function warnInvalidChatFolder(
+function warnInvalidItemFolder(
   workspaceId: string,
-  chatId: string,
+  itemId: string,
   folderId: string,
   reason: string,
 ): void {
   console.warn(
-    `[chat-tree] Chat "${chatId}" has invalid folder "${folderId}" in workspace "${workspaceId}" (${reason}); treating as root.`,
+    `[chat-tree] Item "${itemId}" has invalid folder "${folderId}" in workspace "${workspaceId}" (${reason}); treating as root.`,
   );
 }
 
@@ -362,11 +442,11 @@ export function getChatTree(workspaceId: string): ChatTreeSnapshot {
     .orderBy(asc(folders.id))
     .all();
 
-  const chatRows = getAppDatabase()
+  const itemRows = getAppDatabase()
     .select()
-    .from(chats)
-    .where(eq(chats.workspaceId, workspaceId))
-    .orderBy(asc(chats.id))
+    .from(items)
+    .where(eq(items.workspaceId, workspaceId))
+    .orderBy(asc(items.id))
     .all();
 
   const folderRowsById = new Map(folderRows.map((row) => [row.id, row] as const));
@@ -376,7 +456,7 @@ export function getChatTree(workspaceId: string): ChatTreeSnapshot {
     folderNodesById.set(row.id, {
       ...toFolderRow(row),
       folders: [],
-      chats: [],
+      items: [],
     });
   }
 
@@ -422,30 +502,30 @@ export function getChatTree(workspaceId: string): ChatTreeSnapshot {
     parentNode.folders.push(node);
   }
 
-  const rootChats: ChatRow[] = [];
+  const rootItems: ItemRow[] = [];
 
-  for (const row of chatRows) {
-    const chat = toChatRow(row);
+  for (const row of itemRows) {
+    const item = toItemRow(row);
 
     if (!row.folderId) {
-      rootChats.push(chat);
+      rootItems.push(item);
       continue;
     }
 
     const folderNode = folderNodesById.get(row.folderId);
     if (!folderNode) {
-      warnInvalidChatFolder(workspaceId, row.id, row.folderId, "missing folder");
-      rootChats.push(chat);
+      warnInvalidItemFolder(workspaceId, row.id, row.folderId, "missing folder");
+      rootItems.push(item);
       continue;
     }
 
-    folderNode.chats.push(chat);
+    folderNode.items.push(item);
   }
 
   return {
     workspaceId,
     rootFolders,
-    rootChats,
+    rootItems,
   };
 }
 
@@ -477,24 +557,24 @@ export function getChatTreeChildren(
           .orderBy(asc(folders.id))
           .all();
 
-  const chatRows =
+  const itemRows =
     parentFolderId === null
       ? getAppDatabase()
           .select()
-          .from(chats)
-          .where(and(eq(chats.workspaceId, workspaceId), isNull(chats.folderId)))
-          .orderBy(asc(chats.id))
+          .from(items)
+          .where(and(eq(items.workspaceId, workspaceId), isNull(items.folderId)))
+          .orderBy(asc(items.id))
           .all()
       : getAppDatabase()
           .select()
-          .from(chats)
-          .where(and(eq(chats.workspaceId, workspaceId), eq(chats.folderId, parentFolderId)))
-          .orderBy(asc(chats.id))
+          .from(items)
+          .where(and(eq(items.workspaceId, workspaceId), eq(items.folderId, parentFolderId)))
+          .orderBy(asc(items.id))
           .all();
 
   const childFolderIds = folderRows.map((row) => row.id);
   const childFolderCountsByParentId = new Map<string, number>();
-  const childChatCountsByFolderId = new Map<string, number>();
+  const childItemCountsByFolderId = new Map<string, number>();
 
   if (childFolderIds.length > 0) {
     const folderCountRows = getAppDatabase()
@@ -513,19 +593,19 @@ export function getChatTreeChildren(
       }
     }
 
-    const chatCountRows = getAppDatabase()
+    const itemCountRows = getAppDatabase()
       .select({
-        folderId: chats.folderId,
+        folderId: items.folderId,
         count: sql<number>`count(*)`,
       })
-      .from(chats)
-      .where(inArray(chats.folderId, childFolderIds))
-      .groupBy(chats.folderId)
+      .from(items)
+      .where(inArray(items.folderId, childFolderIds))
+      .groupBy(items.folderId)
       .all();
 
-    for (const row of chatCountRows) {
+    for (const row of itemCountRows) {
       if (typeof row.folderId === "string") {
-        childChatCountsByFolderId.set(row.folderId, Number(row.count) || 0);
+        childItemCountsByFolderId.set(row.folderId, Number(row.count) || 0);
       }
     }
   }
@@ -536,9 +616,9 @@ export function getChatTreeChildren(
     folders: folderRows.map((row) => ({
       ...toFolderRow(row),
       childFolderCount: childFolderCountsByParentId.get(row.id) ?? 0,
-      childChatCount: childChatCountsByFolderId.get(row.id) ?? 0,
+      childItemCount: childItemCountsByFolderId.get(row.id) ?? 0,
     })),
-    chats: chatRows.map(toChatRow),
+    items: itemRows.map(toItemRow),
   };
 }
 
@@ -566,10 +646,24 @@ export function listWorkspaceChatIds(workspaceId: string, ids: readonly string[]
   }
 
   return getAppDatabase()
-    .select({ id: chats.id })
-    .from(chats)
-    .where(and(eq(chats.workspaceId, workspaceId), inArray(chats.id, [...ids])))
-    .orderBy(asc(chats.id))
+    .select({ id: items.id })
+    .from(items)
+    .where(
+      and(eq(items.workspaceId, workspaceId), eq(items.type, "chat"), inArray(items.id, [...ids])),
+    )
+    .orderBy(asc(items.id))
+    .all()
+    .map((row) => row.id);
+}
+
+export function listWorkspaceItemIds(workspaceId: string, ids: readonly string[]): string[] {
+  requireWorkspaceExists(workspaceId);
+  if (ids.length === 0) return [];
+  return getAppDatabase()
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.workspaceId, workspaceId), inArray(items.id, [...ids])))
+    .orderBy(asc(items.id))
     .all()
     .map((row) => row.id);
 }
@@ -584,21 +678,22 @@ export function searchWorkspaceChats(
 
   return getAppDatabase()
     .select()
-    .from(chats)
+    .from(items)
     .where(
       and(
-        eq(chats.workspaceId, workspaceId),
+        eq(items.workspaceId, workspaceId),
+        eq(items.type, "chat"),
         sql`(
-          instr(lower(${chats.title}), lower(${query})) > 0
+          instr(lower(${items.title}), lower(${query})) > 0
           or exists (
             select 1 from ${messages}
-            where ${messages.chatId} = ${chats.id}
+            where ${messages.chatId} = ${items.id}
               and instr(lower(cast(${messages.parts} as text)), lower(${query})) > 0
           )
         )`,
       ),
     )
-    .orderBy(desc(chats.updatedAt), asc(chats.id))
+    .orderBy(desc(items.updatedAt), asc(items.id))
     .limit(limit)
     .offset(offset)
     .all()
@@ -718,7 +813,7 @@ export function deleteFolderRecursive(id: string): DeleteFolderRecursiveResult {
       };
     }
 
-    tx.delete(chats).where(inArray(chats.folderId, subtreeFolderIds)).run();
+    tx.delete(items).where(inArray(items.folderId, subtreeFolderIds)).run();
     tx.delete(folders).where(inArray(folders.id, subtreeFolderIds)).run();
 
     return {
@@ -730,27 +825,27 @@ export function deleteFolderRecursive(id: string): DeleteFolderRecursiveResult {
 
 export function deleteChatTreeItems(
   workspaceId: string,
-  items: readonly {
-    kind: "chat" | "folder";
+  itemRefs: readonly {
+    kind: "item" | "folder";
     id: string;
   }[],
 ): DeleteChatTreeItemsResult {
   requireWorkspaceExists(workspaceId);
 
-  if (items.length === 0) {
+  if (itemRefs.length === 0) {
     return {
       workspaceId,
-      deletedChatIds: [],
+      deletedItemIds: [],
       deletedFolderIds: [],
     };
   }
 
   return getAppDatabase().transaction((tx) => {
     const selectedFolderIds = [
-      ...new Set(items.filter((item) => item.kind === "folder").map((item) => item.id)),
+      ...new Set(itemRefs.filter((item) => item.kind === "folder").map((item) => item.id)),
     ];
-    const selectedChatIds = [
-      ...new Set(items.filter((item) => item.kind === "chat").map((item) => item.id)),
+    const selectedItemIds = [
+      ...new Set(itemRefs.filter((item) => item.kind === "item").map((item) => item.id)),
     ];
 
     for (const folderId of selectedFolderIds) {
@@ -763,13 +858,13 @@ export function deleteChatTreeItems(
       }
     }
 
-    for (const chatId of selectedChatIds) {
-      const chat = tx.select().from(chats).where(eq(chats.id, chatId)).get();
-      if (!chat) {
-        throw new Error(`Chat "${chatId}" does not exist.`);
+    for (const itemId of selectedItemIds) {
+      const item = tx.select().from(items).where(eq(items.id, itemId)).get();
+      if (!item) {
+        throw new Error(`Item "${itemId}" does not exist.`);
       }
-      if (chat.workspaceId !== workspaceId) {
-        throw new Error(`Chat "${chatId}" belongs to a different workspace.`);
+      if (item.workspaceId !== workspaceId) {
+        throw new Error(`Item "${itemId}" belongs to a different workspace.`);
       }
     }
 
@@ -778,10 +873,10 @@ export function deleteChatTreeItems(
       .from(folders)
       .where(eq(folders.workspaceId, workspaceId))
       .all();
-    const workspaceChats = tx
-      .select({ id: chats.id, folderId: chats.folderId })
-      .from(chats)
-      .where(eq(chats.workspaceId, workspaceId))
+    const workspaceItems = tx
+      .select({ id: items.id, folderId: items.folderId })
+      .from(items)
+      .where(eq(items.workspaceId, workspaceId))
       .all();
 
     const deletedFolderIds = new Set<string>();
@@ -793,25 +888,25 @@ export function deleteChatTreeItems(
       }
     }
 
-    const deletedChatIds = new Set(selectedChatIds);
+    const deletedItemIds = new Set(selectedItemIds);
 
     if (deletedFolderIds.size > 0) {
-      for (const chat of workspaceChats) {
-        if (chat.folderId && deletedFolderIds.has(chat.folderId)) {
-          deletedChatIds.add(chat.id);
+      for (const item of workspaceItems) {
+        if (item.folderId && deletedFolderIds.has(item.folderId)) {
+          deletedItemIds.add(item.id);
         }
       }
     }
 
-    const sortedDeletedChatIds = [...deletedChatIds].sort((left, right) =>
+    const sortedDeletedItemIds = [...deletedItemIds].sort((left, right) =>
       left.localeCompare(right),
     );
     const sortedDeletedFolderIds = [...deletedFolderIds].sort((left, right) =>
       left.localeCompare(right),
     );
 
-    if (sortedDeletedChatIds.length > 0) {
-      tx.delete(chats).where(inArray(chats.id, sortedDeletedChatIds)).run();
+    if (sortedDeletedItemIds.length > 0) {
+      tx.delete(items).where(inArray(items.id, sortedDeletedItemIds)).run();
     }
 
     if (sortedDeletedFolderIds.length > 0) {
@@ -820,7 +915,7 @@ export function deleteChatTreeItems(
 
     return {
       workspaceId,
-      deletedChatIds: sortedDeletedChatIds,
+      deletedItemIds: sortedDeletedItemIds,
       deletedFolderIds: sortedDeletedFolderIds,
     };
   });
@@ -828,7 +923,7 @@ export function deleteChatTreeItems(
 
 export function moveChatTreeItems(
   workspaceId: string,
-  items: readonly { kind: "chat" | "folder"; id: string }[],
+  itemRefs: readonly { kind: "item" | "folder"; id: string }[],
   destinationFolderId: string | null,
 ): MoveChatTreeItemsResult {
   requireWorkspaceExists(workspaceId);
@@ -839,9 +934,9 @@ export function moveChatTreeItems(
       .from(folders)
       .where(eq(folders.workspaceId, workspaceId))
       .all();
-    const workspaceChats = tx.select().from(chats).where(eq(chats.workspaceId, workspaceId)).all();
+    const workspaceItems = tx.select().from(items).where(eq(items.workspaceId, workspaceId)).all();
     const foldersById = new Map(workspaceFolders.map((folder) => [folder.id, folder] as const));
-    const chatsById = new Map(workspaceChats.map((chat) => [chat.id, chat] as const));
+    const itemsById = new Map(workspaceItems.map((item) => [item.id, item] as const));
 
     if (destinationFolderId !== null && !foldersById.has(destinationFolderId)) {
       throw new Error(
@@ -849,9 +944,9 @@ export function moveChatTreeItems(
       );
     }
 
-    const uniqueItems: { kind: "chat" | "folder"; id: string }[] = [];
+    const uniqueItems: { kind: "item" | "folder"; id: string }[] = [];
     const seenItems = new Set<string>();
-    for (const item of items) {
+    for (const item of itemRefs) {
       const key = `${item.kind}:${item.id}`;
       if (!seenItems.has(key)) {
         seenItems.add(key);
@@ -860,10 +955,10 @@ export function moveChatTreeItems(
     }
 
     for (const item of uniqueItems) {
-      const exists = item.kind === "folder" ? foldersById.has(item.id) : chatsById.has(item.id);
+      const exists = item.kind === "folder" ? foldersById.has(item.id) : itemsById.has(item.id);
       if (!exists) {
         throw new Error(
-          `${item.kind === "folder" ? "Folder" : "Chat"} "${item.id}" does not exist in this workspace.`,
+          `${item.kind === "folder" ? "Folder" : "Item"} "${item.id}" does not exist in this workspace.`,
         );
       }
     }
@@ -893,11 +988,11 @@ export function moveChatTreeItems(
       }
     }
 
-    const movedItems: { kind: "chat" | "folder"; id: string }[] = [];
-    const unchangedItems: { kind: "chat" | "folder"; id: string }[] = [];
-    const skippedItems: { kind: "chat" | "folder"; id: string; reason: string }[] = [];
+    const movedItems: { kind: "item" | "folder"; id: string }[] = [];
+    const unchangedItems: { kind: "item" | "folder"; id: string }[] = [];
+    const skippedItems: { kind: "item" | "folder"; id: string; reason: string }[] = [];
     const movedFolderIds: string[] = [];
-    const movedChatIds: string[] = [];
+    const movedItemIds: string[] = [];
 
     for (const item of uniqueItems) {
       if (item.kind === "folder") {
@@ -915,7 +1010,7 @@ export function moveChatTreeItems(
         continue;
       }
 
-      let folderId = chatsById.get(item.id)?.folderId ?? null;
+      let folderId = itemsById.get(item.id)?.folderId ?? null;
       let coveredBySelectedFolder = false;
       while (folderId !== null) {
         if (selectedFolderIds.has(folderId)) {
@@ -927,11 +1022,11 @@ export function moveChatTreeItems(
 
       if (coveredBySelectedFolder) {
         skippedItems.push({ ...item, reason: "Moved with its selected parent folder." });
-      } else if (chatsById.get(item.id)?.folderId === destinationFolderId) {
+      } else if (itemsById.get(item.id)?.folderId === destinationFolderId) {
         unchangedItems.push(item);
       } else {
         movedItems.push(item);
-        movedChatIds.push(item.id);
+        movedItemIds.push(item.id);
       }
     }
 
@@ -942,15 +1037,102 @@ export function moveChatTreeItems(
         .where(inArray(folders.id, movedFolderIds))
         .run();
     }
-    if (movedChatIds.length > 0) {
-      tx.update(chats)
+    if (movedItemIds.length > 0) {
+      tx.update(items)
         .set({ folderId: destinationFolderId, updatedAt })
-        .where(inArray(chats.id, movedChatIds))
+        .where(inArray(items.id, movedItemIds))
         .run();
     }
 
     return { workspaceId, movedItems, unchangedItems, skippedItems };
   });
+}
+
+export function updateItemTitle(id: string, title: string): ItemRow {
+  requireItemById(id);
+  getAppDatabase()
+    .update(items)
+    .set({ title, updatedAt: Date.now() })
+    .where(eq(items.id, id))
+    .run();
+  return requireItemById(id);
+}
+
+export function moveItem(id: string, folderId: string | null): ItemRow {
+  return getAppDatabase().transaction((tx) => {
+    const item = tx.select().from(items).where(eq(items.id, id)).get();
+    if (!item) throw new Error(`Item "${id}" does not exist.`);
+
+    if (folderId !== null) {
+      const folder = tx.select().from(folders).where(eq(folders.id, folderId)).get();
+      if (!folder) throw new Error(`Folder "${folderId}" does not exist.`);
+      if (folder.workspaceId !== item.workspaceId) {
+        throw new Error(`Folder "${folderId}" belongs to a different workspace.`);
+      }
+    }
+
+    tx.update(items).set({ folderId, updatedAt: Date.now() }).where(eq(items.id, id)).run();
+    const updated = tx.select().from(items).where(eq(items.id, id)).get();
+    if (!updated) throw new Error(`Item "${id}" does not exist.`);
+    return toItemRow(updated);
+  });
+}
+
+export function deleteItem(id: string): ItemRow {
+  const item = requireItemById(id);
+  getAppDatabase().delete(items).where(eq(items.id, id)).run();
+  return item;
+}
+
+export function createTerminal(input: {
+  workspaceId: string;
+  title: string;
+  folderId: string | null;
+  data: TerminalItemData;
+}): TerminalRow {
+  requireWorkspaceExists(input.workspaceId);
+  if (input.folderId !== null) {
+    const folder = requireFolderById(input.folderId);
+    if (folder.workspaceId !== input.workspaceId) {
+      throw new Error(`Folder "${input.folderId}" belongs to a different workspace.`);
+    }
+  }
+
+  const id = createUuidV7();
+  getAppDatabase()
+    .insert(items)
+    .values({
+      id,
+      workspaceId: input.workspaceId,
+      folderId: input.folderId,
+      type: "terminal",
+      title: input.title,
+      data: input.data,
+    })
+    .run();
+  const terminal = requireItemById(id);
+  if (terminal.type !== "terminal") throw new Error(`Item "${id}" is not a terminal.`);
+  return terminal;
+}
+
+export function updateTerminalData(
+  id: string,
+  update: Partial<TerminalItemData>,
+  options?: { touchUpdatedAt?: boolean },
+): TerminalRow {
+  const terminal = requireItemById(id);
+  if (terminal.type !== "terminal") throw new Error(`Item "${id}" is not a terminal.`);
+  getAppDatabase()
+    .update(items)
+    .set({
+      data: normalizeTerminalData({ ...terminal.data, ...update }),
+      ...(options?.touchUpdatedAt === false ? {} : { updatedAt: Date.now() }),
+    })
+    .where(eq(items.id, id))
+    .run();
+  const updated = requireItemById(id);
+  if (updated.type !== "terminal") throw new Error(`Item "${id}" is not a terminal.`);
+  return updated;
 }
 
 export function createChat(input: {
@@ -970,12 +1152,14 @@ export function createChat(input: {
   const id = createUuidV7();
 
   getAppDatabase()
-    .insert(chats)
+    .insert(items)
     .values({
       id,
       workspaceId: input.workspaceId,
       folderId: input.folderId,
+      type: "chat",
       title: input.title,
+      data: { settings: {} },
     })
     .run();
 
@@ -983,69 +1167,36 @@ export function createChat(input: {
 }
 
 export function updateChatTitle(id: string, title: string): ChatRow {
-  getAppDatabase()
-    .update(chats)
-    .set({
-      title,
-      updatedAt: Date.now(),
-    })
-    .where(eq(chats.id, id))
-    .run();
-
+  updateItemTitle(id, title);
   return requireChatById(id);
 }
 
 export function updateChatSettings(id: string, settingsPatch: ChatSettingsPatch): ChatRow {
+  const chat = requireChatById(id);
   getAppDatabase()
-    .update(chats)
+    .update(items)
     .set({
-      settings: mergeChatSettings(requireChatById(id).settings, settingsPatch),
+      data: {
+        ...chat.data,
+        settings: mergeChatSettings(chat.data.settings, settingsPatch),
+      },
       updatedAt: Date.now(),
     })
-    .where(eq(chats.id, id))
+    .where(eq(items.id, id))
     .run();
 
   return requireChatById(id);
 }
 
 export function moveChat(id: string, folderId: string | null): ChatRow {
-  return getAppDatabase().transaction((tx) => {
-    const chat = tx.select().from(chats).where(eq(chats.id, id)).get();
-    if (!chat) {
-      throw new Error(`Chat "${id}" does not exist.`);
-    }
-
-    if (folderId !== null) {
-      const folder = tx.select().from(folders).where(eq(folders.id, folderId)).get();
-      if (!folder) {
-        throw new Error(`Folder "${folderId}" does not exist.`);
-      }
-
-      if (folder.workspaceId !== chat.workspaceId) {
-        throw new Error(`Folder "${folderId}" belongs to a different workspace.`);
-      }
-    }
-
-    tx.update(chats)
-      .set({
-        folderId,
-        updatedAt: Date.now(),
-      })
-      .where(eq(chats.id, id))
-      .run();
-
-    const updatedChat = tx.select().from(chats).where(eq(chats.id, id)).get();
-    if (!updatedChat) {
-      throw new Error(`Chat "${id}" does not exist.`);
-    }
-
-    return toChatRow(updatedChat);
-  });
+  requireChatById(id);
+  moveItem(id, folderId);
+  return requireChatById(id);
 }
 
 export function deleteChat(id: string): ChatRow {
   const chat = requireChatById(id);
-  getAppDatabase().delete(chats).where(eq(chats.id, id)).run();
+  getAppDatabase().delete(items).where(eq(items.id, id)).run();
   return chat;
 }
 
@@ -1054,13 +1205,14 @@ export function cloneChat(chatId: string): ChatRow {
   const newChatId = createUuidV7();
 
   getAppDatabase()
-    .insert(chats)
+    .insert(items)
     .values({
       id: newChatId,
       workspaceId: sourceChat.workspaceId,
       folderId: sourceChat.folderId,
+      type: "chat",
       title: `${sourceChat.title} (Copy)`,
-      settings: sourceChat.settings,
+      data: { ...sourceChat.data, currentBranchId: undefined },
     })
     .run();
 
@@ -1109,22 +1261,33 @@ export function setChatCurrentBranch(
   },
 ): void {
   const db = getAppDatabase();
-  const existing = db.select().from(chats).where(eq(chats.id, chatId)).get();
+  const existing = db
+    .select()
+    .from(items)
+    .where(and(eq(items.id, chatId), eq(items.type, "chat")))
+    .get();
   if (!existing) return;
-  const currentData = (existing.data as Record<string, unknown>) ?? {};
-  db.update(chats)
+  const currentData = normalizeChatData(existing.data);
+  db.update(items)
     .set({
-      settings: mergeChatSettings(existing.settings, options?.settingsPatch),
-      data: { ...currentData, currentBranchId: branchId },
+      data: {
+        ...currentData,
+        settings: mergeChatSettings(currentData.settings, options?.settingsPatch),
+        currentBranchId: branchId ?? undefined,
+      },
       updatedAt: Date.now(),
     })
-    .where(eq(chats.id, chatId))
+    .where(eq(items.id, chatId))
     .run();
 }
 
 export function getChatCurrentBranchId(chatId: string): string | null {
   const db = getAppDatabase();
-  const row = db.select().from(chats).where(eq(chats.id, chatId)).get();
+  const row = db
+    .select()
+    .from(items)
+    .where(and(eq(items.id, chatId), eq(items.type, "chat")))
+    .get();
   if (!row) return null;
   const data = row.data as Record<string, unknown> | null;
   const branchId = data?.currentBranchId;

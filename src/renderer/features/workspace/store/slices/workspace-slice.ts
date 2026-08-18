@@ -22,7 +22,7 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set,
       });
       return;
     }
-    get().openChatInFocusedPane(chatId);
+    get().openItemInFocusedPane(chatId, "chat");
   },
 
   setChatDraft: (chatId, draft) => {
@@ -72,7 +72,8 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set,
         ? (newSettings.activeTabId ?? null)
         : (state.tabs[0]?.id ?? null);
       const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-      state.currentChatId = activeTab ? getFocusedPane(activeTab).chatId : null;
+      const pane = activeTab ? getFocusedPane(activeTab) : null;
+      state.currentChatId = pane?.itemType === "chat" ? pane.itemId : null;
 
       state.expandedTreeNodes = newSettings.chatTreeExpandedFolderIds ?? [];
       state.sidebarViewMode = newSettings.sidebarViewMode ?? null;

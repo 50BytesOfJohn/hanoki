@@ -56,12 +56,12 @@ beforeAll(() => {
   );
   db.run(
     sql.raw(`
-    create table chats (
+    create table items (
       id text primary key,
       workspace_id text not null references workspaces(id) on delete cascade,
       folder_id text references folders(id) on delete set null,
+      type text not null,
       title text not null,
-      settings text not null default '{}',
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
@@ -74,7 +74,7 @@ beforeAll(() => {
     sql.raw(`
     create table messages (
       id text primary key,
-      chat_id text not null references chats(id) on delete cascade,
+      item_id text not null references items(id) on delete cascade,
       parent_id text references messages(id) on delete set null,
       role text not null,
       parts text not null default '[]',
@@ -112,20 +112,20 @@ describe("moveChatTreeItems", () => {
       [
         { kind: "folder", id: parent.id },
         { kind: "folder", id: child.id },
-        { kind: "chat", id: nestedChat.id },
-        { kind: "chat", id: rootChat.id },
-        { kind: "chat", id: rootChat.id },
+        { kind: "item", id: nestedChat.id },
+        { kind: "item", id: rootChat.id },
+        { kind: "item", id: rootChat.id },
       ],
       destination.id,
     );
 
     expect(result.movedItems).toEqual([
       { kind: "folder", id: parent.id },
-      { kind: "chat", id: rootChat.id },
+      { kind: "item", id: rootChat.id },
     ]);
     expect(result.skippedItems.map(({ kind, id }) => ({ kind, id }))).toEqual([
       { kind: "folder", id: child.id },
-      { kind: "chat", id: nestedChat.id },
+      { kind: "item", id: nestedChat.id },
     ]);
     expect(getFolderById(parent.id)?.parentId).toBe(destination.id);
     expect(getFolderById(child.id)?.parentId).toBe(parent.id);
@@ -164,17 +164,24 @@ describe("updateChatSettings", () => {
 
     expect(
       updateChatSettings(chat.id, {
+        modelId: "selected-model",
         systemPrompt: "Be concise.",
         modelConfig: { temperature: 0.4 },
-      }).settings,
+      }).data.settings,
     ).toEqual({
+      modelId: "selected-model",
       systemPrompt: "Be concise.",
       modelConfig: { temperature: 0.4 },
     });
 
-    expect(updateChatSettings(chat.id, { modelConfig: { temperature: null } }).settings).toEqual({
+    expect(
+      updateChatSettings(chat.id, { modelConfig: { temperature: null } }).data.settings,
+    ).toEqual({
+      modelId: "selected-model",
       systemPrompt: "Be concise.",
     });
+
+    expect(getChatById(chat.id)?.data.settings.modelId).toBe("selected-model");
   });
 });
 

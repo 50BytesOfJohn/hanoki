@@ -74,13 +74,13 @@ function parseChatTreeItemRefs(input: unknown): ChatTreeItemRef[] {
 
     const record = entry as Record<string, unknown>;
 
-    if (record.kind === "chat") {
+    if (record.kind === "item") {
       const parsedChatId = parseChatId(record.id);
       if (!parsedChatId.ok) {
         throw AppError.badRequest(parsedChatId.error);
       }
 
-      items.push({ kind: "chat", id: parsedChatId.value });
+      items.push({ kind: "item", id: parsedChatId.value });
       continue;
     }
 
@@ -94,7 +94,7 @@ function parseChatTreeItemRefs(input: unknown): ChatTreeItemRef[] {
       continue;
     }
 
-    throw AppError.badRequest("Chat tree item kind must be 'chat' or 'folder'.");
+    throw AppError.badRequest("Chat tree item kind must be 'item' or 'folder'.");
   }
 
   return items;
@@ -156,8 +156,11 @@ export function registerChatTreeIpcModule(
         expectArgCount(args, 2);
         return [parseValidWorkspaceId(args[0]), parseChatTreeItemRefs(args[1])];
       },
-      handler: ({ services }, _event, workspaceId, items) =>
-        services.chatTree.deleteChatTreeItems(workspaceId, items),
+      handler: async ({ services }, _event, workspaceId, items) => {
+        const result = services.chatTree.deleteChatTreeItems(workspaceId, items);
+        await services.terminals.pruneMissingItems();
+        return result;
+      },
     },
   );
 }

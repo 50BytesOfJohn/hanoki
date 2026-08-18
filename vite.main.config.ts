@@ -4,6 +4,7 @@ import path from "node:path";
 
 const external = [
   "electron",
+  "node-pty",
   ...builtinModules,
   ...builtinModules.map((moduleName) => `node:${moduleName}`),
 ];

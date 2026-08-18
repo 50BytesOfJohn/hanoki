@@ -35,6 +35,12 @@ export const IPC_CHANNELS = {
     setUiState: "chatTree:setUiState",
     deleteItems: "chatTree:deleteItems",
   },
+  items: {
+    get: "items:get",
+    updateTitle: "items:updateTitle",
+    move: "items:move",
+    delete: "items:delete",
+  },
   folders: {
     create: "folders:create",
     updateName: "folders:updateName",
@@ -50,6 +56,12 @@ export const IPC_CHANNELS = {
     updateSettings: "chats:updateSettings",
     move: "chats:move",
     delete: "chats:delete",
+  },
+  terminals: {
+    create: "terminals:create",
+    start: "terminals:start",
+    write: "terminals:write",
+    resize: "terminals:resize",
   },
   messages: {
     listByChat: "messages:listByChat",
@@ -224,14 +236,63 @@ export interface FolderInfo {
 }
 
 export interface ChatInfo {
+  type: "chat";
   id: string;
   workspaceId: string;
   folderId: string | null;
   title: string;
-  settings: ChatSettings;
+  data: ChatItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ChatItemData extends Record<string, unknown> {
+  settings: ChatSettings;
+  currentBranchId?: string;
+}
+
+export interface TerminalItemData extends Record<string, unknown> {
+  workingDirectory: string;
+  shell: string;
+  columns: number;
+  rows: number;
+  scrollback: string;
+  scrollbackVersion: number;
+}
+
+export const TERMINAL_SCROLLBACK_VERSION = 2;
+
+export interface TerminalInfo {
+  type: "terminal";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: TerminalItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ItemType = ChatInfo["type"] | TerminalInfo["type"];
+export type ItemInfo = ChatInfo | TerminalInfo;
+
+export interface TerminalSessionSnapshot {
+  itemId: string;
+  sequence: number;
+  scrollback: string;
+  status: "running" | "exited";
+  exitCode: number | null;
+}
+
+export type TerminalEvent =
+  | { type: "data"; itemId: string; sequence: number; data: string }
+  | { type: "exit"; itemId: string; sequence: number; exitCode: number | null };
+
+export const TERMINAL_EVENT_CHANNEL = "terminals:event";
 
 export interface ChatSettings {
   modelId?: string | null;
@@ -262,25 +323,25 @@ export interface ChatSettingsUpdateInput {
 
 export interface ChatTreeFolderNode extends FolderInfo {
   folders: ChatTreeFolderNode[];
-  chats: ChatInfo[];
+  items: ItemInfo[];
 }
 
 export interface ChatTreeSnapshot {
   workspaceId: string;
   rootFolders: ChatTreeFolderNode[];
-  rootChats: ChatInfo[];
+  rootItems: ItemInfo[];
 }
 
 export interface ChatTreeFolderListItem extends FolderInfo {
   childFolderCount: number;
-  childChatCount: number;
+  childItemCount: number;
 }
 
 export interface ChatTreeChildrenSlice {
   workspaceId: string;
   parentFolderId: string | null;
   folders: ChatTreeFolderListItem[];
-  chats: ChatInfo[];
+  items: ItemInfo[];
 }
 
 export interface ChatTreeUiState {
@@ -288,42 +349,53 @@ export interface ChatTreeUiState {
 }
 
 export interface ChatTreeItemRef {
-  kind: "chat" | "folder";
+  kind: "item" | "folder";
   id: string;
 }
 
 export interface DeleteChatTreeItemsResult {
   workspaceId: string;
-  deletedChatIds: string[];
+  deletedItemIds: string[];
   deletedFolderIds: string[];
 }
 
-export type TabType = "chat";
+export type TabType = "item";
 
 export type ChatPaneView = "/chat" | "/chat/graph" | "/chat/pinned-branches" | "/chat/settings";
 
-export interface ChatPaneState {
+export interface ChatItemPaneState {
   id: string;
   type: "pane";
-  chatId: string;
+  itemId: string;
+  itemType: "chat";
   view: ChatPaneView;
   graphMessageId?: string;
 }
 
-export interface ChatSplitState {
+export interface TerminalItemPaneState {
+  id: string;
+  type: "pane";
+  itemId: string;
+  itemType: "terminal";
+  view: "/terminal";
+}
+
+export type ItemPaneState = ChatItemPaneState | TerminalItemPaneState;
+
+export interface ItemSplitState {
   id: string;
   type: "split";
   orientation: "horizontal" | "vertical";
-  children: ChatLayoutNode[];
+  children: ItemLayoutNode[];
   sizes: number[];
 }
 
-export type ChatLayoutNode = ChatPaneState | ChatSplitState;
+export type ItemLayoutNode = ItemPaneState | ItemSplitState;
 
 export interface TabStateItem {
   id: string;
   type: TabType;
-  layout: ChatLayoutNode;
+  layout: ItemLayoutNode;
   focusedPaneId: string;
 }
 
@@ -418,6 +490,7 @@ export type DeleteMessageScope = "message" | "branch";
 
 export interface IpcApi {
   onSystemEvent: (callback: (event: import("../events").SystemEvent) => void) => () => void;
+  onTerminalEvent: (callback: (event: TerminalEvent) => void) => () => void;
   getSystemState: () => Promise<import("../events").SystemState>;
   listWorkspaces: () => Promise<WorkspaceInfo[]>;
   getActiveWorkspace: (options?: GetActiveWorkspaceOptions) => Promise<ActiveWorkspaceInfo>;
@@ -456,6 +529,10 @@ export interface IpcApi {
   ) => Promise<DeleteChatTreeItemsResult>;
   getWorkspaceTabsUiState: (workspaceId: string) => Promise<TabsUiState>;
   setWorkspaceTabsUiState: (workspaceId: string, tabs: TabStateItem[]) => Promise<TabsUiState>;
+  getItem: (id: string) => Promise<ItemInfo>;
+  updateItemTitle: (id: string, title: string) => Promise<ItemInfo>;
+  moveItem: (id: string, folderId: string | null) => Promise<ItemInfo>;
+  deleteItem: (id: string) => Promise<void>;
   getChat: (id: string) => Promise<ChatInfo>;
   listChatMessages: (chatId: string, branchId?: string | null) => Promise<HanokiUiMessage[]>;
   listAllChatMessages: (chatId: string) => Promise<HanokiUiMessage[]>;
@@ -483,6 +560,14 @@ export interface IpcApi {
   updateChatSettings: (id: string, input: ChatSettingsUpdateInput) => Promise<ChatInfo>;
   moveChat: (id: string, folderId: string | null) => Promise<ChatInfo>;
   deleteChat: (id: string) => Promise<void>;
+  createTerminal: (
+    workspaceId: string,
+    title: string,
+    folderId?: string | null,
+  ) => Promise<TerminalInfo>;
+  startTerminal: (id: string) => Promise<TerminalSessionSnapshot>;
+  writeTerminal: (id: string, data: string) => Promise<void>;
+  resizeTerminal: (id: string, columns: number, rows: number) => Promise<void>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   testProviderCredentials: (

@@ -1,8 +1,9 @@
 import type {
-  ChatLayoutNode,
-  ChatPaneState,
+  ItemLayoutNode,
+  ItemPaneState,
+  ItemType,
   ChatPaneView,
-  ChatSplitState,
+  ItemSplitState,
   TabStateItem,
 } from "@shared/ipc";
 
@@ -11,33 +12,42 @@ export type SplitDirection = Exclude<PaneDropPosition, "center">;
 
 const DEFAULT_VIEW: ChatPaneView = "/chat";
 
-export function createChatPane(chatId: string): ChatPaneState {
+export function createItemPane(itemId: string, itemType: ItemType): ItemPaneState {
   return {
     id: crypto.randomUUID(),
     type: "pane",
-    chatId,
-    view: DEFAULT_VIEW,
-  };
+    itemId,
+    itemType,
+    view: itemType === "chat" ? DEFAULT_VIEW : "/terminal",
+  } as ItemPaneState;
 }
 
-export function createChatTab(chatId: string): TabStateItem {
-  const pane = createChatPane(chatId);
+export function createChatPane(chatId: string): ItemPaneState {
+  return createItemPane(chatId, "chat");
+}
+
+export function createItemTab(itemId: string, itemType: ItemType): TabStateItem {
+  const pane = createItemPane(itemId, itemType);
   return {
     id: crypto.randomUUID(),
-    type: "chat",
+    type: "item",
     layout: pane,
     focusedPaneId: pane.id,
   };
 }
 
-export function getPanes(node: ChatLayoutNode): ChatPaneState[] {
+export function createChatTab(chatId: string): TabStateItem {
+  return createItemTab(chatId, "chat");
+}
+
+export function getPanes(node: ItemLayoutNode): ItemPaneState[] {
   if (node.type === "pane") {
     return [node];
   }
   return node.children.flatMap(getPanes);
 }
 
-export function findPane(node: ChatLayoutNode, paneId: string): ChatPaneState | null {
+export function findPane(node: ItemLayoutNode, paneId: string): ItemPaneState | null {
   if (node.type === "pane") {
     return node.id === paneId ? node : null;
   }
@@ -48,36 +58,47 @@ export function findPane(node: ChatLayoutNode, paneId: string): ChatPaneState | 
   return null;
 }
 
-export function findPaneByChatId(node: ChatLayoutNode, chatId: string): ChatPaneState | null {
-  return getPanes(node).find((pane) => pane.chatId === chatId) ?? null;
+export function findPaneByItemId(node: ItemLayoutNode, itemId: string): ItemPaneState | null {
+  return getPanes(node).find((pane) => pane.itemId === itemId) ?? null;
 }
 
-export function getFocusedPane(tab: TabStateItem): ChatPaneState {
+export function findPaneByChatId(node: ItemLayoutNode, chatId: string): ItemPaneState | null {
+  return getPanes(node).find((pane) => pane.itemType === "chat" && pane.itemId === chatId) ?? null;
+}
+
+export function getFocusedPane(tab: TabStateItem): ItemPaneState {
   return findPane(tab.layout, tab.focusedPaneId) ?? getPanes(tab.layout)[0];
 }
 
-export function replacePaneChat(
-  node: ChatLayoutNode,
+export function replacePaneItem(
+  node: ItemLayoutNode,
   paneId: string,
-  chatId: string,
-): ChatLayoutNode {
+  itemId: string,
+  itemType: ItemType,
+): ItemLayoutNode {
   if (node.type === "pane") {
     if (node.id !== paneId) return node;
-    return { ...node, chatId, view: DEFAULT_VIEW, graphMessageId: undefined };
+    return createPaneWithId(paneId, itemId, itemType);
   }
   return {
     ...node,
-    children: node.children.map((child) => replacePaneChat(child, paneId, chatId)),
+    children: node.children.map((child) => replacePaneItem(child, paneId, itemId, itemType)),
   };
 }
 
+function createPaneWithId(id: string, itemId: string, itemType: ItemType): ItemPaneState {
+  return itemType === "chat"
+    ? { id, type: "pane", itemId, itemType: "chat", view: DEFAULT_VIEW }
+    : { id, type: "pane", itemId, itemType: "terminal", view: "/terminal" };
+}
+
 export function updatePane(
-  node: ChatLayoutNode,
+  node: ItemLayoutNode,
   paneId: string,
-  update: Partial<Pick<ChatPaneState, "view" | "graphMessageId">>,
-): ChatLayoutNode {
+  update: Partial<Pick<Extract<ItemPaneState, { itemType: "chat" }>, "view" | "graphMessageId">>,
+): ItemLayoutNode {
   if (node.type === "pane") {
-    return node.id === paneId ? { ...node, ...update } : node;
+    return node.id === paneId && node.itemType === "chat" ? { ...node, ...update } : node;
   }
   return { ...node, children: node.children.map((child) => updatePane(child, paneId, update)) };
 }
@@ -95,10 +116,10 @@ function normalizedSizes(length: number, sizes?: readonly number[]): number[] {
 }
 
 function splitAround(
-  target: ChatLayoutNode,
-  inserted: ChatPaneState,
+  target: ItemLayoutNode,
+  inserted: ItemPaneState,
   direction: SplitDirection,
-): ChatSplitState {
+): ItemSplitState {
   const orientation = direction === "left" || direction === "right" ? "horizontal" : "vertical";
   const before = direction === "left" || direction === "top";
   return {
@@ -111,11 +132,11 @@ function splitAround(
 }
 
 export function insertPane(
-  node: ChatLayoutNode,
+  node: ItemLayoutNode,
   targetPaneId: string,
-  inserted: ChatPaneState,
+  inserted: ItemPaneState,
   direction: SplitDirection,
-): ChatLayoutNode {
+): ItemLayoutNode {
   if (node.type === "pane") {
     return node.id === targetPaneId ? splitAround(node, inserted, direction) : node;
   }
@@ -141,14 +162,14 @@ export function insertPane(
   return { ...node, children };
 }
 
-export function removePane(node: ChatLayoutNode, paneId: string): ChatLayoutNode | null {
+export function removePane(node: ItemLayoutNode, paneId: string): ItemLayoutNode | null {
   if (node.type === "pane") {
     return node.id === paneId ? null : node;
   }
 
   const children = node.children
     .map((child) => removePane(child, paneId))
-    .filter((child): child is ChatLayoutNode => child !== null);
+    .filter((child): child is ItemLayoutNode => child !== null);
 
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
@@ -162,19 +183,19 @@ export function removePane(node: ChatLayoutNode, paneId: string): ChatLayoutNode
 }
 
 function replaceNodes(
-  node: ChatLayoutNode,
-  replacements: ReadonlyMap<string, ChatPaneState>,
-): ChatLayoutNode {
+  node: ItemLayoutNode,
+  replacements: ReadonlyMap<string, ItemPaneState>,
+): ItemLayoutNode {
   if (node.type === "pane") return replacements.get(node.id) ?? node;
   return { ...node, children: node.children.map((child) => replaceNodes(child, replacements)) };
 }
 
 export function movePane(
-  node: ChatLayoutNode,
+  node: ItemLayoutNode,
   sourcePaneId: string,
   targetPaneId: string,
   position: PaneDropPosition,
-): ChatLayoutNode {
+): ItemLayoutNode {
   if (sourcePaneId === targetPaneId) return node;
   const source = findPane(node, sourcePaneId);
   const target = findPane(node, targetPaneId);
@@ -196,10 +217,10 @@ export function movePane(
 }
 
 export function resizeSplit(
-  node: ChatLayoutNode,
+  node: ItemLayoutNode,
   splitId: string,
   layout: Readonly<Record<string, number>>,
-): ChatLayoutNode {
+): ItemLayoutNode {
   if (node.type === "pane") return node;
   if (node.id === splitId) {
     return {
@@ -213,16 +234,16 @@ export function resizeSplit(
   return { ...node, children: node.children.map((child) => resizeSplit(child, splitId, layout)) };
 }
 
-export function removeChats(
-  node: ChatLayoutNode,
-  deletedChatIds: ReadonlySet<string>,
-): ChatLayoutNode | null {
+export function removeItems(
+  node: ItemLayoutNode,
+  deletedItemIds: ReadonlySet<string>,
+): ItemLayoutNode | null {
   if (node.type === "pane") {
-    return deletedChatIds.has(node.chatId) ? null : node;
+    return deletedItemIds.has(node.itemId) ? null : node;
   }
   const children = node.children
-    .map((child) => removeChats(child, deletedChatIds))
-    .filter((child): child is ChatLayoutNode => child !== null);
+    .map((child) => removeItems(child, deletedItemIds))
+    .filter((child): child is ItemLayoutNode => child !== null);
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
   return { ...node, children, sizes: normalizedSizes(children.length) };
@@ -231,12 +252,12 @@ export function removeChats(
 export function normalizeTab(tab: TabStateItem): TabStateItem | null {
   const panes = getPanes(tab.layout);
   if (panes.length === 0) return null;
-  const uniqueChatIds = new Set<string>();
+  const uniqueItemIds = new Set<string>();
   const duplicatePaneIds = new Set(
     panes
       .filter((pane) => {
-        if (uniqueChatIds.has(pane.chatId)) return true;
-        uniqueChatIds.add(pane.chatId);
+        if (uniqueItemIds.has(pane.itemId)) return true;
+        uniqueItemIds.add(pane.itemId);
         return false;
       })
       .map((pane) => pane.id),

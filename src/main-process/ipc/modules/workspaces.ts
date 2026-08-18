@@ -1,6 +1,6 @@
 import {
   type ActiveWorkspaceInfo,
-  type ChatLayoutNode,
+  type ItemLayoutNode,
   type ChatPaneView,
   type GetActiveWorkspaceOptions,
   IPC_CHANNELS,
@@ -114,12 +114,12 @@ function parseValidChatId(input: unknown): string {
   return parsedId.value;
 }
 
-function parseValidTabType(input: unknown): "chat" {
-  if (input !== "chat") {
-    throw AppError.badRequest('tab.type must be "chat".');
+function parseValidTabType(input: unknown): "item" {
+  if (input !== "item") {
+    throw AppError.badRequest('tab.type must be "item".');
   }
 
-  return "chat";
+  return "item";
 }
 
 function parseTabsArray(input: unknown): TabStateItem[] {
@@ -149,13 +149,26 @@ function parseTabsArray(input: unknown): TabStateItem[] {
   });
 }
 
-function parseChatLayoutNode(input: unknown, depth = 0): ChatLayoutNode {
+function parseChatLayoutNode(input: unknown, depth = 0): ItemLayoutNode {
   if (depth > 20 || !input || typeof input !== "object" || Array.isArray(input)) {
     throw AppError.badRequest("Invalid chat layout node.");
   }
   const record = input as Record<string, unknown>;
   const id = parseValidTabId(record.id);
   if (record.type === "pane") {
+    const itemType = record.itemType;
+    if (itemType !== "chat" && itemType !== "terminal") {
+      throw AppError.badRequest("Invalid item pane type.");
+    }
+    if (itemType === "terminal") {
+      return {
+        id,
+        type: "pane",
+        itemId: parseValidChatId(record.itemId),
+        itemType: "terminal",
+        view: "/terminal",
+      };
+    }
     const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];
     if (!allowedViews.includes(record.view as string)) {
       throw AppError.badRequest("Invalid chat pane view.");
@@ -163,7 +176,8 @@ function parseChatLayoutNode(input: unknown, depth = 0): ChatLayoutNode {
     return {
       id,
       type: "pane",
-      chatId: parseValidChatId(record.chatId),
+      itemId: parseValidChatId(record.itemId),
+      itemType: "chat",
       view: record.view as ChatPaneView,
       ...(typeof record.graphMessageId === "string"
         ? { graphMessageId: record.graphMessageId }

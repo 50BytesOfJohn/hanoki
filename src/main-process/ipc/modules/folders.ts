@@ -91,6 +91,9 @@ export function registerFoldersIpcModule(
       expectArgCount(args, 1);
       return [parseValidFolderId(args[0])];
     },
-    handler: ({ services }, _event, id) => services.chatTree.deleteFolder(id),
+    handler: async ({ services }, _event, id) => {
+      services.chatTree.deleteFolder(id);
+      await services.terminals.pruneMissingItems();
+    },
   });
 }

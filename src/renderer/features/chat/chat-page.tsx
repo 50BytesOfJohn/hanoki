@@ -108,8 +108,8 @@ export function ActiveChatView({ chatId }: { chatId: string }) {
 
   const { data: chat, error: chatError } = useQuery(getChatQueryOptions(chatId));
   const initialModelId = React.useMemo(
-    () => resolveModelId(enabledModelIds, chat?.settings.modelId ?? null),
-    [chat?.settings.modelId, enabledModelIds],
+    () => resolveModelId(enabledModelIds, chat?.data.settings.modelId ?? null),
+    [chat?.data.settings.modelId, enabledModelIds],
   );
   const chatErrorMessage =
     chatError instanceof Error && chatError.message.trim() ? chatError.message : null;
@@ -144,6 +144,14 @@ export function ActiveChatView({ chatId }: { chatId: string }) {
     return (
       <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col gap-4 px-6 py-6">
         <p className="text-sm text-destructive">{chatErrorMessage}</p>
+      </div>
+    );
+  }
+
+  if (!chat) {
+    return (
+      <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col gap-4 px-6 py-6">
+        <p className="text-sm text-muted-foreground">Loading chat…</p>
       </div>
     );
   }
@@ -481,9 +489,9 @@ function ChatToolsMenu() {
   const isInteractionLocked = useChatIsInteractionLocked();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const updateChatSettings = useUpdateChatSettings();
-  const webEnabled = chat?.settings.webEnabled ?? false;
-  const hanokiEnabled = chat?.settings.hanokiEnabled ?? false;
-  const terminalEnabled = chat?.settings.terminalEnabled ?? false;
+  const webEnabled = chat?.data.settings.webEnabled ?? false;
+  const hanokiEnabled = chat?.data.settings.hanokiEnabled ?? false;
+  const terminalEnabled = chat?.data.settings.terminalEnabled ?? false;
 
   return (
     <DropdownMenu>
@@ -575,14 +583,20 @@ function ModelSelector() {
       value={selected}
       onValueChange={(model) => {
         const nextModelId = model?.id ?? null;
+
+        if (nextModelId === modelId) {
+          return;
+        }
+
         setModelId(nextModelId);
-        // Persist per chat so the selection survives tab switches (the
-        // chat store is recreated from chat.settings.modelId on remount).
-        updateChatSettings.mutate({ id: chatId, input: { modelId: nextModelId } });
+        updateChatSettings.mutate(
+          { id: chatId, input: { modelId: nextModelId } },
+          { onError: () => setModelId(modelId) },
+        );
       }}
       itemToStringValue={(model) => model.displayName ?? model.providerModelId}
       isItemEqualToValue={(item, value) => item.id === value.id}
-      disabled={isInteractionLocked}
+      disabled={isInteractionLocked || updateChatSettings.isPending}
     >
       <ComboboxTrigger
         aria-label="Select model"

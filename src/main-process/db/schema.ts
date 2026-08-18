@@ -8,7 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { WorkspaceSettings } from "@shared/ipc";
+import type { ChatItemData, TerminalItemData, WorkspaceSettings } from "@shared/ipc";
 
 type JsonObject = Record<string, unknown>;
 const timestampMs = (columnName: string) =>
@@ -62,8 +62,8 @@ export const folders = sqliteTable(
   ],
 );
 
-export const chats = sqliteTable(
-  "chats",
+export const items = sqliteTable(
+  "items",
   {
     id: text("id").primaryKey(),
     workspaceId: text("workspace_id")
@@ -72,17 +72,18 @@ export const chats = sqliteTable(
     folderId: text("folder_id").references(() => folders.id, {
       onDelete: "set null",
     }),
+    type: text("type").$type<"chat" | "terminal">().notNull(),
     title: text("title").notNull(),
-    settings: jsonObject("settings"),
-    data: jsonObject("data"),
+    data: jsonObject<ChatItemData | TerminalItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),
     createdAt: timestampMs("created_at"),
     updatedAt: timestampMs("updated_at"),
   },
   (table) => [
-    index("chats_workspace_id_idx").on(table.workspaceId),
-    index("chats_folder_id_idx").on(table.folderId),
+    index("items_workspace_id_idx").on(table.workspaceId),
+    index("items_folder_id_idx").on(table.folderId),
+    index("items_type_idx").on(table.type),
   ],
 );
 
@@ -90,9 +91,9 @@ export const messages = sqliteTable(
   "messages",
   {
     id: text("id").primaryKey(),
-    chatId: text("chat_id")
+    chatId: text("item_id")
       .notNull()
-      .references(() => chats.id, { onDelete: "cascade" }),
+      .references(() => items.id, { onDelete: "cascade" }),
     parentId: text("parent_id").references((): AnySQLiteColumn => messages.id, {
       onDelete: "set null",
     }),
@@ -105,7 +106,7 @@ export const messages = sqliteTable(
     updatedAt: timestampMs("updated_at"),
   },
   (table) => [
-    index("messages_chat_id_idx").on(table.chatId),
+    index("messages_item_id_idx").on(table.chatId),
     index("messages_parent_id_idx").on(table.parentId),
     index("messages_created_at_idx").on(table.createdAt),
   ],
@@ -119,7 +120,7 @@ export const assets = sqliteTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    chatId: text("chat_id").references(() => chats.id, {
+    chatId: text("item_id").references(() => items.id, {
       onDelete: "set null",
     }),
     messageId: text("message_id").references(() => messages.id, {
@@ -140,7 +141,7 @@ export const assets = sqliteTable(
   },
   (table) => [
     index("assets_workspace_id_idx").on(table.workspaceId),
-    index("assets_chat_id_idx").on(table.chatId),
+    index("assets_item_id_idx").on(table.chatId),
     index("assets_message_id_idx").on(table.messageId),
   ],
 );

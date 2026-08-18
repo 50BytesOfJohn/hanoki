@@ -201,22 +201,22 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         : messages;
     const latestUserMessage = findLatestUserMessage(messages);
     const isWebEnabledForRequest = isWebToolEnabledForRequest(
-      Boolean(chat.settings.webEnabled),
+      Boolean(chat.data.settings.webEnabled),
       latestUserMessage,
     );
     const isHanokiEnabledForRequest = isHanokiToolEnabledForRequest(
-      Boolean(chat.settings.hanokiEnabled),
+      Boolean(chat.data.settings.hanokiEnabled),
       latestUserMessage,
     );
     // The chat opts in via the tools menu or an @Terminal mention, same as the
     // web tools; the app-wide setting only decides whether calls need approval.
     const terminalSettings = readTerminalToolSettings();
     const isTerminalEnabledForRequest = isTerminalToolEnabledForRequest(
-      Boolean(chat.settings.terminalEnabled),
+      Boolean(chat.data.settings.terminalEnabled),
       latestUserMessage,
     );
     const needsTerminalApproval =
-      terminalSettings.mode === "ask" && !chat.settings.terminalAutoApprove;
+      terminalSettings.mode === "ask" && !chat.data.settings.terminalAutoApprove;
 
     const tools = {
       ...webTools,
@@ -245,8 +245,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     };
     const agent = new ToolLoopAgent({
       model: languageModel,
-      instructions: chat.settings.systemPrompt?.trim() || undefined,
-      temperature: chat.settings.modelConfig?.temperature,
+      instructions: chat.data.settings.systemPrompt?.trim() || undefined,
+      temperature: chat.data.settings.modelConfig?.temperature,
       tools,
       activeTools,
       ...(toolApproval ? { toolApproval } : {}),
@@ -259,8 +259,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           workspaceId: chat.workspaceId,
           provider: sdkProvider,
           modelId: sdkModelId,
-          temperature: chat.settings.modelConfig?.temperature ?? null,
-          hasCustomSystemPrompt: Boolean(chat.settings.systemPrompt?.trim()),
+          temperature: chat.data.settings.modelConfig?.temperature ?? null,
+          hasCustomSystemPrompt: Boolean(chat.data.settings.systemPrompt?.trim()),
           activeTools,
         });
       },

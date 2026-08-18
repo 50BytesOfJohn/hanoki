@@ -4,6 +4,7 @@ import { createModelService, type ModelService } from "./model-service";
 import { createProviderService, type ProviderService } from "./provider-service";
 import { createSettingsService, type SettingsService } from "./settings-service";
 import { createWorkspaceService, type WorkspaceService } from "./workspace-service";
+import { createTerminalService, type TerminalService } from "./terminal-service";
 import type {
   ProviderModelSyncStatus,
   ProvidersStartupModelSyncCompletedEvent,
@@ -16,6 +17,7 @@ export interface AppServices {
   chatMessages: ChatMessagesService;
   models: ModelService;
   providers: ProviderService;
+  terminals: TerminalService;
 }
 
 interface AppServicesOptions {
@@ -29,6 +31,7 @@ interface AppServicesOptions {
 }
 
 export function createAppServices(options?: AppServicesOptions): AppServices {
+  const terminals = createTerminalService();
   return {
     workspaces: createWorkspaceService(),
     settings: createSettingsService(),
@@ -39,5 +42,6 @@ export function createAppServices(options?: AppServicesOptions): AppServices {
       onModelSyncCompleted: options?.onProviderModelsSyncCompleted,
       onStartupSyncCompleted: options?.onProvidersStartupModelSyncCompleted,
     }),
+    terminals,
   };
 }

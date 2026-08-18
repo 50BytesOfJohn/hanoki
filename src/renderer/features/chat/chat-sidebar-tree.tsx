@@ -16,6 +16,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ChatAdd01Icon,
+  ComputerTerminal01Icon,
   Copy01Icon,
   Delete02Icon,
   Folder01Icon,
@@ -81,16 +82,19 @@ import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { queryKeys } from "@/queries/keys";
 import {
   useDeleteChatTreeItems,
-  useMoveChat,
+  useMoveItem,
   useMoveFolder,
   useRenameChatTreeItem,
   useSetChatTreeUiState,
 } from "@/mutations/chat-tree";
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
+import { useCreateTerminal } from "@/mutations/terminals";
 
 import type {
   ChatInfo,
+  ItemInfo,
+  ItemType,
   ChatSidebarViewMode,
   ChatTreeFolderListItem,
   ChatTreeFolderNode,
@@ -117,10 +121,11 @@ import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTitleUpdates } from "./chat-title-events";
 import { useWorkspaceStore } from "../workspace/store";
+import { getFocusedPane } from "../workspace/store/layout-tree";
 
 type ChatTreeNodeData =
   | { kind: "folder"; folder: ChatTreeFolderListItem }
-  | { kind: "chat"; chat: ChatInfo }
+  | { kind: "item"; item: ItemInfo }
   | { kind: "root" }
   | { kind: "loading" };
 
@@ -131,6 +136,7 @@ const SIDEBAR_ICON_BUTTON_CLASS =
 type ChatTreeContextMenuAction =
   | "add-folder"
   | "add-chat"
+  | "add-terminal"
   | "open-in-focused-pane"
   | "open-in-new-tab"
   | "open-to-left"
@@ -147,7 +153,7 @@ function ChatTreeItemContextMenu({
   onAction,
 }: {
   children: React.ReactElement;
-  itemKind: "folder" | "chat";
+  itemKind: "folder" | ItemType;
   onAction: (action: ChatTreeContextMenuAction) => void;
 }) {
   return (
@@ -163,6 +169,10 @@ function ChatTreeItemContextMenu({
             <ContextMenuItem onClick={() => onAction("add-chat")}>
               <HugeiconsIcon icon={ChatAdd01Icon} />
               Add Chat
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-terminal")}>
+              <HugeiconsIcon icon={ComputerTerminal01Icon} />
+              Add Terminal
             </ContextMenuItem>
           </ContextMenuGroup>
         ) : (
@@ -373,17 +383,17 @@ function ChatSidebarTreeInner({
   const deleteItemsMutation = useDeleteChatTreeItems();
   const renameChatTreeItem = useRenameChatTreeItem();
   const moveFolderMutation = useMoveFolder();
-  const moveChatMutation = useMoveChat();
+  const moveItemMutation = useMoveItem();
   const createChatMutation = useCreateChat();
   const cloneChatMutation = useCloneChat();
   const createFolderMutation = useCreateFolder();
+  const createTerminalMutation = useCreateTerminal();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const tabs = useWorkspaceStore((s) => s.tabs);
-  const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
   const [expandedItems, setExpandedItems] = React.useState<string[]>(() =>
     initialExpandedFolderIds.map((id) => `folder:${id}`),
@@ -459,9 +469,11 @@ function ChatSidebarTreeInner({
       format: CHAT_DRAG_FORMAT,
       data: JSON.stringify(
         items
-          .map((item) => item.getId())
-          .filter((id) => id.startsWith("chat:"))
-          .map((id) => id.slice("chat:".length)),
+          .filter((item) => item.getId().startsWith("item:"))
+          .flatMap((item) => {
+            const data = item.getItemData();
+            return data.kind === "item" ? [{ id: data.item.id, type: data.item.type }] : [];
+          }),
       ),
     }),
     canDrop: (items, target) => {
@@ -492,9 +504,9 @@ function ChatSidebarTreeInner({
             id: itemId.slice("folder:".length),
             parentId: targetFolderId,
           });
-        } else if (itemId.startsWith("chat:")) {
-          await moveChatMutation.mutateAsync({
-            id: itemId.slice("chat:".length),
+        } else if (itemId.startsWith("item:")) {
+          await moveItemMutation.mutateAsync({
+            id: itemId.slice("item:".length),
             folderId: targetFolderId,
           });
         }
@@ -525,7 +537,7 @@ function ChatSidebarTreeInner({
     getItemName: (item) => {
       const data = item.getItemData();
       if (data.kind === "folder") return data.folder.name;
-      if (data.kind === "chat") return data.chat.title;
+      if (data.kind === "item") return data.item.title;
       if (data.kind === "loading") return "Loading…";
 
       return "";
@@ -545,10 +557,10 @@ function ChatSidebarTreeInner({
             key: folder,
             value: { id: `folder:${folder.id}`, data: { kind: "folder" as const, folder } },
           })),
-          ...slice.chats.map((chat) => ({
+          ...slice.items.map((item) => ({
             isFolder: false,
-            key: { ...chat, name: chat.title },
-            value: { id: `chat:${chat.id}`, data: { kind: "chat" as const, chat } },
+            key: { ...item, name: item.title },
+            value: { id: `item:${item.id}`, data: { kind: "item" as const, item } },
           })),
         ];
 
@@ -636,28 +648,42 @@ function ChatSidebarTreeInner({
     [createFolderMutation, invalidateTree, setRenamingItem, setRenamingValue, workspaceId],
   );
 
-  const openChatInTab = React.useCallback(
-    (chatId: string, options?: { activate?: boolean }) => {
-      openTab({ type: "chat", chatId }, options);
+  const createTerminal = React.useCallback(
+    async (folderId: string | null) => {
+      const terminal = await createTerminalMutation.mutateAsync({
+        workspaceId,
+        title: "New terminal",
+        folderId,
+      });
+      invalidateTree();
+      openTab({ type: "terminal", itemId: terminal.id });
+    },
+    [createTerminalMutation, invalidateTree, openTab, workspaceId],
+  );
+
+  const openItemInTab = React.useCallback(
+    (item: ItemInfo, options?: { activate?: boolean }) => {
+      openTab({ type: item.type, itemId: item.id }, options);
     },
     [openTab],
   );
 
-  const navigateToChat = React.useCallback(
-    (chatId: string) => {
-      setCurrentChat(chatId);
+  const navigateToItem = React.useCallback(
+    (item: ItemInfo) => {
+      if (item.type === "chat") setCurrentChat(item.id);
+      else useWorkspaceStore.getState().openItemInFocusedPane(item.id, item.type);
     },
     [setCurrentChat],
   );
 
-  const openChatBeside = React.useCallback(
-    (chatId: string, direction: "left" | "right" | "top" | "bottom") => {
+  const openItemBeside = React.useCallback(
+    (item: ItemInfo, direction: "left" | "right" | "top" | "bottom") => {
       const tab = tabs.find((candidate) => candidate.id === activeTabId);
       if (!tab) {
-        openTab({ type: "chat", chatId });
+        openTab({ type: item.type, itemId: item.id });
         return;
       }
-      splitPane(tab.id, tab.focusedPaneId, chatId, direction);
+      splitPane(tab.id, tab.focusedPaneId, item.id, item.type, direction);
     },
     [activeTabId, openTab, splitPane, tabs],
   );
@@ -709,7 +735,7 @@ function ChatSidebarTreeInner({
       <ChatSidebarBlock className="pt-1">
         <ChatTabsSection />
 
-        <ChatSidebarSectionHeader title="Chats">
+        <ChatSidebarSectionHeader title="Items">
           <Button
             size="icon-xs"
             variant="ghost"
@@ -736,6 +762,15 @@ function ChatSidebarTreeInner({
             size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add terminal to root"
+            onClick={() => void createTerminal(null)}
+          >
+            <HugeiconsIcon icon={ComputerTerminal01Icon} />
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
             aria-label="Add folder to root"
             onClick={() => {
               void createFolder(null);
@@ -756,7 +791,7 @@ function ChatSidebarTreeInner({
         </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted-foreground">No chats or folders yet.</p>
+          <p className="px-3 py-3 text-xs text-muted-foreground">No items or folders yet.</p>
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <ChatTreeView
@@ -775,7 +810,12 @@ function ChatSidebarTreeInner({
                 }
 
                 const handleContextMenuAction = (action: ChatTreeContextMenuAction) => {
-                  const itemKind = data.kind === "folder" ? "folder" : "chat";
+                  const itemKind =
+                    data.kind === "folder"
+                      ? "folder"
+                      : data.kind === "item"
+                        ? data.item.type
+                        : "folder";
                   const ensureFolderExpanded = () => {
                     const folderItemId = item.getId();
                     setExpandedItems((prev) =>
@@ -789,20 +829,27 @@ function ChatSidebarTreeInner({
                   } else if (action === "add-chat" && itemKind === "folder") {
                     ensureFolderExpanded();
                     void createChat(item.getId().slice("folder:".length));
-                  } else if (action === "open-in-focused-pane" && data.kind === "chat") {
-                    navigateToChat(data.chat.id);
-                  } else if (action === "open-in-new-tab" && data.kind === "chat") {
-                    openChatInTab(data.chat.id);
-                  } else if (action === "open-to-left" && data.kind === "chat") {
-                    openChatBeside(data.chat.id, "left");
-                  } else if (action === "open-to-right" && data.kind === "chat") {
-                    openChatBeside(data.chat.id, "right");
-                  } else if (action === "open-above" && data.kind === "chat") {
-                    openChatBeside(data.chat.id, "top");
-                  } else if (action === "open-below" && data.kind === "chat") {
-                    openChatBeside(data.chat.id, "bottom");
-                  } else if (action === "clone" && data.kind === "chat") {
-                    void cloneChatMutation.mutateAsync({ id: data.chat.id }).then(() => {
+                  } else if (action === "add-terminal" && itemKind === "folder") {
+                    ensureFolderExpanded();
+                    void createTerminal(item.getId().slice("folder:".length));
+                  } else if (action === "open-in-focused-pane" && data.kind === "item") {
+                    navigateToItem(data.item);
+                  } else if (action === "open-in-new-tab" && data.kind === "item") {
+                    openItemInTab(data.item);
+                  } else if (action === "open-to-left" && data.kind === "item") {
+                    openItemBeside(data.item, "left");
+                  } else if (action === "open-to-right" && data.kind === "item") {
+                    openItemBeside(data.item, "right");
+                  } else if (action === "open-above" && data.kind === "item") {
+                    openItemBeside(data.item, "top");
+                  } else if (action === "open-below" && data.kind === "item") {
+                    openItemBeside(data.item, "bottom");
+                  } else if (
+                    action === "clone" &&
+                    data.kind === "item" &&
+                    data.item.type === "chat"
+                  ) {
+                    void cloneChatMutation.mutateAsync({ id: data.item.id }).then(() => {
                       invalidateTree();
                     });
                   } else if (action === "rename") {
@@ -819,8 +866,8 @@ function ChatSidebarTreeInner({
                 if (item.isRenaming()) {
                   return (
                     <ChatTreeItemRow key={item.getKey()} level={depth} {...item.getProps()}>
-                      {data.kind === "chat" ? (
-                        <ChatTreeItemIcon chatId={data.chat.id} />
+                      {data.kind === "item" ? (
+                        <ChatTreeItemIcon item={data.item} />
                       ) : data.kind === "folder" ? (
                         <ChatTreeItemIconFrame className="text-muted-foreground/60">
                           <HugeiconsIcon
@@ -836,15 +883,18 @@ function ChatSidebarTreeInner({
                   );
                 }
 
-                if (data.kind === "chat") {
-                  const isActiveChat = data.chat.id === currentChatId;
+                if (data.kind === "item") {
+                  const activeTab = tabs.find((candidate) => candidate.id === activeTabId);
+                  const isActiveItem = activeTab
+                    ? getFocusedPane(activeTab).itemId === data.item.id
+                    : false;
                   const chatItemProps = mergeProps<"div">(item.getProps(), {
                     onClick: (event) => {
                       if (event.defaultPrevented || isSelectionModifierEvent(event)) {
                         return;
                       }
 
-                      navigateToChat(data.chat.id);
+                      navigateToItem(data.item);
                     },
                     onDoubleClick: (event) => {
                       if (event.defaultPrevented || isSelectionModifierEvent(event)) {
@@ -852,7 +902,7 @@ function ChatSidebarTreeInner({
                       }
 
                       event.preventDefault();
-                      openChatInTab(data.chat.id);
+                      openItemInTab(data.item);
                     },
                     onMouseDown: (event) => {
                       // Prevent middle-click autoscroll.
@@ -870,24 +920,24 @@ function ChatSidebarTreeInner({
                       }
 
                       event.preventDefault();
-                      openChatInTab(data.chat.id, { activate: false });
+                      openItemInTab(data.item, { activate: false });
                     },
                   });
 
                   return (
                     <ChatTreeItemContextMenu
                       key={item.getKey()}
-                      itemKind="chat"
+                      itemKind={data.item.type}
                       onAction={handleContextMenuAction}
                     >
                       <ChatTreeItemRow
                         level={depth}
                         {...chatItemProps}
-                        data-active={isActiveChat || undefined}
+                        data-active={isActiveItem || undefined}
                         data-drop-target={item.isDragTarget() || undefined}
                       >
-                        <ChatTreeItemIcon chatId={data.chat.id} />
-                        <ChatTreeItemLabel>{data.chat.title}</ChatTreeItemLabel>
+                        <ChatTreeItemIcon item={data.item} />
+                        <ChatTreeItemLabel>{data.item.title}</ChatTreeItemLabel>
                       </ChatTreeItemRow>
                     </ChatTreeItemContextMenu>
                   );
@@ -895,7 +945,7 @@ function ChatSidebarTreeInner({
 
                 if (data.kind === "folder") {
                   const isExpanded = item.isExpanded();
-                  const hasChildren = data.folder.childFolderCount + data.folder.childChatCount > 0;
+                  const hasChildren = data.folder.childFolderCount + data.folder.childItemCount > 0;
                   const folderItemProps = item.getProps();
 
                   return (
@@ -939,7 +989,7 @@ function ChatSidebarTreeInner({
         workspaceId={workspaceId}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        onSelectChat={navigateToChat}
+        onSelectChat={setCurrentChat}
       />
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}
@@ -960,14 +1010,14 @@ function ChatSidebarTreeInner({
 export function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
   const chats: ChatInfo[] = [];
 
-  const walk = (folders: ChatTreeFolderNode[], folderChats: ChatInfo[]) => {
-    chats.push(...folderChats);
+  const walk = (folders: ChatTreeFolderNode[], folderItems: ItemInfo[]) => {
+    chats.push(...folderItems.filter((item): item is ChatInfo => item.type === "chat"));
     for (const folder of folders) {
-      walk(folder.folders, folder.chats);
+      walk(folder.folders, folder.items);
     }
   };
 
-  walk(snapshot.rootFolders, snapshot.rootChats);
+  walk(snapshot.rootFolders, snapshot.rootItems);
   return chats.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -1056,7 +1106,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
     }
 
     renameChatTreeItem.mutate(
-      { itemId: `chat:${renamingChat.id}`, name: trimmed },
+      { itemId: `item:${renamingChat.id}`, name: trimmed },
       { onSuccess: invalidateSnapshot },
     );
   }, [invalidateSnapshot, renameChatTreeItem, renamingChat]);
@@ -1065,13 +1115,13 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
     (chat: ChatInfo) => (action: ChatTreeContextMenuAction) => {
       const activeTab = tabs.find((tab) => tab.id === activeTabId);
       const openBeside = (direction: "left" | "right" | "top" | "bottom") => {
-        if (activeTab) splitPane(activeTab.id, activeTab.focusedPaneId, chat.id, direction);
-        else openTab({ type: "chat", chatId: chat.id });
+        if (activeTab) splitPane(activeTab.id, activeTab.focusedPaneId, chat.id, "chat", direction);
+        else openTab({ type: "chat", itemId: chat.id });
       };
       if (action === "open-in-focused-pane") {
         setCurrentChat(chat.id);
       } else if (action === "open-in-new-tab") {
-        openTab({ type: "chat", chatId: chat.id });
+        openTab({ type: "chat", itemId: chat.id });
       } else if (action === "open-to-left") {
         openBeside("left");
       } else if (action === "open-to-right") {
@@ -1085,7 +1135,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
       } else if (action === "rename") {
         setRenamingChat({ id: chat.id, value: chat.title });
       } else if (action === "delete") {
-        setPendingDeleteItems([{ kind: "chat", id: chat.id }]);
+        setPendingDeleteItems([{ kind: "item", id: chat.id }]);
       }
     },
     [activeTabId, cloneChatMutation, invalidateSnapshot, openTab, setCurrentChat, splitPane, tabs],
@@ -1153,7 +1203,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                     {section.chats.map((chat) =>
                       renamingChat?.id === chat.id ? (
                         <div key={chat.id} className="flex h-7 items-center gap-1.5 px-2">
-                          <ChatTreeItemIcon chatId={chat.id} />
+                          <ChatTreeItemIcon item={chat} />
                           <Input
                             autoFocus
                             className="h-7 min-w-0 flex-1 px-2 text-sm"
@@ -1179,7 +1229,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                           isActive={chat.id === currentChatId}
                           onSelect={() => setCurrentChat(chat.id)}
                           onOpenInTab={(options) =>
-                            openTab({ type: "chat", chatId: chat.id }, options)
+                            openTab({ type: "chat", itemId: chat.id }, options)
                           }
                           onContextMenuAction={handleContextMenuAction(chat)}
                         />
@@ -1234,7 +1284,10 @@ function ChatActivityListItem({
         aria-pressed={isActive}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "copy";
-          event.dataTransfer.setData(CHAT_DRAG_FORMAT, JSON.stringify([chat.id]));
+          event.dataTransfer.setData(
+            CHAT_DRAG_FORMAT,
+            JSON.stringify([{ id: chat.id, type: "chat" }]),
+          );
           event.dataTransfer.setData("text/plain", chat.title);
         }}
         onClick={onSelect}
@@ -1268,20 +1321,26 @@ function ChatActivityListItem({
           isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
         )}
       >
-        <ChatTreeItemIcon chatId={chat.id} />
+        <ChatTreeItemIcon item={chat} />
         <ChatTreeItemLabel>{chat.title}</ChatTreeItemLabel>
       </div>
     </ChatTreeItemContextMenu>
   );
 }
 
-function ChatTreeItemIcon({ chatId }: { chatId: string }) {
-  const status = useChatStatus(chatId);
+function ChatTreeItemIcon({ item }: { item: ItemInfo }) {
+  const status = useChatStatus(item.type === "chat" ? item.id : "");
   const isActive = status === "streaming" || status === "submitted";
 
   return (
     <ChatTreeItemIconFrame className="text-muted-foreground">
-      {isActive ? <ChatActivityIndicator /> : <HugeiconsIcon icon={MessagesSquare} />}
+      {item.type === "terminal" ? (
+        <HugeiconsIcon icon={ComputerTerminal01Icon} />
+      ) : isActive ? (
+        <ChatActivityIndicator />
+      ) : (
+        <HugeiconsIcon icon={MessagesSquare} />
+      )}
     </ChatTreeItemIconFrame>
   );
 }
@@ -1442,8 +1501,8 @@ function getItemDepth(item: ItemInstance<ChatTreeNodeData>): number {
 }
 
 function parseTreeItemRef(itemId: string): ChatTreeItemRef | null {
-  if (itemId.startsWith("chat:")) {
-    return { kind: "chat", id: itemId.slice("chat:".length) };
+  if (itemId.startsWith("item:")) {
+    return { kind: "item", id: itemId.slice("item:".length) };
   }
 
   if (itemId.startsWith("folder:")) {

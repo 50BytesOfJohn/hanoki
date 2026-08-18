@@ -47,13 +47,21 @@ import {
 import { ChatToolbar } from "@/features/chat/chat-toolbar";
 import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
 import { getChatQueryOptions } from "@/queries/chats";
+import { getItemQueryOptions } from "@/queries/items";
+import { TerminalPane } from "@/features/terminal/terminal-pane";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { useOpenChatView } from "@/features/chat/use-chat-view";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
-import type { ChatLayoutNode, ChatPaneState, ChatPaneView, TabStateItem } from "@shared/ipc";
-import { findPaneByChatId, type PaneDropPosition } from "@/features/workspace/store/layout-tree";
+import type {
+  ItemLayoutNode,
+  ItemPaneState,
+  ChatPaneView,
+  ItemType,
+  TabStateItem,
+} from "@shared/ipc";
+import { findPaneByItemId, type PaneDropPosition } from "@/features/workspace/store/layout-tree";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { PaneDropOverlay, type PaneDropIntent } from "./chat-pane-drop-overlay";
 import { ChatNewTabPage } from "./chat-new-tab-page";
@@ -64,7 +72,9 @@ import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-pa
 import { ChatSettingsPage } from "./chat-settings-page";
 import { generateSumiChatTitle } from "./sumi-title-generation";
 
-export type NativeChatDrag = { kind: "unsupported" } | { kind: "chat"; chatId: string };
+export type NativeChatDrag =
+  | { kind: "unsupported" }
+  | { kind: "item"; itemId: string; itemType: ItemType };
 
 // Reads the sidebar's drag payload at `dragstart`, while the DataTransfer is still readable.
 // A folder-only drag carries the format with an empty chat list — panes can't host folders, so
@@ -72,14 +82,22 @@ export type NativeChatDrag = { kind: "unsupported" } | { kind: "chat"; chatId: s
 function readChatDrag(event: DragEvent): NativeChatDrag | null {
   const data = event.dataTransfer;
   if (!data?.types.includes(CHAT_DRAG_FORMAT)) return null;
-  let chatIds: string[] = [];
+  let draggedItems: Array<{ id: string; type: ItemType }> = [];
   try {
-    chatIds = JSON.parse(data.getData(CHAT_DRAG_FORMAT) || "[]");
+    const parsed = JSON.parse(data.getData(CHAT_DRAG_FORMAT) || "[]") as unknown[];
+    draggedItems = parsed.flatMap((entry) => {
+      if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as Record<string, unknown>;
+      return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+        ? [{ id: item.id, type: item.type }]
+        : [];
+    });
   } catch {
-    chatIds = [];
+    draggedItems = [];
   }
-  // Only the first chat is dropped, matching `handleChatDrop`.
-  return chatIds[0] ? { kind: "chat", chatId: chatIds[0] } : { kind: "unsupported" };
+  const item = draggedItems[0];
+  return item ? { kind: "item", itemId: item.id, itemType: item.type } : { kind: "unsupported" };
 }
 
 export function ChatLayout() {
@@ -194,13 +212,13 @@ function PaneTree({
   nativeDrag,
 }: {
   tab: TabStateItem;
-  node: ChatLayoutNode;
+  node: ItemLayoutNode;
   draggedPaneId: string | null;
   nativeDrag: NativeChatDrag | null;
 }) {
   const resizeSplit = useWorkspaceStore((state) => state.resizeSplit);
   if (node.type === "pane") {
-    return <ChatPane tab={tab} pane={node} draggedPaneId={draggedPaneId} nativeDrag={nativeDrag} />;
+    return <ItemPane tab={tab} pane={node} draggedPaneId={draggedPaneId} nativeDrag={nativeDrag} />;
   }
 
   const defaultLayout = Object.fromEntries(
@@ -239,20 +257,20 @@ function PaneTree({
   );
 }
 
-function ChatPane({
+function ItemPane({
   tab,
   pane,
   draggedPaneId,
   nativeDrag,
 }: {
   tab: TabStateItem;
-  pane: ChatPaneState;
+  pane: ItemPaneState;
   draggedPaneId: string | null;
   nativeDrag: NativeChatDrag | null;
 }) {
   const focusPane = useWorkspaceStore((state) => state.focusPane);
   const splitPane = useWorkspaceStore((state) => state.splitPane);
-  const openChatInFocusedPane = useWorkspaceStore((state) => state.openChatInFocusedPane);
+  const openItemInFocusedPane = useWorkspaceStore((state) => state.openItemInFocusedPane);
   const {
     attributes,
     listeners,
@@ -270,74 +288,86 @@ function ChatPane({
     if (nativeDrag.kind === "unsupported") return "unsupported";
     // A tab can't hold the same chat twice — `splitPane` would just refocus the existing pane,
     // so point at that pane instead of promising a split.
-    const existing = findPaneByChatId(tab.layout, nativeDrag.chatId);
+    const existing = findPaneByItemId(tab.layout, nativeDrag.itemId);
     if (!existing) return "chat";
     return existing.id === pane.id ? "already-here" : "already-open";
   }, [draggedPaneId, nativeDrag, pane.id, tab.layout]);
   const paneContextValue = React.useMemo(
-    () => ({ tabId: tab.id, paneId: pane.id, chatId: pane.chatId }),
-    [pane.chatId, pane.id, tab.id],
+    () => ({ tabId: tab.id, paneId: pane.id, chatId: pane.itemId }),
+    [pane.itemId, pane.id, tab.id],
   );
 
   const handleChatDrop = React.useCallback(
     (event: React.DragEvent, position: PaneDropPosition) => {
       event.preventDefault();
       event.stopPropagation();
-      let chatIds: string[] = [];
+      let draggedItems: Array<{ id: string; type: ItemType }> = [];
       try {
-        chatIds = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
+        const parsed = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT)) as unknown[];
+        draggedItems = parsed.flatMap((entry) => {
+          if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
+          if (!entry || typeof entry !== "object") return [];
+          const item = entry as Record<string, unknown>;
+          return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+            ? [{ id: item.id, type: item.type }]
+            : [];
+        });
       } catch {
         return;
       }
-      const chatId = chatIds[0];
-      if (!chatId) return;
+      const item = draggedItems[0];
+      if (!item) return;
       focusPane(tab.id, pane.id);
-      if (position === "center") openChatInFocusedPane(chatId);
-      else splitPane(tab.id, pane.id, chatId, position);
+      if (position === "center") openItemInFocusedPane(item.id, item.type);
+      else splitPane(tab.id, pane.id, item.id, item.type, position);
     },
-    [focusPane, openChatInFocusedPane, pane.id, splitPane, tab.id],
+    [focusPane, openItemInFocusedPane, pane.id, splitPane, tab.id],
   );
 
-  return (
-    <ChatPaneProvider value={paneContextValue}>
-      <ChatScrollActionsProvider>
-        <section
-          data-pane-id={pane.id}
-          data-focused={isFocused || undefined}
-          className={cn(
-            "relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface",
-            isDragging && "opacity-50",
-          )}
-          onPointerDownCapture={() => focusPane(tab.id, pane.id)}
-          onFocusCapture={() => focusPane(tab.id, pane.id)}
-        >
-          <ChatPanelHeader
-            pane={pane}
-            isFocused={isFocused}
-            dragHandleRef={setDragHandleRef}
-            dragHandleProps={{ ...attributes, ...listeners }}
-            onClose={() => useWorkspaceStore.getState().closePane(tab.id, pane.id)}
-          />
-          <PaneContent pane={pane} />
-          <PaneDropOverlay
-            paneId={pane.id}
-            intent={dropIntent}
-            isFocused={isFocused}
-            onDropChat={handleChatDrop}
-          />
-        </section>
-      </ChatScrollActionsProvider>
-    </ChatPaneProvider>
+  const panel = (
+    <ChatScrollActionsProvider>
+      <section
+        data-pane-id={pane.id}
+        data-focused={isFocused || undefined}
+        className={cn(
+          "relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-surface",
+          isDragging && "opacity-50",
+        )}
+        onPointerDownCapture={() => focusPane(tab.id, pane.id)}
+        onFocusCapture={() => focusPane(tab.id, pane.id)}
+      >
+        <ItemPanelHeader
+          pane={pane}
+          isFocused={isFocused}
+          dragHandleRef={setDragHandleRef}
+          dragHandleProps={{ ...attributes, ...listeners }}
+          onClose={() => useWorkspaceStore.getState().closePane(tab.id, pane.id)}
+        />
+        <PaneContent pane={pane} />
+        <PaneDropOverlay
+          paneId={pane.id}
+          intent={dropIntent}
+          isFocused={isFocused}
+          onDropChat={handleChatDrop}
+        />
+      </section>
+    </ChatScrollActionsProvider>
+  );
+  return pane.itemType === "chat" ? (
+    <ChatPaneProvider value={paneContextValue}>{panel}</ChatPaneProvider>
+  ) : (
+    panel
   );
 }
 
-function PaneContent({ pane }: { pane: ChatPaneState }) {
+function PaneContent({ pane }: { pane: ItemPaneState }) {
+  if (pane.itemType === "terminal") return <TerminalPane itemId={pane.itemId} />;
   if (pane.view === "/chat/graph") {
-    return <ChatGraphPage chatId={pane.chatId} graphMessageId={pane.graphMessageId} />;
+    return <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />;
   }
-  if (pane.view === "/chat/pinned-branches") return <PinnedBranchesPage chatId={pane.chatId} />;
-  if (pane.view === "/chat/settings") return <ChatSettingsPage chatId={pane.chatId} />;
-  return <ActiveChatView chatId={pane.chatId} />;
+  if (pane.view === "/chat/pinned-branches") return <PinnedBranchesPage chatId={pane.itemId} />;
+  if (pane.view === "/chat/settings") return <ChatSettingsPage chatId={pane.itemId} />;
+  return <ActiveChatView chatId={pane.itemId} />;
 }
 
 function parseDropId(id: string): { paneId: string; position: PaneDropPosition } | null {
@@ -352,32 +382,68 @@ const CHAT_VIEWS: ReadonlyArray<{ to: ChatPaneView; label: string; icon: IconSvg
   { to: "/chat/settings", label: "Chat settings", icon: SlidersHorizontalIcon },
 ];
 
-function ChatPanelHeader({
+function ItemPanelHeader({
   pane,
   isFocused,
   dragHandleRef,
   dragHandleProps,
   onClose,
 }: {
-  pane: ChatPaneState;
+  pane: ItemPaneState;
   isFocused: boolean;
   dragHandleRef: (node: HTMLElement | null) => void;
   dragHandleProps: React.HTMLAttributes<HTMLElement>;
   onClose: () => void;
 }) {
-  const openChatView = useOpenChatView();
-  const { scrollActions } = useChatScrollActions();
+  const { data: item } = useQuery(getItemQueryOptions(pane.itemId));
+
+  return (
+    <header className="flex h-9 shrink-0 items-center gap-1 border-b border-separator px-2">
+      <div
+        ref={dragHandleRef}
+        data-window-no-drag
+        tabIndex={0}
+        aria-label={`Move ${item?.title ?? "item"} pane`}
+        className="flex min-w-0 flex-1 cursor-grab items-center gap-0.5 outline-hidden active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60"
+        {...dragHandleProps}
+      >
+        {pane.itemType === "chat" ? <ChatTitleMenu chatId={pane.itemId} /> : null}
+        <span
+          className={cn(
+            "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
+            isFocused ? "text-foreground/90" : "text-muted-foreground/60",
+          )}
+        >
+          {item?.title ?? ""}
+        </span>
+        {isFocused ? <span className="sr-only">Focused pane</span> : null}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-0.5" data-window-no-drag>
+        {pane.itemType === "chat" ? (
+          <>
+            <ChatHeaderActions pane={pane} />
+            <Separator orientation="vertical" className="mx-1 h-4!" />
+          </>
+        ) : null}
+        <HeaderIconButton label="Close pane" icon={Cancel01Icon} onClick={onClose} />
+      </div>
+    </header>
+  );
+}
+
+function ChatTitleMenu({ chatId }: { chatId: string }) {
   const port = useSystemStore(selectAiServerPort);
-  const { data: chat } = useQuery(getChatQueryOptions(pane.chatId));
+  const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const { data: sumiSettings } = useQuery(sumiSettingsQueryOptions);
   const [generatingChatId, setGeneratingChatId] = React.useState<string | null>(null);
   const titleGeneration = sumiSettings?.titleGeneration;
   const canGenerateTitle = Boolean(titleGeneration?.enabled && titleGeneration.model && port);
   const isGeneratingTitle = Boolean(chat && generatingChatId === chat.id);
+  if (!chat || !canGenerateTitle) return null;
 
   function generateTitle() {
-    if (!chat || !port || isGeneratingTitle) return;
-    const chatId = chat.id;
+    if (!port || isGeneratingTitle) return;
     setGeneratingChatId(chatId);
     void generateSumiChatTitle({ apiUrl: `http://127.0.0.1:${port}/api/sumi`, chatId })
       .catch((error) => {
@@ -392,83 +458,65 @@ function ChatPanelHeader({
   }
 
   return (
-    <header className="flex h-9 shrink-0 items-center gap-1 border-b border-separator px-2">
-      <div
-        ref={dragHandleRef}
-        data-window-no-drag
-        tabIndex={0}
-        aria-label={`Move ${chat?.title ?? "chat"} pane`}
-        className="flex min-w-0 flex-1 cursor-grab items-center gap-0.5 outline-hidden active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60"
-        {...dragHandleProps}
-      >
-        {chat && canGenerateTitle ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Chat title actions"
-                  disabled={isGeneratingTitle}
-                  className="text-muted-foreground"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onKeyDown={(event) => event.stopPropagation()}
-                />
-              }
-            >
-              <HugeiconsIcon
-                icon={Menu01Icon}
-                className={cn("size-3.5!", isGeneratingTitle && "animate-pulse")}
-              />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="start">
-              <DropdownMenuItem onClick={generateTitle}>
-                <HugeiconsIcon icon={AiBeautifyIcon} />
-                Regenerate title
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        <span
-          className={cn(
-            "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
-            isFocused ? "text-foreground/90" : "text-muted-foreground/60",
-          )}
-        >
-          {chat?.title ?? ""}
-        </span>
-        {isFocused ? <span className="sr-only">Focused pane</span> : null}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-0.5" data-window-no-drag>
-        {pane.view === "/chat" && scrollActions ? (
-          <>
-            <HeaderIconButton
-              label="Scroll to top"
-              icon={ArrowUp03Icon}
-              onClick={scrollActions.scrollToTop}
-            />
-            <HeaderIconButton
-              label="Scroll to bottom"
-              icon={ArrowDown03Icon}
-              onClick={scrollActions.scrollToBottom}
-            />
-            <Separator orientation="vertical" className="mx-1 h-4!" />
-          </>
-        ) : null}
-        {CHAT_VIEWS.map((view) => (
-          <HeaderIconButton
-            key={view.to}
-            label={view.label}
-            icon={view.icon}
-            isActive={pane.view === view.to}
-            onClick={() => openChatView(view.to)}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Chat title actions"
+            disabled={isGeneratingTitle}
+            className="text-muted-foreground"
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
           />
-        ))}
-        <Separator orientation="vertical" className="mx-1 h-4!" />
-        <HeaderIconButton label="Close pane" icon={Cancel01Icon} onClick={onClose} />
-      </div>
-    </header>
+        }
+      >
+        <HugeiconsIcon
+          icon={Menu01Icon}
+          className={cn("size-3.5!", isGeneratingTitle && "animate-pulse")}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="bottom" align="start">
+        <DropdownMenuItem onClick={generateTitle}>
+          <HugeiconsIcon icon={AiBeautifyIcon} />
+          Regenerate title
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ChatHeaderActions({ pane }: { pane: Extract<ItemPaneState, { itemType: "chat" }> }) {
+  const openChatView = useOpenChatView();
+  const { scrollActions } = useChatScrollActions();
+  return (
+    <>
+      {pane.view === "/chat" && scrollActions ? (
+        <>
+          <HeaderIconButton
+            label="Scroll to top"
+            icon={ArrowUp03Icon}
+            onClick={scrollActions.scrollToTop}
+          />
+          <HeaderIconButton
+            label="Scroll to bottom"
+            icon={ArrowDown03Icon}
+            onClick={scrollActions.scrollToBottom}
+          />
+          <Separator orientation="vertical" className="mx-1 h-4!" />
+        </>
+      ) : null}
+      {CHAT_VIEWS.map((view) => (
+        <HeaderIconButton
+          key={view.to}
+          label={view.label}
+          icon={view.icon}
+          isActive={pane.view === view.to}
+          onClick={() => openChatView(view.to)}
+        />
+      ))}
+    </>
   );
 }
 

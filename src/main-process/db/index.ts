@@ -1,4 +1,4 @@
-import { getAppDatabasePath, migrateAppDatabase } from "./database";
+import { getAppDatabasePath, initializeAppDatabase } from "./database";
 import { DEFAULT_WORKSPACE_ID } from "@shared/workspace/workspace-id";
 import { ensureDefaultWorkspace, listWorkspaces } from "../workspaces/repository";
 import { ensureWorkspaceFilesystem, ensureWorkspaceRootDirectory } from "../workspaces/filesystem";
@@ -20,7 +20,7 @@ export interface StorageBootstrapResult {
 }
 
 export function bootstrapStorage(): StorageBootstrapResult {
-  migrateAppDatabase();
+  initializeAppDatabase();
 
   const discoveredWorkspaces = listWorkspaces();
   const createdDefaultWorkspace = discoveredWorkspaces.length === 0;

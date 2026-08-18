@@ -22,12 +22,12 @@ beforeAll(() => {
   const db = getAppDatabase();
   db.run(
     sql.raw(`
-    create table chats (
+    create table items (
       id text primary key,
       workspace_id text not null,
       folder_id text,
+      type text not null,
       title text not null,
-      settings text not null default '{}',
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
@@ -40,7 +40,7 @@ beforeAll(() => {
     sql.raw(`
     create table messages (
       id text primary key,
-      chat_id text not null references chats(id) on delete cascade,
+      item_id text not null references items(id) on delete cascade,
       parent_id text references messages(id) on delete set null,
       role text not null,
       parts text not null default '[]',
@@ -141,12 +141,12 @@ describe("chat message persistence", () => {
 function createChatRow(id: string) {
   const now = Date.now();
   getAppDatabase().run(
-    sql`insert into chats (
+    sql`insert into items (
       id,
       workspace_id,
       folder_id,
+      type,
       title,
-      settings,
       data,
       metadata,
       extensions,
@@ -156,9 +156,9 @@ function createChatRow(id: string) {
       ${id},
       'workspace',
       null,
+      'chat',
       'Chat',
-      '{}',
-      '{}',
+      '{"settings":{}}',
       '{}',
       '{}',
       ${now},

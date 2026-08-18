@@ -28,6 +28,10 @@ export const queryKeys = {
       [...queryKeys.chats.all, "detail", workspaceId, chatId] as const,
     pinnedBranches: () => [...queryKeys.chats.all, "pinned-branches"] as const,
   },
+  items: {
+    all: ["items"] as const,
+    byId: (itemId: string) => [...queryKeys.items.all, "byId", itemId] as const,
+  },
   folders: {
     all: ["folders"] as const,
     detail: (workspaceId: string, folderId: string) =>

@@ -1,28 +1,28 @@
 import { workspaceApi } from "@/api/workspaces";
-import { chatsApi } from "@/api/chats";
+import { itemsApi } from "@/api/items";
 import type { PersistStorage } from "zustand/middleware";
 import type { WorkspaceStoreValues } from "../types";
 import { AsyncDebouncer } from "@tanstack/react-pacer";
 import type { TabStateItem } from "@shared/ipc";
-import { getFocusedPane, getPanes, normalizeTab, removeChats } from "../layout-tree";
+import { getFocusedPane, getPanes, normalizeTab, removeItems } from "../layout-tree";
 
 export async function normalizePersistedTabs(
   tabs: readonly TabStateItem[] | undefined,
   workspaceId: string,
 ): Promise<TabStateItem[]> {
   const normalized = tabs?.map(normalizeTab).filter((tab) => tab !== null) ?? [];
-  const chatIds = [
-    ...new Set(normalized.flatMap((tab) => getPanes(tab.layout).map((pane) => pane.chatId))),
+  const itemIds = [
+    ...new Set(normalized.flatMap((tab) => getPanes(tab.layout).map((pane) => pane.itemId))),
   ];
-  const chatResults = await Promise.allSettled(chatIds.map((chatId) => chatsApi.get(chatId)));
-  const unavailableChatIds = new Set(
-    chatIds.filter((chatId, index) => {
-      const result = chatResults[index];
+  const itemResults = await Promise.allSettled(itemIds.map((itemId) => itemsApi.get(itemId)));
+  const unavailableItemIds = new Set(
+    itemIds.filter((itemId, index) => {
+      const result = itemResults[index];
       return result.status === "rejected" || result.value.workspaceId !== workspaceId;
     }),
   );
   return normalized.flatMap((tab) => {
-    const layout = removeChats(tab.layout, unavailableChatIds);
+    const layout = removeItems(tab.layout, unavailableItemIds);
     if (!layout) return [];
     return [normalizeTab({ ...tab, layout })].filter((item) => item !== null);
   });
@@ -93,7 +93,10 @@ export const sqliteStorage: PersistStorage<WorkspaceStoreValues> = {
 
           // CURRENT CHAT + TABS
           activeTabId,
-          currentChatId: activeTab ? getFocusedPane(activeTab).chatId : null,
+          currentChatId:
+            activeTab && getFocusedPane(activeTab).itemType === "chat"
+              ? getFocusedPane(activeTab).itemId
+              : null,
           tabs,
 
           expandedTreeNodes: settings?.chatTreeExpandedFolderIds ?? [],

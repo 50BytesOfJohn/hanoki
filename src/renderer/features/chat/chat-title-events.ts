@@ -16,6 +16,9 @@ export function applyChatTitleUpdate(event: ChatTitleUpdatedEvent): void {
         }
       : current,
   );
+  queryClient.setQueryData<ChatInfo>(queryKeys.items.byId(event.chatId), (current) =>
+    current ? { ...current, title: event.title, updatedAt: Date.now() } : current,
+  );
   void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.chats.pinnedBranches(),

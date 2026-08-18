@@ -1,7 +1,7 @@
-import { getAppDatabasePath, migrateAppDatabase } from "../database";
+import { getAppDatabasePath, initializeAppDatabase } from "../database";
 import { spawn } from "node:child_process";
 
-migrateAppDatabase();
+initializeAppDatabase();
 const appDbPath = getAppDatabasePath();
 
 const env: Record<string, string> = {};

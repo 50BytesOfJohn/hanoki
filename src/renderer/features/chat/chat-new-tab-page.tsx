@@ -41,7 +41,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
   const createChatMutation = useCreateChat();
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [isOver, setIsOver] = React.useState(false);
-  const armed = drag?.kind === "chat";
+  const armed = drag?.kind === "item";
 
   React.useEffect(() => {
     if (!armed) setIsOver(false);
@@ -98,13 +98,13 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
         // before this handler runs, so the payload is the only reliable source of truth.
         setIsOver(false);
         event.preventDefault();
-        let chatIds: string[] = [];
+        let items: Array<{ id: string; type: "chat" | "terminal" }> = [];
         try {
-          chatIds = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
+          items = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
         } catch {
           return;
         }
-        for (const chatId of chatIds) openTab({ type: "chat", chatId });
+        for (const item of items) openTab({ type: item.type, itemId: item.id });
       }}
       className={cn(
         "relative flex h-full items-center justify-center overflow-hidden rounded-lg border bg-surface transition-colors duration-150",
@@ -158,7 +158,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
                   <li key={chat.id} className={ENTER} style={delay(160 + index * 30)}>
                     <button
                       type="button"
-                      onClick={() => openTab({ type: "chat", chatId: chat.id })}
+                      onClick={() => openTab({ type: "chat", itemId: chat.id })}
                       className="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60"
                     >
                       <HugeiconsIcon
@@ -201,7 +201,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
           workspaceId={workspaceId}
           open={searchOpen}
           onOpenChange={setSearchOpen}
-          onSelectChat={(chatId) => openTab({ type: "chat", chatId })}
+          onSelectChat={(chatId) => openTab({ type: "chat", itemId: chatId })}
         />
       ) : null}
     </div>

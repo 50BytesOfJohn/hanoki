@@ -178,7 +178,9 @@ export function createChatMessagesService(): ChatMessagesService {
         const metadata = row.metadata as Record<string, unknown>;
         const textPreview = extractTextPreview(row);
         const model =
-          typeof metadata.model === "string" ? metadata.model : (chat.settings.modelId ?? null);
+          typeof metadata.model === "string"
+            ? metadata.model
+            : (chat.data.settings.modelId ?? null);
         const provider = typeof metadata.provider === "string" ? metadata.provider : null;
 
         results.push({

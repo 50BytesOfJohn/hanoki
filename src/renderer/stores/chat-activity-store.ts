@@ -53,7 +53,9 @@ export function useWorkspaceChatActivity(workspaceId: string | null): ChatActivi
 function visibleChatIds(state: WorkspaceStoreState): string[] {
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
   // ponytail: a backgrounded window still counts as "visible". Add an OS focus check if that bites.
-  return activeTab ? getPanes(activeTab.layout).map((pane) => pane.chatId) : [];
+  return activeTab
+    ? getPanes(activeTab.layout).flatMap((pane) => (pane.itemType === "chat" ? [pane.itemId] : []))
+    : [];
 }
 
 /* ── Wiring ──

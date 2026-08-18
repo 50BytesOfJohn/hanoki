@@ -9,7 +9,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, ComputerTerminal01Icon } from "@hugeicons/core-free-icons";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -21,17 +21,28 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { getChatQueryOptions } from "@/queries/chats";
+import { getItemQueryOptions } from "@/queries/items";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
-import type { ChatTabsPosition } from "@shared/ipc";
+import type { ChatTabsPosition, ItemType } from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
 import { useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane, getPanes } from "../workspace/store/layout-tree";
 
-/** DataTransfer format for chats dragged out of the sidebar tree. */
-export const CHAT_DRAG_FORMAT = "application/x-hanoki-chats";
+/** DataTransfer format for items dragged out of the sidebar tree. */
+export const CHAT_DRAG_FORMAT = "application/x-hanoki-items";
+
+function readDraggedItems(event: React.DragEvent): Array<{ id: string; type: ItemType }> {
+  const parsed = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT)) as unknown[];
+  return parsed.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+      ? [{ id: item.id, type: item.type }]
+      : [];
+  });
+}
 
 export function useChatTabsPosition(): ChatTabsPosition {
   const { data } = useQuery(globalChatSettingsQueryOptions);
@@ -122,10 +133,8 @@ export function ChatTabsBar() {
               return;
             }
             event.preventDefault();
-            const chatIds: string[] = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
-            for (const chatId of chatIds) {
-              openTab({ type: "chat", chatId });
-            }
+            for (const item of readDraggedItems(event))
+              openTab({ type: item.type, itemId: item.id });
           }}
           className={cn(
             "flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
@@ -229,8 +238,8 @@ function ChatTabItem({
 }) {
   const focusedPane = getFocusedPane(tab);
   const paneCount = getPanes(tab.layout).length;
-  const { data: chat } = useQuery(getChatQueryOptions(focusedPane.chatId));
-  const title = chat?.title ?? "Loading…";
+  const { data: item } = useQuery(getItemQueryOptions(focusedPane.itemId));
+  const title = item?.title ?? "Loading…";
   const isHorizontal = orientation === "horizontal";
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -292,7 +301,14 @@ function ChatTabItem({
             )}
           >
             <span className="flex min-w-0 flex-1 items-center">
-              <ChatTabActivitySlot chatId={focusedPane.chatId} />
+              {focusedPane.itemType === "chat" ? (
+                <ChatTabActivitySlot chatId={focusedPane.itemId} />
+              ) : (
+                <HugeiconsIcon
+                  icon={ComputerTerminal01Icon}
+                  className="mr-1.5 size-3.5! shrink-0 text-muted-foreground"
+                />
+              )}
               <span className="truncate">{title}</span>
             </span>
             {paneCount > 1 ? (

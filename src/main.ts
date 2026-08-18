@@ -44,6 +44,8 @@ if (!app.requestSingleInstanceLock()) {
   let mainWindow: BrowserWindow | null = null;
   let backend: ReturnType<typeof bootstrapBackend> | null = null;
   let aiServer: { port: number; close: () => void } | null = null;
+  let shutdownStarted = false;
+  let readyToQuit = false;
   let aiServerState: SystemState["aiServer"] = { status: "idle", port: null, error: null };
 
   function broadcastSystemEvent(event: SystemEvent) {
@@ -173,8 +175,22 @@ if (!app.requestSingleInstanceLock()) {
 
   // Close the SQLite connection before the process exits so WAL is
   // checkpointed and no data is left in a partial write state.
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (readyToQuit) return;
+    event.preventDefault();
+    if (shutdownStarted) return;
+    shutdownStarted = true;
     aiServer?.close();
-    closeAppDatabase();
+    void (async () => {
+      try {
+        await backend?.services.terminals.disposeAll();
+      } catch (error) {
+        console.error("[terminal] Failed to finish terminal shutdown.", error);
+      } finally {
+        closeAppDatabase();
+        readyToQuit = true;
+        app.quit();
+      }
+    })();
   });
 }

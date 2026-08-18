@@ -4,18 +4,23 @@ import {
   createFolder,
   deleteChatTreeItems as deleteChatTreeItemsInRepo,
   deleteChat,
+  deleteItem as deleteItemInRepo,
   getChatById,
+  getItemById,
   getFolderById,
   getChatTreeChildren,
   getChatTree,
-  listWorkspaceChatIds,
+  listWorkspaceItemIds,
   listWorkspaceFolderIds,
   moveChat,
+  moveItem as moveItemInRepo,
   moveFolder,
   updateChatSettings,
   updateChatTitle,
+  updateItemTitle as updateItemTitleInRepo,
   updateFolderName,
   type ChatRow,
+  type ItemRow,
   type DeleteChatTreeItemsResult as DeleteChatTreeItemsResultRecord,
   type ChatTreeChildrenSlice as ChatTreeChildrenSliceRecord,
   type ChatTreeFolderListItem as ChatTreeFolderListItemRecord,
@@ -27,8 +32,9 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
   ChatInfo,
-  ChatLayoutNode,
-  ChatPaneState,
+  ItemInfo,
+  ItemLayoutNode,
+  ItemPaneState,
   ChatSettingsUpdateInput,
   ChatTreeItemRef,
   ChatTreeChildrenSlice,
@@ -50,6 +56,7 @@ const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
 
 export interface ChatTreeService {
+  getItem(id: string): ItemInfo;
   getChat(id: string): ChatInfo;
   getChatTree(workspaceId: string): ChatTreeSnapshot;
   getChatTreeChildren(workspaceId: string, parentFolderId: string | null): ChatTreeChildrenSlice;
@@ -68,6 +75,9 @@ export interface ChatTreeService {
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
   moveChat(id: string, folderId: string | null): ChatInfo;
   deleteChat(id: string): void;
+  updateItemTitle(id: string, title: string): ItemInfo;
+  moveItem(id: string, folderId: string | null): ItemInfo;
+  deleteItem(id: string): void;
 }
 
 function toFolderInfo(folder: FolderRow): FolderInfo {
@@ -83,13 +93,32 @@ function toFolderInfo(folder: FolderRow): FolderInfo {
 
 function toChatInfo(chat: ChatRow): ChatInfo {
   return {
+    type: "chat",
     id: chat.id,
     workspaceId: chat.workspaceId,
     folderId: chat.folderId,
     title: chat.title,
-    settings: chat.settings,
+    data: chat.data,
+    metadata: chat.metadata,
+    extensions: chat.extensions,
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
+  };
+}
+
+function toItemInfo(item: ItemRow): ItemInfo {
+  if (item.type === "chat") return toChatInfo(item);
+  return {
+    type: "terminal",
+    id: item.id,
+    workspaceId: item.workspaceId,
+    folderId: item.folderId,
+    title: item.title,
+    data: item.data,
+    metadata: item.metadata,
+    extensions: item.extensions,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
   };
 }
 
@@ -97,7 +126,7 @@ function toChatTreeFolderNode(node: ChatTreeFolderNodeRecord): ChatTreeFolderNod
   return {
     ...toFolderInfo(node),
     folders: node.folders.map(toChatTreeFolderNode),
-    chats: node.chats.map(toChatInfo),
+    items: node.items.map(toItemInfo),
   };
 }
 
@@ -105,7 +134,7 @@ function toChatTreeSnapshot(snapshot: ChatTreeSnapshotRecord): ChatTreeSnapshot 
   return {
     workspaceId: snapshot.workspaceId,
     rootFolders: snapshot.rootFolders.map(toChatTreeFolderNode),
-    rootChats: snapshot.rootChats.map(toChatInfo),
+    rootItems: snapshot.rootItems.map(toItemInfo),
   };
 }
 
@@ -113,7 +142,7 @@ function toChatTreeFolderListItem(folder: ChatTreeFolderListItemRecord): ChatTre
   return {
     ...toFolderInfo(folder),
     childFolderCount: folder.childFolderCount,
-    childChatCount: folder.childChatCount,
+    childItemCount: folder.childItemCount,
   };
 }
 
@@ -122,7 +151,7 @@ function toChatTreeChildrenSlice(slice: ChatTreeChildrenSliceRecord): ChatTreeCh
     workspaceId: slice.workspaceId,
     parentFolderId: slice.parentFolderId,
     folders: slice.folders.map(toChatTreeFolderListItem),
-    chats: slice.chats.map(toChatInfo),
+    items: slice.items.map(toItemInfo),
   };
 }
 
@@ -131,7 +160,7 @@ function toDeleteChatTreeItemsResult(
 ): DeleteChatTreeItemsResult {
   return {
     workspaceId: result.workspaceId,
-    deletedChatIds: result.deletedChatIds,
+    deletedItemIds: result.deletedItemIds,
     deletedFolderIds: result.deletedFolderIds,
   };
 }
@@ -167,21 +196,25 @@ function normalizeTabId(value: unknown): string | null {
   return value;
 }
 
-function normalizeLayout(value: unknown, depth = 0): ChatLayoutNode | null {
+function normalizeLayout(value: unknown, depth = 0): ItemLayoutNode | null {
   if (depth > 20 || !value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const id = normalizeTabId(record.id);
   if (!id) return null;
   if (record.type === "pane") {
-    const chatId = parseChatId(record.chatId);
-    if (!chatId.ok) return null;
+    const itemId = parseChatId(record.itemId);
+    if (!itemId.ok || (record.itemType !== "chat" && record.itemType !== "terminal")) return null;
+    if (record.itemType === "terminal") {
+      return { id, type: "pane", itemId: itemId.value, itemType: "terminal", view: "/terminal" };
+    }
     const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];
     const view = allowedViews.includes(record.view as string) ? record.view : "/chat";
     return {
       id,
       type: "pane",
-      chatId: chatId.value,
-      view: view as ChatPaneState["view"],
+      itemId: itemId.value,
+      itemType: "chat",
+      view: view as Extract<ItemPaneState, { itemType: "chat" }>["view"],
       ...(typeof record.graphMessageId === "string"
         ? { graphMessageId: record.graphMessageId }
         : {}),
@@ -196,7 +229,7 @@ function normalizeLayout(value: unknown, depth = 0): ChatLayoutNode | null {
   }
   const children = record.children
     .map((child) => normalizeLayout(child, depth + 1))
-    .filter((child): child is ChatLayoutNode => child !== null);
+    .filter((child): child is ItemLayoutNode => child !== null);
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
   const rawSizes = Array.isArray(record.sizes) ? record.sizes : [];
@@ -208,7 +241,7 @@ function normalizeLayout(value: unknown, depth = 0): ChatLayoutNode | null {
   return { id, type: "split", orientation: record.orientation, children, sizes };
 }
 
-function getLayoutPanes(node: ChatLayoutNode): ChatPaneState[] {
+function getLayoutPanes(node: ItemLayoutNode): ItemPaneState[] {
   return node.type === "pane" ? [node] : node.children.flatMap(getLayoutPanes);
 }
 
@@ -231,7 +264,7 @@ function normalizeTabs(value: unknown): TabStateItem[] {
       continue;
     }
 
-    if (record.type !== "chat") continue;
+    if (record.type !== "item") continue;
     const layout = normalizeLayout(record.layout);
     if (!layout) continue;
     const panes = getLayoutPanes(layout);
@@ -242,7 +275,7 @@ function normalizeTabs(value: unknown): TabStateItem[] {
         : panes[0].id;
 
     seenTabIds.add(tabId);
-    normalizedTabs.push({ id: tabId, type: "chat", layout, focusedPaneId });
+    normalizedTabs.push({ id: tabId, type: "item", layout, focusedPaneId });
 
     if (normalizedTabs.length >= MAX_PERSISTED_TABS) {
       break;
@@ -270,14 +303,14 @@ function pruneTabsForWorkspace(workspaceId: string, tabs: readonly TabStateItem[
     return [];
   }
 
-  const existingChatIds = new Set(
-    listWorkspaceChatIds(
+  const existingItemIds = new Set(
+    listWorkspaceItemIds(
       workspaceId,
-      tabs.flatMap((tab) => getLayoutPanes(tab.layout).map((p) => p.chatId)),
+      tabs.flatMap((tab) => getLayoutPanes(tab.layout).map((p) => p.itemId)),
     ),
   );
   return tabs.flatMap((tab) => {
-    const layout = pruneLayout(tab.layout, existingChatIds);
+    const layout = pruneLayout(tab.layout, existingItemIds);
     if (!layout) return [];
     const panes = getLayoutPanes(layout);
     return [
@@ -292,11 +325,11 @@ function pruneTabsForWorkspace(workspaceId: string, tabs: readonly TabStateItem[
   });
 }
 
-function pruneLayout(node: ChatLayoutNode, chatIds: ReadonlySet<string>): ChatLayoutNode | null {
-  if (node.type === "pane") return chatIds.has(node.chatId) ? node : null;
+function pruneLayout(node: ItemLayoutNode, itemIds: ReadonlySet<string>): ItemLayoutNode | null {
+  if (node.type === "pane") return itemIds.has(node.itemId) ? node : null;
   const children = node.children
-    .map((child) => pruneLayout(child, chatIds))
-    .filter((child): child is ChatLayoutNode => child !== null);
+    .map((child) => pruneLayout(child, itemIds))
+    .filter((child): child is ItemLayoutNode => child !== null);
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
   return { ...node, children, sizes: children.map(() => 100 / children.length) };
@@ -316,14 +349,14 @@ export function createChatTreeService(): ChatTreeService {
 
     const workspaceSettings = getWorkspaceSettings(result.workspaceId);
     const currentTabs = normalizeTabs(workspaceSettings[TABS_SETTINGS_KEY]);
-    const deletedChatIds = new Set(result.deletedChatIds);
+    const deletedItemIds = new Set(result.deletedItemIds);
     const nextTabs = currentTabs.flatMap((tab) => {
       const layout = pruneLayout(
         tab.layout,
         new Set(
           getLayoutPanes(tab.layout)
-            .map((pane) => pane.chatId)
-            .filter((id) => !deletedChatIds.has(id)),
+            .map((pane) => pane.itemId)
+            .filter((id) => !deletedItemIds.has(id)),
         ),
       );
       if (!layout) return [];
@@ -405,6 +438,12 @@ export function createChatTreeService(): ChatTreeService {
   }
 
   return {
+    getItem(id: string): ItemInfo {
+      const item = getItemById(id);
+      if (!item) throw new Error(`Item "${id}" does not exist.`);
+      return toItemInfo(item);
+    },
+
     getChat(id: string): ChatInfo {
       const chat = getChatById(id);
       if (!chat) {
@@ -492,7 +531,24 @@ export function createChatTreeService(): ChatTreeService {
       const deletedChat = deleteChat(id);
       applyDeletionUiCleanup({
         workspaceId: deletedChat.workspaceId,
-        deletedChatIds: [deletedChat.id],
+        deletedItemIds: [deletedChat.id],
+        deletedFolderIds: [],
+      });
+    },
+
+    updateItemTitle(id: string, title: string): ItemInfo {
+      return toItemInfo(updateItemTitleInRepo(id, title));
+    },
+
+    moveItem(id: string, folderId: string | null): ItemInfo {
+      return toItemInfo(moveItemInRepo(id, folderId));
+    },
+
+    deleteItem(id: string): void {
+      const deleted = deleteItemInRepo(id);
+      applyDeletionUiCleanup({
+        workspaceId: deleted.workspaceId,
+        deletedItemIds: [deleted.id],
         deletedFolderIds: [],
       });
     },

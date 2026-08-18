@@ -6,11 +6,14 @@ import { parseMarkdownToTiptap } from "@shared/tiptap/extensions";
 import { renderChatAsHtml, serializeChatAsJson, serializeChatAsMarkdown } from "./serialize";
 
 const chat: ChatInfo = {
+  type: "chat",
   id: "chat-1",
   workspaceId: "workspace-1",
   folderId: null,
   title: "Export <test>",
-  settings: { modelId: "model-1" },
+  data: { settings: { modelId: "model-1" } },
+  metadata: {},
+  extensions: {},
   createdAt: 1,
   updatedAt: 2,
 };

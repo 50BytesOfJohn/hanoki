@@ -1,37 +1,16 @@
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { readMigrationFiles } from "drizzle-orm/migrator";
-import type { SQLiteSyncDialect } from "drizzle-orm/sqlite-core/dialect";
 
 import { getUserDataDirectory } from "../system/paths";
+import { CURRENT_SCHEMA_SQL } from "./current-schema";
 import { drizzle, type NodeSQLiteDatabase } from "./node-sqlite-drizzle";
 import * as schema from "./schema";
 
 export type AppDatabase = NodeSQLiteDatabase<typeof schema>;
 
-const localRequire = createRequire(__filename);
 const APP_DATABASE_FILENAME = "app.sqlite";
 let connection: { sqlite: DatabaseSync; db: AppDatabase } | null = null;
-
-function resolveMigrationsFolder(): string {
-  if (process.versions.electron) {
-    const { app } = localRequire("electron") as typeof import("electron");
-
-    if (app.isPackaged) {
-      // Packaged Electron app — migrations come from extraResource in forge.config.ts.
-      return join(process.resourcesPath, "migrations");
-    }
-
-    // Development Electron — app.getAppPath() is the reliable project root
-    // (process.cwd() can shift depending on how the process was launched).
-    return join(app.getAppPath(), "src", "main-process", "db", "migrations");
-  }
-
-  // CLI (studio) or any non-Electron context.
-  return join(process.cwd(), "src", "main-process", "db", "migrations");
-}
 
 function openDatabase(dbPath: string): { sqlite: DatabaseSync; db: AppDatabase } {
   mkdirSync(dirname(dbPath), { recursive: true });
@@ -54,18 +33,23 @@ export function getAppDatabasePath(): string {
   return join(getUserDataDirectory(), APP_DATABASE_FILENAME);
 }
 
-export function migrateAppDatabase(): void {
-  const { sqlite, db } = openDatabase(getAppDatabasePath());
+export function initializeAppDatabase(): void {
+  const { sqlite } = openDatabase(getAppDatabasePath());
 
   try {
-    const migrationsFolder = resolveMigrationsFolder();
-    const migrations = readMigrationFiles({ migrationsFolder });
-    const migrationDb = db as unknown as {
-      dialect: SQLiteSyncDialect;
-      session: Parameters<SQLiteSyncDialect["migrate"]>[1];
-    };
-
-    migrationDb.dialect.migrate(migrations, migrationDb.session, { migrationsFolder });
+    const tableNames = new Set(
+      sqlite
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all()
+        .map((row) => String(row.name)),
+    );
+    if (tableNames.has("items")) return;
+    if (tableNames.has("chats")) {
+      throw new Error(
+        "This database still uses the pre-items schema. Run scripts/tmp-migrate-chats-to-items.mjs once, then reopen Hanoki.",
+      );
+    }
+    sqlite.exec(CURRENT_SCHEMA_SQL);
   } finally {
     sqlite.close();
   }

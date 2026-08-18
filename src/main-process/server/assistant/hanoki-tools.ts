@@ -165,23 +165,25 @@ export function createHanokiTools(workspaceId: string) {
                 path: folderPaths.get(folder.id) ?? folder.name,
                 updatedAt: folder.updatedAt,
                 childFolderCount: folder.childFolderCount,
-                childChatCount: folder.childChatCount,
+                childItemCount: folder.childItemCount,
               }))),
           ...(kind === "folder"
             ? []
-            : slice.chats.map((chat) => ({
-                kind: "chat" as const,
-                id: chat.id,
-                name: chat.title,
-                parentFolderId: chat.folderId,
-                path: normalizedParentFolderId
-                  ? `${folderPaths.get(normalizedParentFolderId) ?? ""}/${chat.title}`.replace(
-                      /^\//,
-                      "",
-                    )
-                  : chat.title,
-                updatedAt: chat.updatedAt,
-              }))),
+            : slice.items
+                .filter((item) => item.type === "chat")
+                .map((chat) => ({
+                  kind: "chat" as const,
+                  id: chat.id,
+                  name: chat.title,
+                  parentFolderId: chat.folderId,
+                  path: normalizedParentFolderId
+                    ? `${folderPaths.get(normalizedParentFolderId) ?? ""}/${chat.title}`.replace(
+                        /^\//,
+                        "",
+                      )
+                    : chat.title,
+                  updatedAt: chat.updatedAt,
+                }))),
         ];
         const page = items.slice(offset, offset + limit);
         return {
@@ -368,16 +370,29 @@ export function createHanokiTools(workspaceId: string) {
       }),
       execute: ({ items, destinationFolderId }) => {
         const normalizedDestinationFolderId = normalizeNullableString(destinationFolderId);
-        const result = moveChatTreeItems(workspaceId, items, normalizedDestinationFolderId);
+        const result = moveChatTreeItems(
+          workspaceId,
+          items.map((item) => ({
+            kind: item.kind === "chat" ? ("item" as const) : ("folder" as const),
+            id: item.id,
+          })),
+          normalizedDestinationFolderId,
+        );
         const folderPaths = getFolderPaths(workspaceId);
+        const toToolItem = (item: { kind: "item" | "folder"; id: string }): ItemRef => ({
+          kind: item.kind === "item" ? "chat" : "folder",
+          id: item.id,
+        });
         return {
           destinationFolderId: normalizedDestinationFolderId,
-          moved: result.movedItems.map((item) => summarizeItem(workspaceId, item, folderPaths)),
+          moved: result.movedItems.map((item) =>
+            summarizeItem(workspaceId, toToolItem(item), folderPaths),
+          ),
           unchanged: result.unchangedItems.map((item) =>
-            summarizeItem(workspaceId, item, folderPaths),
+            summarizeItem(workspaceId, toToolItem(item), folderPaths),
           ),
           skipped: result.skippedItems.map(({ reason, ...item }) => ({
-            ...summarizeItem(workspaceId, item, folderPaths),
+            ...summarizeItem(workspaceId, toToolItem(item), folderPaths),
             reason,
           })),
         };

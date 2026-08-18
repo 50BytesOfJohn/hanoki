@@ -26,9 +26,7 @@ export const TiptapMessageContent = React.memo(function TiptapMessageContent({
   );
 
   return (
-    <div
-      className={cn("tiptap-message-content", TIPTAP_MESSAGE_PROSE_CLASS, className)}
-    >
+    <div className={cn("tiptap-message-content", TIPTAP_MESSAGE_PROSE_CLASS, className)}>
       {content}
     </div>
   );

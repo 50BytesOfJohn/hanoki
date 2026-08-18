@@ -91,15 +91,15 @@ export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
         <TemperatureRow
           key={chat.id}
           chatId={chat.id}
-          savedTemperature={chat.settings.modelConfig?.temperature}
+          savedTemperature={chat.data.settings.modelConfig?.temperature}
         />
       </SettingsSection>
 
       <SettingsSection title="Instructions">
         <SystemPromptRow
-          key={`${chat.id}:${chat.settings.systemPrompt ?? ""}`}
+          key={`${chat.id}:${chat.data.settings.systemPrompt ?? ""}`}
           chatId={chat.id}
-          savedPrompt={chat.settings.systemPrompt ?? ""}
+          savedPrompt={chat.data.settings.systemPrompt ?? ""}
         />
       </SettingsSection>
 

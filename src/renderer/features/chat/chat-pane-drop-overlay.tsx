@@ -11,11 +11,11 @@ import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 export type PaneDropIntent =
   | "chat"
   | "pane"
-  /** Dragging a folder — panes only host chats. */
+  /** Dragging a folder — panes only host items. */
   | "unsupported"
-  /** This pane already shows the dragged chat. */
+  /** This pane already shows the dragged item. */
   | "already-here"
-  /** A sibling pane in this tab already shows it; a tab can't hold the same chat twice. */
+  /** A sibling pane in this tab already shows it; a tab can't hold the same item twice. */
   | "already-open";
 
 const POSITIONS: PaneDropPosition[] = ["center", "left", "right", "top", "bottom"];
@@ -40,7 +40,7 @@ const PREVIEW_CLASS: Record<PaneDropPosition, string> = {
 };
 
 const CHAT_LABEL: Record<PaneDropPosition, string> = {
-  center: "Replace chat",
+  center: "Replace item",
   left: "Split left",
   right: "Split right",
   top: "Split up",
@@ -156,7 +156,7 @@ export function PaneDropOverlay({
           icon={CheckmarkCircle02Icon}
           iconClassName="text-focus"
           title="Already open here"
-          detail="A tab can only show a chat once."
+          detail="A tab can only show an item once."
         />
       ) : null}
 

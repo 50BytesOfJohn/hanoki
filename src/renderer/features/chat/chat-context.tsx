@@ -501,12 +501,12 @@ export function ChatContextProvider({
   };
 
   React.useEffect(() => {
-    const nextModelId = resolveModelId(enabledModelIds, store.getState().modelId);
+    const nextModelId = resolveModelId(enabledModelIds, initialModelId);
 
     if (store.getState().modelId !== nextModelId) {
       store.getState().setModelId(nextModelId);
     }
-  }, [enabledModelIds, store]);
+  }, [enabledModelIds, initialModelId, store]);
 
   React.useEffect(() => {
     let isDisposed = false;

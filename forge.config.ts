@@ -68,6 +68,23 @@ const packagerIcon =
       : MACOS_LEGACY_ICON_PATH
     : ICON_BASE_PATH;
 
+const PACKAGED_EXTERNAL_MODULES = ["node-pty", "node-addon-api"];
+
+const ignoreFilesOutsideViteAndNativeModules = (file: string) => {
+  if (!file) {
+    return false;
+  }
+
+  const isViteBuild = file === "/.vite" || file.startsWith("/.vite/");
+  const isNodeModulesRoot = file === "/node_modules";
+  const isPackagedExternalModule = PACKAGED_EXTERNAL_MODULES.some(
+    (moduleName) =>
+      file === `/node_modules/${moduleName}` || file.startsWith(`/node_modules/${moduleName}/`),
+  );
+
+  return !(isViteBuild || isNodeModulesRoot || isPackagedExternalModule);
+};
+
 // `@electron/osx-sign` already defaults to the hardened runtime and picks the
 // right Chromium entitlements per helper binary (renderer/GPU/plugin), so the
 // identity is the only thing worth configuring here.
@@ -177,11 +194,12 @@ const ensureMacAppSignature = async (appPath: string) => {
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: "**/*.node",
+      unpack: "**/{*.node,node_modules/node-pty/**}",
     },
+    // Forge's Vite plugin otherwise copies only `.vite`, omitting external native modules.
+    ignore: ignoreFilesOutsideViteAndNativeModules,
     appBundleId: APP_IDENTIFIER,
     appCategoryType: "public.app-category.productivity",
-    extraResource: ["src/main-process/db/migrations"],
     executableName: APP_NAME,
     icon: packagerIcon,
     name: APP_NAME,

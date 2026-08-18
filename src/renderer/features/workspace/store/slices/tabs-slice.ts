@@ -1,19 +1,22 @@
 import type { OpenTabOptions, TabContent, TabsSlice, WorkspaceSliceCreator } from "../types";
 import {
-  createChatPane,
-  createChatTab,
+  createItemPane,
+  createItemTab,
   findPane,
-  findPaneByChatId,
+  findPaneByItemId,
   getFocusedPane,
   getPanes,
   insertPane,
   movePane as movePaneInLayout,
-  removeChats,
+  removeItems,
   removePane,
-  replacePaneChat,
+  replacePaneItem,
   resizeSplit as resizeSplitInLayout,
   updatePane,
 } from "../layout-tree";
+
+const paneChatId = (pane: ReturnType<typeof getFocusedPane>) =>
+  pane.itemType === "chat" ? pane.itemId : null;
 
 export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
   tabs: [],
@@ -22,22 +25,22 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
     const activate = options?.activate ?? true;
     set((state) => {
       const existing = state.tabs
-        .map((tab) => ({ tab, pane: findPaneByChatId(tab.layout, content.chatId) }))
+        .map((tab) => ({ tab, pane: findPaneByItemId(tab.layout, content.itemId) }))
         .find((entry) => entry.pane);
       if (existing?.pane) {
         if (activate) {
           existing.tab.focusedPaneId = existing.pane.id;
           state.activeTabId = existing.tab.id;
-          state.currentChatId = existing.pane.chatId;
+          state.currentChatId = paneChatId(existing.pane);
         }
         return;
       }
 
-      const newTab = createChatTab(content.chatId);
+      const newTab = createItemTab(content.itemId, content.type);
       state.tabs.push(newTab);
       if (activate) {
         state.activeTabId = newTab.id;
-        state.currentChatId = content.chatId;
+        state.currentChatId = content.type === "chat" ? content.itemId : null;
       }
     });
   },
@@ -47,28 +50,33 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       const tab = state.tabs.find((candidate) => candidate.id === tabId);
       if (!tab) return;
       state.activeTabId = tab.id;
-      state.currentChatId = getFocusedPane(tab).chatId;
+      state.currentChatId = paneChatId(getFocusedPane(tab));
     });
   },
 
-  openChatInFocusedPane: (chatId) => {
+  openItemInFocusedPane: (itemId, itemType) => {
     set((state) => {
       const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
       if (!activeTab) {
-        const newTab = createChatTab(chatId);
+        const newTab = createItemTab(itemId, itemType);
         state.tabs.push(newTab);
         state.activeTabId = newTab.id;
-        state.currentChatId = chatId;
+        state.currentChatId = itemType === "chat" ? itemId : null;
         return;
       }
 
-      const existingPane = findPaneByChatId(activeTab.layout, chatId);
+      const existingPane = findPaneByItemId(activeTab.layout, itemId);
       if (existingPane) {
         activeTab.focusedPaneId = existingPane.id;
       } else {
-        activeTab.layout = replacePaneChat(activeTab.layout, activeTab.focusedPaneId, chatId);
+        activeTab.layout = replacePaneItem(
+          activeTab.layout,
+          activeTab.focusedPaneId,
+          itemId,
+          itemType,
+        );
       }
-      state.currentChatId = chatId;
+      state.currentChatId = itemType === "chat" ? itemId : null;
     });
   },
 
@@ -79,7 +87,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (!tab || !pane) return;
       tab.focusedPaneId = paneId;
       state.activeTabId = tabId;
-      state.currentChatId = pane.chatId;
+      state.currentChatId = paneChatId(pane);
     });
   },
 
@@ -93,25 +101,26 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       });
       tab.focusedPaneId = paneId;
       state.activeTabId = tabId;
-      state.currentChatId = findPane(tab.layout, paneId)?.chatId ?? state.currentChatId;
+      const pane = findPane(tab.layout, paneId);
+      state.currentChatId = pane ? paneChatId(pane) : state.currentChatId;
     });
   },
 
-  splitPane: (tabId, paneId, chatId, direction) => {
+  splitPane: (tabId, paneId, itemId, itemType, direction) => {
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === tabId);
       if (!tab || !findPane(tab.layout, paneId)) return;
-      const existingPane = findPaneByChatId(tab.layout, chatId);
+      const existingPane = findPaneByItemId(tab.layout, itemId);
       if (existingPane) {
         tab.focusedPaneId = existingPane.id;
-        state.currentChatId = existingPane.chatId;
+        state.currentChatId = paneChatId(existingPane);
         return;
       }
-      const pane = createChatPane(chatId);
+      const pane = createItemPane(itemId, itemType);
       tab.layout = insertPane(tab.layout, paneId, pane, direction);
       tab.focusedPaneId = pane.id;
       state.activeTabId = tab.id;
-      state.currentChatId = chatId;
+      state.currentChatId = itemType === "chat" ? itemId : null;
     });
   },
 
@@ -124,7 +133,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       tab.layout = movePaneInLayout(tab.layout, sourcePaneId, targetPaneId, position);
       tab.focusedPaneId = sourcePaneId;
       state.activeTabId = tab.id;
-      state.currentChatId = source.chatId;
+      state.currentChatId = paneChatId(source);
     });
   },
 
@@ -143,7 +152,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         if (state.activeTabId === tabId) {
           const neighbor = state.tabs[tabIndex] ?? state.tabs[tabIndex - 1];
           state.activeTabId = neighbor?.id ?? null;
-          state.currentChatId = neighbor ? getFocusedPane(neighbor).chatId : null;
+          state.currentChatId = neighbor ? paneChatId(getFocusedPane(neighbor)) : null;
         }
         return;
       }
@@ -155,7 +164,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         tab.focusedPaneId = neighbor.id;
       }
       if (state.activeTabId === tabId) {
-        state.currentChatId = getFocusedPane(tab).chatId;
+        state.currentChatId = paneChatId(getFocusedPane(tab));
       }
     });
   },
@@ -176,7 +185,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       const delta = direction === "left" || direction === "up" ? -1 : 1;
       const next = panes[(currentIndex + delta + panes.length) % panes.length];
       tab.focusedPaneId = next.id;
-      state.currentChatId = next.chatId;
+      state.currentChatId = paneChatId(next);
     });
   },
 
@@ -188,7 +197,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (state.activeTabId === tabId) {
         const neighbor = state.tabs[tabIndex] ?? state.tabs[tabIndex - 1];
         state.activeTabId = neighbor?.id ?? null;
-        state.currentChatId = neighbor ? getFocusedPane(neighbor).chatId : null;
+        state.currentChatId = neighbor ? paneChatId(getFocusedPane(neighbor)) : null;
       }
     });
   },
@@ -199,7 +208,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (!keptTab || state.tabs.length < 2) return;
       state.tabs = [keptTab];
       state.activeTabId = keptTab.id;
-      state.currentChatId = getFocusedPane(keptTab).chatId;
+      state.currentChatId = paneChatId(getFocusedPane(keptTab));
     });
   },
 
@@ -211,7 +220,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       state.tabs = keptTabs;
       if (!keptTabs.some((tab) => tab.id === state.activeTabId)) {
         state.activeTabId = keptTabs[0].id;
-        state.currentChatId = getFocusedPane(keptTabs[0]).chatId;
+        state.currentChatId = paneChatId(getFocusedPane(keptTabs[0]));
       }
     });
   },
@@ -225,7 +234,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (!keptTabs.some((tab) => tab.id === state.activeTabId)) {
         const neighbor = keptTabs[keptTabs.length - 1];
         state.activeTabId = neighbor.id;
-        state.currentChatId = getFocusedPane(neighbor).chatId;
+        state.currentChatId = paneChatId(getFocusedPane(neighbor));
       }
     });
   },
@@ -247,14 +256,14 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
     });
   },
 
-  removeTabsByChatIds: (chatIds) => {
-    if (chatIds.length === 0) return;
-    const deletedChatIds = new Set(chatIds);
+  removeTabsByItemIds: (itemIds) => {
+    if (itemIds.length === 0) return;
+    const deletedItemIds = new Set(itemIds);
     set((state) => {
-      for (const chatId of deletedChatIds) delete state.chatDrafts[chatId];
+      for (const itemId of deletedItemIds) delete state.chatDrafts[itemId];
 
       state.tabs = state.tabs.flatMap((tab) => {
-        const layout = removeChats(tab.layout, deletedChatIds);
+        const layout = removeItems(tab.layout, deletedItemIds);
         if (!layout) return [];
         const panes = getPanes(layout);
         return [
@@ -273,7 +282,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         activeTab = state.tabs[0];
         state.activeTabId = activeTab?.id ?? null;
       }
-      state.currentChatId = activeTab ? getFocusedPane(activeTab).chatId : null;
+      state.currentChatId = activeTab ? paneChatId(getFocusedPane(activeTab)) : null;
     });
   },
 });
