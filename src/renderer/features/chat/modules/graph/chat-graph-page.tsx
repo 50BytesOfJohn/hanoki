@@ -203,8 +203,8 @@ function ChatGraphCanvasFallback() {
   );
 }
 
-function getErrorMessage(error: unknown): string | null {
-  if (error instanceof Error && error.message.trim()) {
+function getErrorMessage(error: Error | null): string | null {
+  if (error && error.message.trim()) {
     return error.message;
   }
 

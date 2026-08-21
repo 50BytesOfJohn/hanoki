@@ -14,12 +14,12 @@ import { getChatStreamErrorMessage } from "../chat-stream-error";
  * looks exactly like a successful one.
  */
 
-const targetMessage = {
+const targetMessage: HanokiUiMessage = {
   id: "msg-target",
   role: "assistant",
   parts: [{ type: "text", text: "The first half of the answer.", state: "done" }],
   metadata: { parentId: "msg-user" },
-} as unknown as HanokiUiMessage;
+};
 
 function failingModel() {
   return new MockLanguageModelV3({
@@ -36,7 +36,7 @@ function failingModel() {
 }
 
 /** Mirrors how the route builds the continuation response. */
-function continuationResponse(model: ConstructorParameters<typeof MockLanguageModelV3>[0]) {
+function continuationResponse(model: MockLanguageModelV3) {
   let onEndParts: HanokiUiMessage["parts"] | null = null;
   let streamErrorMessage: string | null = null;
   let resolveEnded: () => void;
@@ -45,7 +45,7 @@ function continuationResponse(model: ConstructorParameters<typeof MockLanguageMo
   });
 
   const result = streamText({
-    model: model as never,
+    model,
     experimental_transform: smoothStream({ chunking: "line" }),
     messages: [{ role: "user", content: "continue" }],
   });
@@ -60,7 +60,7 @@ function continuationResponse(model: ConstructorParameters<typeof MockLanguageMo
     },
     generateMessageId: () => targetMessage.id,
     onEnd: ({ responseMessage }) => {
-      onEndParts = responseMessage.parts as HanokiUiMessage["parts"];
+      onEndParts = responseMessage.parts;
       resolveEnded();
     },
   });
@@ -94,7 +94,7 @@ function sseToChunks(body: ReadableStream<Uint8Array>) {
 }
 
 async function readContinuation(body: ReadableStream<Uint8Array>, terminateOnError: boolean) {
-  let thrown: unknown = null;
+  let thrown: Error | null = null;
   const seen: HanokiUiMessage[] = [];
 
   try {
@@ -106,7 +106,7 @@ async function readContinuation(body: ReadableStream<Uint8Array>, terminateOnErr
       seen.push(structuredClone(message));
     }
   } catch (error) {
-    thrown = error;
+    thrown = error instanceof Error ? error : new Error("Unknown continuation error.");
   }
 
   return { thrown, seen };
@@ -119,7 +119,7 @@ describe("continuation stream error propagation", () => {
 
     expect(getStreamErrorMessage()).toBe("Insufficient credits.");
     expect(thrown).toBeInstanceOf(Error);
-    expect((thrown as Error).message).toBe("Insufficient credits.");
+    expect(thrown?.message).toBe("Insufficient credits.");
   });
 
   it("silently completes without terminateOnError (the bug this guards)", async () => {
@@ -150,7 +150,7 @@ describe("continuation stream error propagation", () => {
     const { thrown } = await readContinuation(response.body!, true);
     await whenEnded;
 
-    expect((thrown as Error).message).toBe("Rate limit exceeded.");
+    expect(thrown?.message).toBe("Rate limit exceeded.");
     // onEnd still runs after a failed stream, which is why the route checks the
     // captured error before writing the continuation back.
     expect(getOnEndParts()).not.toBeNull();
