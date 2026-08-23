@@ -20,9 +20,12 @@ import {
   ArrowUp03Icon,
   Cancel01Icon,
   Chatting01Icon,
+  Edit02Icon,
   Menu01Icon,
   PinIcon,
   SlidersHorizontalIcon,
+  SourceCodeIcon,
+  ViewIcon,
   WorkflowSquare03Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -46,9 +49,16 @@ import {
 } from "@/features/chat/chat-scroll-actions-context";
 import { ChatToolbar } from "@/features/chat/chat-toolbar";
 import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
-import { getChatQueryOptions } from "@/queries/chats";
 import { getItemQueryOptions } from "@/queries/items";
 import { TerminalPane } from "@/features/terminal/terminal-pane";
+import {
+  MARKDOWN_MODES,
+  MARKDOWN_MODE_IDS,
+  MarkdownPane,
+  MarkdownPaneProvider,
+  useMarkdownPane,
+  type MarkdownMode,
+} from "@/features/markdown/markdown-pane";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { useOpenChatView } from "@/features/chat/use-chat-view";
 import { useWorkspaceStore } from "@/features/workspace/store";
@@ -70,7 +80,7 @@ import { ActiveChatView } from "./chat-page";
 import { ChatGraphPage } from "./modules/graph/chat-graph-page";
 import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-page";
 import { ChatSettingsPage } from "./chat-settings-page";
-import { generateSumiChatTitle } from "./sumi-title-generation";
+import { generateSumiItemTitle } from "../items/sumi-item-title-generation";
 
 export type NativeChatDrag =
   | { kind: "unsupported" }
@@ -89,7 +99,8 @@ function readChatDrag(event: DragEvent): NativeChatDrag | null {
       if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
       if (!entry || typeof entry !== "object") return [];
       const item = entry as Record<string, unknown>;
-      return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+      return typeof item.id === "string" &&
+        (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
         ? [{ id: item.id, type: item.type }]
         : [];
     });
@@ -308,7 +319,8 @@ function ItemPane({
           if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
           if (!entry || typeof entry !== "object") return [];
           const item = entry as Record<string, unknown>;
-          return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+          return typeof item.id === "string" &&
+            (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
             ? [{ id: item.id, type: item.type }]
             : [];
         });
@@ -355,6 +367,8 @@ function ItemPane({
   );
   return pane.itemType === "chat" ? (
     <ChatPaneProvider value={paneContextValue}>{panel}</ChatPaneProvider>
+  ) : pane.itemType === "markdown" ? (
+    <MarkdownPaneProvider key={pane.itemId}>{panel}</MarkdownPaneProvider>
   ) : (
     panel
   );
@@ -362,6 +376,7 @@ function ItemPane({
 
 function PaneContent({ pane }: { pane: ItemPaneState }) {
   if (pane.itemType === "terminal") return <TerminalPane itemId={pane.itemId} />;
+  if (pane.itemType === "markdown") return <MarkdownPane itemId={pane.itemId} />;
   if (pane.view === "/chat/graph") {
     return <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />;
   }
@@ -381,6 +396,12 @@ const CHAT_VIEWS: ReadonlyArray<{ to: ChatPaneView; label: string; icon: IconSvg
   { to: "/chat/pinned-branches", label: "Pinned branches", icon: PinIcon },
   { to: "/chat/settings", label: "Chat settings", icon: SlidersHorizontalIcon },
 ];
+
+const MARKDOWN_MODE_ICONS: Record<MarkdownMode, IconSvgElement> = {
+  preview: ViewIcon,
+  "rich-text": Edit02Icon,
+  source: SourceCodeIcon,
+};
 
 function ItemPanelHeader({
   pane,
@@ -407,7 +428,7 @@ function ItemPanelHeader({
         className="flex min-w-0 flex-1 cursor-grab items-center gap-0.5 outline-hidden active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60"
         {...dragHandleProps}
       >
-        {pane.itemType === "chat" ? <ChatTitleMenu chatId={pane.itemId} /> : null}
+        {pane.itemType !== "terminal" ? <ItemTitleMenu itemId={pane.itemId} /> : null}
         <span
           className={cn(
             "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
@@ -426,35 +447,41 @@ function ItemPanelHeader({
             <Separator orientation="vertical" className="mx-1 h-4!" />
           </>
         ) : null}
+        {pane.itemType === "markdown" ? (
+          <>
+            <MarkdownHeaderActions />
+            <Separator orientation="vertical" className="mx-1 h-4!" />
+          </>
+        ) : null}
         <HeaderIconButton label="Close pane" icon={Cancel01Icon} onClick={onClose} />
       </div>
     </header>
   );
 }
 
-function ChatTitleMenu({ chatId }: { chatId: string }) {
+function ItemTitleMenu({ itemId }: { itemId: string }) {
   const port = useSystemStore(selectAiServerPort);
-  const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const { data: item } = useQuery(getItemQueryOptions(itemId));
   const { data: sumiSettings } = useQuery(sumiSettingsQueryOptions);
-  const [generatingChatId, setGeneratingChatId] = React.useState<string | null>(null);
+  const [generatingItemId, setGeneratingItemId] = React.useState<string | null>(null);
   const titleGeneration = sumiSettings?.titleGeneration;
   const canGenerateTitle = Boolean(titleGeneration?.enabled && titleGeneration.model && port);
-  const isGeneratingTitle = Boolean(chat && generatingChatId === chat.id);
-  if (!chat || !canGenerateTitle) return null;
+  const isGeneratingTitle = Boolean(item && generatingItemId === item.id);
+  if (!item || !canGenerateTitle) return null;
 
   function generateTitle() {
     if (!port || isGeneratingTitle) return;
-    setGeneratingChatId(chatId);
-    void generateSumiChatTitle({ apiUrl: `http://127.0.0.1:${port}/api/sumi`, chatId })
+    setGeneratingItemId(itemId);
+    void generateSumiItemTitle({ apiUrl: `http://127.0.0.1:${port}/api/sumi`, itemId })
       .catch((error) => {
         toastManager.add({
           type: "error",
           title: "Title generation failed",
           description:
-            error instanceof Error ? error.message : "Sumi could not generate a chat title.",
+            error instanceof Error ? error.message : "Sumi could not generate an item title.",
         });
       })
-      .finally(() => setGeneratingChatId((current) => (current === chatId ? null : current)));
+      .finally(() => setGeneratingItemId((current) => (current === itemId ? null : current)));
   }
 
   return (
@@ -464,7 +491,7 @@ function ChatTitleMenu({ chatId }: { chatId: string }) {
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Chat title actions"
+            aria-label="Item actions"
             disabled={isGeneratingTitle}
             className="text-muted-foreground"
             onPointerDown={(event) => event.stopPropagation()}
@@ -484,6 +511,26 @@ function ChatTitleMenu({ chatId }: { chatId: string }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function MarkdownHeaderActions() {
+  const { mode, setMode } = useMarkdownPane();
+  return (
+    <>
+      {MARKDOWN_MODE_IDS.map((value) => {
+        const option = MARKDOWN_MODES[value];
+        return (
+          <HeaderIconButton
+            key={value}
+            label={`${option.label}: ${option.description}`}
+            icon={MARKDOWN_MODE_ICONS[value]}
+            isActive={mode === value}
+            onClick={() => setMode(value)}
+          />
+        );
+      })}
+    </>
   );
 }
 

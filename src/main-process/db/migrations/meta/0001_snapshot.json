@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4b5ff696-02c3-4c4a-8e0a-c3abb812b8ac",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "c2b75849-0a6b-4c52-8a44-c5ed1169f3da",
+  "prevId": "4b5ff696-02c3-4c4a-8e0a-c3abb812b8ac",
   "tables": {
     "assets": {
       "name": "assets",
@@ -391,7 +391,7 @@
       "checkConstraints": {
         "items_type_check": {
           "name": "items_type_check",
-          "value": "\"items\".\"type\" in ('chat', 'terminal')"
+          "value": "\"items\".\"type\" in ('chat', 'terminal', 'markdown')"
         }
       }
     },

@@ -9,7 +9,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Cancel01Icon, ComputerTerminal01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, ComputerTerminal01Icon, FileScriptIcon } from "@hugeicons/core-free-icons";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -38,7 +38,8 @@ function readDraggedItems(event: React.DragEvent): Array<{ id: string; type: Ite
   return parsed.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const item = entry as Record<string, unknown>;
-    return typeof item.id === "string" && (item.type === "chat" || item.type === "terminal")
+    return typeof item.id === "string" &&
+      (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
       ? [{ id: item.id, type: item.type }]
       : [];
   });
@@ -305,7 +306,9 @@ function ChatTabItem({
                 <ChatTabActivitySlot chatId={focusedPane.itemId} />
               ) : (
                 <HugeiconsIcon
-                  icon={ComputerTerminal01Icon}
+                  icon={
+                    focusedPane.itemType === "terminal" ? ComputerTerminal01Icon : FileScriptIcon
+                  }
                   className="mr-1.5 size-3.5! shrink-0 text-muted-foreground"
                 />
               )}

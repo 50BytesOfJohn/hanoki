@@ -21,6 +21,7 @@ import {
   Delete02Icon,
   Folder01Icon,
   FolderAddIcon,
+  FileScriptIcon,
   LayoutBottomIcon,
   LayoutLeftIcon,
   LayoutRightIcon,
@@ -90,6 +91,7 @@ import {
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 import { useCreateTerminal } from "@/mutations/terminals";
+import { useCreateMarkdown } from "@/mutations/markdown";
 
 import type {
   ChatInfo,
@@ -110,6 +112,7 @@ import {
   sortChatTreeEntries,
 } from "@shared/chat/chat-tree-sort";
 import type { ChatTreeSortEntry } from "@shared/chat/chat-tree-sort";
+import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 import {
   ChatSidebar,
   ChatSidebarBlock,
@@ -119,7 +122,7 @@ import {
 import { useChatTreeSort } from "./use-chat-tree-sort";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
-import { subscribeToChatTitleUpdates } from "./chat-title-events";
+import { subscribeToItemTitleUpdates } from "../items/item-title-events";
 import { useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane } from "../workspace/store/layout-tree";
 
@@ -137,6 +140,7 @@ type ChatTreeContextMenuAction =
   | "add-folder"
   | "add-chat"
   | "add-terminal"
+  | "add-markdown"
   | "open-in-focused-pane"
   | "open-in-new-tab"
   | "open-to-left"
@@ -173,6 +177,10 @@ function ChatTreeItemContextMenu({
             <ContextMenuItem onClick={() => onAction("add-terminal")}>
               <HugeiconsIcon icon={ComputerTerminal01Icon} />
               Add Terminal
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-markdown")}>
+              <HugeiconsIcon icon={FileScriptIcon} />
+              Add Markdown
             </ContextMenuItem>
           </ContextMenuGroup>
         ) : (
@@ -388,6 +396,7 @@ function ChatSidebarTreeInner({
   const cloneChatMutation = useCloneChat();
   const createFolderMutation = useCreateFolder();
   const createTerminalMutation = useCreateTerminal();
+  const createMarkdownMutation = useCreateMarkdown();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
@@ -588,7 +597,7 @@ function ChatSidebarTreeInner({
 
   React.useEffect(
     () =>
-      subscribeToChatTitleUpdates((event) => {
+      subscribeToItemTitleUpdates((event) => {
         if (event.workspaceId !== workspaceId) {
           return;
         }
@@ -659,6 +668,18 @@ function ChatSidebarTreeInner({
       openTab({ type: "terminal", itemId: terminal.id });
     },
     [createTerminalMutation, invalidateTree, openTab, workspaceId],
+  );
+
+  const createMarkdown = React.useCallback(
+    async (folderId: string | null) => {
+      await createMarkdownMutation.mutateAsync({
+        workspaceId,
+        title: DEFAULT_MARKDOWN_TITLE,
+        folderId,
+      });
+      invalidateTree();
+    },
+    [createMarkdownMutation, invalidateTree, workspaceId],
   );
 
   const openItemInTab = React.useCallback(
@@ -771,6 +792,15 @@ function ChatSidebarTreeInner({
             size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add Markdown to root"
+            onClick={() => void createMarkdown(null)}
+          >
+            <HugeiconsIcon icon={FileScriptIcon} />
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
             aria-label="Add folder to root"
             onClick={() => {
               void createFolder(null);
@@ -832,6 +862,9 @@ function ChatSidebarTreeInner({
                   } else if (action === "add-terminal" && itemKind === "folder") {
                     ensureFolderExpanded();
                     void createTerminal(item.getId().slice("folder:".length));
+                  } else if (action === "add-markdown" && itemKind === "folder") {
+                    ensureFolderExpanded();
+                    void createMarkdown(item.getId().slice("folder:".length));
                   } else if (action === "open-in-focused-pane" && data.kind === "item") {
                     navigateToItem(data.item);
                   } else if (action === "open-in-new-tab" && data.kind === "item") {
@@ -1336,6 +1369,8 @@ function ChatTreeItemIcon({ item }: { item: ItemInfo }) {
     <ChatTreeItemIconFrame className="text-muted-foreground">
       {item.type === "terminal" ? (
         <HugeiconsIcon icon={ComputerTerminal01Icon} />
+      ) : item.type === "markdown" ? (
+        <HugeiconsIcon icon={FileScriptIcon} />
       ) : isActive ? (
         <ChatActivityIndicator />
       ) : (

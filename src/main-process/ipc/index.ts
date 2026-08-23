@@ -5,6 +5,7 @@ import { registerContextMenuIpcModule } from "./modules/context-menu";
 import { registerFoldersIpcModule } from "./modules/folders";
 import { registerMessagesIpcModule } from "./modules/messages";
 import { registerItemsIpcModule } from "./modules/items";
+import { registerMarkdownIpcModule } from "./modules/markdown";
 import { registerModelsIpcModule } from "./modules/models";
 import { registerProvidersIpcModule } from "./modules/providers";
 import { registerSettingsIpcModule } from "./modules/settings";
@@ -20,6 +21,7 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   registerChatTreeIpcModule(context, registeredChannels);
   registerFoldersIpcModule(context, registeredChannels);
   registerItemsIpcModule(context, registeredChannels);
+  registerMarkdownIpcModule(context, registeredChannels);
   registerChatsIpcModule(context, registeredChannels);
   registerMessagesIpcModule(context, registeredChannels);
   registerTerminalsIpcModule(context, registeredChannels);

@@ -157,7 +157,7 @@ function parseChatLayoutNode(input: unknown, depth = 0): ItemLayoutNode {
   const id = parseValidTabId(record.id);
   if (record.type === "pane") {
     const itemType = record.itemType;
-    if (itemType !== "chat" && itemType !== "terminal") {
+    if (itemType !== "chat" && itemType !== "terminal" && itemType !== "markdown") {
       throw AppError.badRequest("Invalid item pane type.");
     }
     if (itemType === "terminal") {
@@ -167,6 +167,15 @@ function parseChatLayoutNode(input: unknown, depth = 0): ItemLayoutNode {
         itemId: parseValidChatId(record.itemId),
         itemType: "terminal",
         view: "/terminal",
+      };
+    }
+    if (itemType === "markdown") {
+      return {
+        id,
+        type: "pane",
+        itemId: parseValidChatId(record.itemId),
+        itemType: "markdown",
+        view: "/markdown",
       };
     }
     const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];

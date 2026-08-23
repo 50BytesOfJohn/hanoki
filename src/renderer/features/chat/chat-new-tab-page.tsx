@@ -23,7 +23,8 @@ import type { NativeChatDrag } from "./chat-layout";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { flattenSnapshotChats } from "./chat-sidebar-tree";
-import { applyChatTitleUpdate } from "./chat-title-events";
+import { applyItemTitleUpdate } from "../items/item-title-events";
+import type { ItemType } from "@shared/ipc";
 
 const RECENT_LIMIT = 5;
 
@@ -66,9 +67,10 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
     });
     // The tree sidebar loads its children outside react-query, so a query invalidation
     // alone leaves it stale — this event is the refresh signal both sidebar modes listen to.
-    applyChatTitleUpdate({
-      type: "chat:title-updated",
-      chatId: chat.id,
+    applyItemTitleUpdate({
+      type: "item:title-updated",
+      itemId: chat.id,
+      itemType: "chat",
       workspaceId,
       title: chat.title,
     });
@@ -98,7 +100,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
         // before this handler runs, so the payload is the only reliable source of truth.
         setIsOver(false);
         event.preventDefault();
-        let items: Array<{ id: string; type: "chat" | "terminal" }> = [];
+        let items: Array<{ id: string; type: ItemType }> = [];
         try {
           items = JSON.parse(event.dataTransfer.getData(CHAT_DRAG_FORMAT));
         } catch {

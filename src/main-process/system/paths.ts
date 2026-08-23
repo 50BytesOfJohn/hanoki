@@ -24,6 +24,10 @@ function getElectronApp(): import("electron").App | null {
   return electron.app;
 }
 
+export function isPackagedElectronApp(): boolean {
+  return getElectronApp()?.isPackaged ?? false;
+}
+
 /**
  * Returns the platform-specific base directory for application data
  * (e.g. ~/Library/Application Support on macOS).

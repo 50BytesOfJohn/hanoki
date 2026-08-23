@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  check,
   index,
   integer,
   primaryKey,
@@ -8,7 +9,12 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-import type { ChatItemData, TerminalItemData, WorkspaceSettings } from "@shared/ipc";
+import type {
+  ChatItemData,
+  MarkdownItemData,
+  TerminalItemData,
+  WorkspaceSettings,
+} from "@shared/ipc";
 
 type JsonObject = Record<string, unknown>;
 const timestampMs = (columnName: string) =>
@@ -72,15 +78,16 @@ export const items = sqliteTable(
     folderId: text("folder_id").references(() => folders.id, {
       onDelete: "set null",
     }),
-    type: text("type").$type<"chat" | "terminal">().notNull(),
+    type: text("type").$type<"chat" | "terminal" | "markdown">().notNull(),
     title: text("title").notNull(),
-    data: jsonObject<ChatItemData | TerminalItemData>("data"),
+    data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),
     createdAt: timestampMs("created_at"),
     updatedAt: timestampMs("updated_at"),
   },
   (table) => [
+    check("items_type_check", sql`${table.type} in ('chat', 'terminal', 'markdown')`),
     index("items_workspace_id_idx").on(table.workspaceId),
     index("items_folder_id_idx").on(table.folderId),
     index("items_type_idx").on(table.type),

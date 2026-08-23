@@ -3,7 +3,7 @@ import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 import { updatesApi } from "@/api/updates";
 import { toastManager } from "@/components/ui/toast";
-import { applyChatTitleUpdate } from "@/features/chat/chat-title-events";
+import { applyItemTitleUpdate } from "@/features/items/item-title-events";
 import { useSystemStore } from "../stores/system-store";
 
 export function SystemEventListener() {
@@ -15,8 +15,8 @@ export function SystemEventListener() {
     return window.electronAPI.onSystemEvent((event) => {
       handleSystemEvent(event);
 
-      if (event.type === "chat:title-updated") {
-        applyChatTitleUpdate(event);
+      if (event.type === "item:title-updated") {
+        applyItemTitleUpdate(event);
         return;
       }
 

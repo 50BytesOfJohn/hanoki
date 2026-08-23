@@ -1,12 +1,38 @@
 import { describe, expect, it } from "vitest";
 import type { ItemPaneState } from "@shared/ipc";
-import { findPane, getPanes, insertPane, movePane, removePane, resizeSplit } from "./layout-tree";
+import {
+  createItemPane,
+  createItemTab,
+  findPane,
+  getPanes,
+  insertPane,
+  movePane,
+  normalizeTab,
+  removePane,
+  resizeSplit,
+} from "./layout-tree";
 
 function pane(id: string, itemId = id): ItemPaneState {
   return { id, type: "pane", itemId, itemType: "chat", view: "/chat" };
 }
 
 describe("chat layout tree", () => {
+  it("creates and preserves Markdown pane state", () => {
+    const pane = createItemPane("markdown-item", "markdown");
+    const tab = createItemTab("markdown-item", "markdown");
+
+    expect(pane).toMatchObject({
+      itemId: "markdown-item",
+      itemType: "markdown",
+      view: "/markdown",
+    });
+    expect(normalizeTab(tab)?.layout).toMatchObject({
+      itemId: "markdown-item",
+      itemType: "markdown",
+      view: "/markdown",
+    });
+  });
+
   it("creates nested directional splits and preserves pane identity", () => {
     const horizontal = insertPane(pane("a"), "a", pane("b"), "right");
     const nested = insertPane(horizontal, "b", pane("c"), "bottom");

@@ -1,5 +1,6 @@
 import {
   createChat,
+  createMarkdown,
   cloneChat as cloneChatInRepo,
   createFolder,
   deleteChatTreeItems as deleteChatTreeItemsInRepo,
@@ -18,9 +19,11 @@ import {
   updateChatSettings,
   updateChatTitle,
   updateItemTitle as updateItemTitleInRepo,
+  updateMarkdownContent as updateMarkdownContentInRepo,
   updateFolderName,
   type ChatRow,
   type ItemRow,
+  type MarkdownRow,
   type DeleteChatTreeItemsResult as DeleteChatTreeItemsResultRecord,
   type ChatTreeChildrenSlice as ChatTreeChildrenSliceRecord,
   type ChatTreeFolderListItem as ChatTreeFolderListItemRecord,
@@ -44,6 +47,7 @@ import type {
   ChatTreeUiState,
   DeleteChatTreeItemsResult,
   FolderInfo,
+  MarkdownInfo,
   TabsUiState,
   TabStateItem,
 } from "@shared/ipc";
@@ -54,6 +58,12 @@ const TABS_SETTINGS_KEY = "tabs";
 const ACTIVE_TAB_ID_SETTINGS_KEY = "activeTabId";
 const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
+const MARKDOWN_AUTOSAVE_WAIT_MS = 500;
+
+interface PendingMarkdownSave {
+  markdown: string;
+  timeout: ReturnType<typeof setTimeout> | null;
+}
 
 export interface ChatTreeService {
   getItem(id: string): ItemInfo;
@@ -70,6 +80,14 @@ export interface ChatTreeService {
   deleteFolder(id: string): void;
   deleteChatTreeItems(workspaceId: string, items: ChatTreeItemRef[]): DeleteChatTreeItemsResult;
   createChat(input: { workspaceId: string; title: string; folderId: string | null }): ChatInfo;
+  createMarkdown(input: {
+    workspaceId: string;
+    title: string;
+    folderId: string | null;
+  }): MarkdownInfo;
+  queueMarkdownContent(id: string, markdown: string): void;
+  flushMarkdownContent(id: string): MarkdownInfo;
+  flushAllMarkdownContent(): void;
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -108,8 +126,24 @@ function toChatInfo(chat: ChatRow): ChatInfo {
 
 function toItemInfo(item: ItemRow): ItemInfo {
   if (item.type === "chat") return toChatInfo(item);
+  if (item.type === "markdown") return toMarkdownInfo(item);
   return {
     type: "terminal",
+    id: item.id,
+    workspaceId: item.workspaceId,
+    folderId: item.folderId,
+    title: item.title,
+    data: item.data,
+    metadata: item.metadata,
+    extensions: item.extensions,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+function toMarkdownInfo(item: MarkdownRow): MarkdownInfo {
+  return {
+    type: "markdown",
     id: item.id,
     workspaceId: item.workspaceId,
     folderId: item.folderId,
@@ -203,9 +237,18 @@ function normalizeLayout(value: unknown, depth = 0): ItemLayoutNode | null {
   if (!id) return null;
   if (record.type === "pane") {
     const itemId = parseChatId(record.itemId);
-    if (!itemId.ok || (record.itemType !== "chat" && record.itemType !== "terminal")) return null;
+    if (
+      !itemId.ok ||
+      (record.itemType !== "chat" &&
+        record.itemType !== "terminal" &&
+        record.itemType !== "markdown")
+    )
+      return null;
     if (record.itemType === "terminal") {
       return { id, type: "pane", itemId: itemId.value, itemType: "terminal", view: "/terminal" };
+    }
+    if (record.itemType === "markdown") {
+      return { id, type: "pane", itemId: itemId.value, itemType: "markdown", view: "/markdown" };
     }
     const allowedViews = ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"];
     const view = allowedViews.includes(record.view as string) ? record.view : "/chat";
@@ -336,7 +379,59 @@ function pruneLayout(node: ItemLayoutNode, itemIds: ReadonlySet<string>): ItemLa
 }
 
 export function createChatTreeService(): ChatTreeService {
+  const pendingMarkdownSaves = new Map<string, PendingMarkdownSave>();
+
+  function discardPendingMarkdownSave(id: string): void {
+    const pending = pendingMarkdownSaves.get(id);
+    if (pending?.timeout) clearTimeout(pending.timeout);
+    pendingMarkdownSaves.delete(id);
+  }
+
+  function flushPendingMarkdownContent(id: string): MarkdownInfo {
+    const pending = pendingMarkdownSaves.get(id);
+    if (!pending) {
+      const item = getItemById(id);
+      if (!item) throw new Error(`Item "${id}" does not exist.`);
+      if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+      return toMarkdownInfo(item);
+    }
+
+    if (pending.timeout) clearTimeout(pending.timeout);
+    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
+    pendingMarkdownSaves.delete(id);
+    return saved;
+  }
+
+  function queuePendingMarkdownContent(id: string, markdown: string): void {
+    discardPendingMarkdownSave(id);
+    const pending: PendingMarkdownSave = { markdown, timeout: null };
+    pending.timeout = setTimeout(() => {
+      pending.timeout = null;
+      try {
+        flushPendingMarkdownContent(id);
+      } catch (error) {
+        console.error(`[markdown] Autosave failed for item "${id}".`, error);
+      }
+    }, MARKDOWN_AUTOSAVE_WAIT_MS);
+    pendingMarkdownSaves.set(id, pending);
+  }
+
+  function flushAllPendingMarkdownContent(): void {
+    const errors: unknown[] = [];
+    for (const id of pendingMarkdownSaves.keys()) {
+      try {
+        flushPendingMarkdownContent(id);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "One or more Markdown documents could not be saved.");
+    }
+  }
+
   function applyDeletionUiCleanup(result: DeleteChatTreeItemsResultRecord): void {
+    for (const itemId of result.deletedItemIds) discardPendingMarkdownSave(itemId);
     const currentUiState = readChatTreeUiState(result.workspaceId);
     const deletedFolderIds = new Set(result.deletedFolderIds);
     const nextExpandedFolderIds = currentUiState.expandedFolderIds.filter(
@@ -509,6 +604,22 @@ export function createChatTreeService(): ChatTreeService {
 
     createChat(input): ChatInfo {
       return toChatInfo(createChat(input));
+    },
+
+    createMarkdown(input): MarkdownInfo {
+      return toMarkdownInfo(createMarkdown(input));
+    },
+
+    queueMarkdownContent(id: string, markdown: string): void {
+      queuePendingMarkdownContent(id, markdown);
+    },
+
+    flushMarkdownContent(id: string): MarkdownInfo {
+      return flushPendingMarkdownContent(id);
+    },
+
+    flushAllMarkdownContent(): void {
+      flushAllPendingMarkdownContent();
     },
 
     cloneChat(chatId: string): ChatInfo {

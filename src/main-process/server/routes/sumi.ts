@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import { smoothStream, streamText } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
-import type { ChatTitleUpdatedEvent } from "@shared/events";
+import type { ItemTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { readSumiSettings } from "../../services/settings-service";
 import { SUMI_FEATURES, isSumiFeatureId } from "../assistant/features";
-import { generateSumiChatTitle } from "../assistant/title-generation";
+import { generateSumiItemTitle } from "../assistant/title-generation";
 import { createLanguageModel } from "../providers/language-model-factory";
 
 interface ResolvedSumiModel {
@@ -17,7 +17,7 @@ interface ResolvedSumiModel {
 }
 
 interface CreateSumiRouteOptions {
-  onChatTitleUpdated?: (event: Omit<ChatTitleUpdatedEvent, "type">) => void;
+  onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
 }
 
 export function createSumiRoute(options?: CreateSumiRouteOptions) {
@@ -76,9 +76,9 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
     }
 
     const input = body as Record<string, unknown>;
-    const parsedChatId = parseChatId(input.chatId);
-    if (!parsedChatId.ok) {
-      return c.text(parsedChatId.error, 400);
+    const parsedItemId = parseChatId(input.itemId);
+    if (!parsedItemId.ok) {
+      return c.text(parsedItemId.error.replace("Chat", "Item"), 400);
     }
     if (
       input.sourcePrompt !== undefined &&
@@ -88,12 +88,13 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
     }
 
     try {
-      const event = await generateSumiChatTitle({
-        chatId: parsedChatId.value,
+      const event = await generateSumiItemTitle({
+        itemId: parsedItemId.value,
         sourcePrompt: typeof input.sourcePrompt === "string" ? input.sourcePrompt : null,
       });
-      options?.onChatTitleUpdated?.({
-        chatId: event.chatId,
+      options?.onItemTitleUpdated?.({
+        itemId: event.itemId,
+        itemType: event.itemType,
         workspaceId: event.workspaceId,
         title: event.title,
       });

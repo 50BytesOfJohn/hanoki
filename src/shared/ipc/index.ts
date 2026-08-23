@@ -63,6 +63,11 @@ export const IPC_CHANNELS = {
     write: "terminals:write",
     resize: "terminals:resize",
   },
+  markdown: {
+    create: "markdown:create",
+    queueContent: "markdown:queueContent",
+    flushContent: "markdown:flushContent",
+  },
   messages: {
     listByChat: "messages:listByChat",
     listAllByChat: "messages:listAllByChat",
@@ -277,8 +282,25 @@ export interface TerminalInfo {
   updatedAt: number;
 }
 
-export type ItemType = ChatInfo["type"] | TerminalInfo["type"];
-export type ItemInfo = ChatInfo | TerminalInfo;
+export interface MarkdownItemData extends Record<string, unknown> {
+  markdown: string;
+}
+
+export interface MarkdownInfo {
+  type: "markdown";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: MarkdownItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ItemType = ChatInfo["type"] | TerminalInfo["type"] | MarkdownInfo["type"];
+export type ItemInfo = ChatInfo | TerminalInfo | MarkdownInfo;
 
 export interface TerminalSessionSnapshot {
   itemId: string;
@@ -380,7 +402,15 @@ export interface TerminalItemPaneState {
   view: "/terminal";
 }
 
-export type ItemPaneState = ChatItemPaneState | TerminalItemPaneState;
+export interface MarkdownItemPaneState {
+  id: string;
+  type: "pane";
+  itemId: string;
+  itemType: "markdown";
+  view: "/markdown";
+}
+
+export type ItemPaneState = ChatItemPaneState | TerminalItemPaneState | MarkdownItemPaneState;
 
 export interface ItemSplitState {
   id: string;
@@ -568,6 +598,13 @@ export interface IpcApi {
   startTerminal: (id: string) => Promise<TerminalSessionSnapshot>;
   writeTerminal: (id: string, data: string) => Promise<void>;
   resizeTerminal: (id: string, columns: number, rows: number) => Promise<void>;
+  createMarkdown: (
+    workspaceId: string,
+    title: string,
+    folderId?: string | null,
+  ) => Promise<MarkdownInfo>;
+  queueMarkdownContent: (id: string, markdown: string) => Promise<void>;
+  flushMarkdownContent: (id: string) => Promise<MarkdownInfo>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   testProviderCredentials: (

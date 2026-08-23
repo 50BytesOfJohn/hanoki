@@ -2,44 +2,47 @@ import { generateText } from "ai";
 import { CHAT_TITLE_MAX_LENGTH, parseChatTitle } from "@shared/chat/chat-title";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
-import type { ChatTitleUpdatedEvent } from "@shared/events";
+import type { ItemTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
-import { getChatById, updateChatTitle } from "../../chat-tree/repository";
+import {
+  buildMarkdownTitleSource,
+  ITEM_TITLE_SOURCE_MAX_LENGTH,
+} from "@shared/markdown/title-source";
+import { getItemById, updateItemTitle } from "../../chat-tree/repository";
 import { listMessagesByChatId, type MessageRow } from "../../messages/repository";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { readSumiSettings } from "../../services/settings-service";
 import { createLanguageModel } from "../providers/language-model-factory";
-import { SUMI_CHAT_TITLE_INSTRUCTIONS } from "./features";
+import { SUMI_ITEM_TITLE_INSTRUCTIONS } from "./features";
 
 interface ResolvedSumiModel {
   providerId: string;
   providerModelId: string;
 }
 
-interface GenerateSumiChatTitleInput {
-  chatId: string;
+interface GenerateSumiItemTitleInput {
+  itemId: string;
   sourcePrompt?: string | null;
 }
 
-const CHAT_TITLE_SOURCE_MAX_LENGTH = 8_000;
-const pendingTitleGenerations = new Map<string, Promise<ChatTitleUpdatedEvent>>();
+const pendingTitleGenerations = new Map<string, Promise<ItemTitleUpdatedEvent>>();
 
-export function generateSumiChatTitle({
-  chatId,
+export function generateSumiItemTitle({
+  itemId,
   sourcePrompt,
-}: GenerateSumiChatTitleInput): Promise<ChatTitleUpdatedEvent> {
-  const pending = pendingTitleGenerations.get(chatId);
+}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent> {
+  const pending = pendingTitleGenerations.get(itemId);
   if (pending) {
     return pending;
   }
 
-  const generation = generateChatTitle(chatId, sourcePrompt?.trim() || null);
-  pendingTitleGenerations.set(chatId, generation);
+  const generation = generateItemTitle(itemId, sourcePrompt?.trim() || null);
+  pendingTitleGenerations.set(itemId, generation);
   const cleanup = () => {
-    if (pendingTitleGenerations.get(chatId) === generation) {
-      pendingTitleGenerations.delete(chatId);
+    if (pendingTitleGenerations.get(itemId) === generation) {
+      pendingTitleGenerations.delete(itemId);
     }
   };
   void generation.then(cleanup, cleanup);
@@ -47,10 +50,10 @@ export function generateSumiChatTitle({
   return generation;
 }
 
-async function generateChatTitle(
-  chatId: string,
+async function generateItemTitle(
+  itemId: string,
   sourcePrompt: string | null,
-): Promise<ChatTitleUpdatedEvent> {
+): Promise<ItemTitleUpdatedEvent> {
   const settings = readSumiSettings();
   if (!settings.titleGeneration.enabled) {
     throw new Error("Sumi title generation is disabled.");
@@ -61,14 +64,18 @@ async function generateChatTitle(
     throw new Error("The configured Sumi title model is unavailable.");
   }
 
-  const chat = getChatById(chatId);
-  if (!chat) {
-    throw new Error("Chat not found.");
+  const item = getItemById(itemId);
+  if (!item || item.type === "terminal") {
+    throw new Error("Item not found or unsupported.");
   }
 
-  const source = sourcePrompt ?? buildChatTitleSource(listMessagesByChatId(chat.id));
+  const source =
+    sourcePrompt ??
+    (item.type === "chat"
+      ? buildChatTitleSource(listMessagesByChatId(item.id))
+      : buildMarkdownTitleSource(item.data.markdown));
   if (!source) {
-    throw new Error("Send a message before generating a chat title.");
+    throw new Error("Add content before generating a title.");
   }
 
   const languageModel = await createSumiLanguageModel(modelTarget);
@@ -78,18 +85,19 @@ async function generateChatTitle(
 
   const { text } = await generateText({
     model: languageModel,
-    instructions: SUMI_CHAT_TITLE_INSTRUCTIONS,
+    instructions: SUMI_ITEM_TITLE_INSTRUCTIONS,
     prompt: source,
     maxOutputTokens: 32,
   });
-  const title = normalizeGeneratedChatTitle(text);
-  const updatedChat = updateChatTitle(chat.id, title);
+  const title = normalizeGeneratedItemTitle(text);
+  const updatedItem = updateItemTitle(item.id, title);
 
   return {
-    type: "chat:title-updated",
-    chatId: updatedChat.id,
-    workspaceId: updatedChat.workspaceId,
-    title: updatedChat.title,
+    type: "item:title-updated",
+    itemId: updatedItem.id,
+    itemType: updatedItem.type,
+    workspaceId: updatedItem.workspaceId,
+    title: updatedItem.title,
   };
 }
 
@@ -108,7 +116,7 @@ function buildChatTitleSource(messages: MessageRow[]): string | null {
     }
 
     const line = `${message.role === "user" ? "User" : "Assistant"}: ${text}`;
-    const remaining = CHAT_TITLE_SOURCE_MAX_LENGTH - length;
+    const remaining = ITEM_TITLE_SOURCE_MAX_LENGTH - length;
     if (remaining <= 0) {
       break;
     }
@@ -127,13 +135,13 @@ function extractMessageText(message: MessageRow): string {
   });
 }
 
-function normalizeGeneratedChatTitle(input: string): string {
+function normalizeGeneratedItemTitle(input: string): string {
   const firstLine = input
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find(Boolean);
   const normalized = (firstLine ?? "")
-    .replace(/^(?:title|chat title)\s*:\s*/i, "")
+    .replace(/^(?:title|chat title|document title)\s*:\s*/i, "")
     .replace(/^[`'"“”‘’]+|[`'"“”‘’]+$/g, "")
     .replace(/[.!?。！？]+$/u, "")
     .replace(/\s+/g, " ")
@@ -142,7 +150,7 @@ function normalizeGeneratedChatTitle(input: string): string {
   const parsedTitle = parseChatTitle(normalized);
 
   if (!parsedTitle.ok) {
-    throw new Error("Sumi returned an invalid chat title.");
+    throw new Error("Sumi returned an invalid item title.");
   }
 
   return parsedTitle.value;

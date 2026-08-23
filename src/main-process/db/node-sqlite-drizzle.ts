@@ -21,6 +21,7 @@ import {
 } from "drizzle-orm/sqlite-core/session";
 import type { DrizzleConfig } from "drizzle-orm/utils";
 import * as drizzleUtils from "drizzle-orm/utils";
+import { readMigrationFiles, type MigrationConfig, type MigrationMeta } from "drizzle-orm/migrator";
 
 const mapResultRow = (
   drizzleUtils as unknown as {
@@ -38,6 +39,28 @@ export class NodeSQLiteDatabase<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > extends BaseSQLiteDatabase<"sync", StatementResultingChanges, TSchema> {
   static readonly [entityKind]: string = "NodeSQLiteDatabase";
+
+  migrate(config: MigrationConfig, baselineExistingDatabase = false): void {
+    const { dialect, session } = this as unknown as {
+      dialect: SQLiteSyncDialect;
+      session: SQLiteSession<
+        "sync",
+        StatementResultingChanges,
+        Record<string, unknown>,
+        TablesRelationalConfig
+      >;
+    };
+    const migrations = readMigrationFiles(config);
+    if (baselineExistingDatabase) {
+      const baselineMigration = migrations[0];
+      if (!baselineMigration) {
+        throw new Error("No migrations exist to baseline.");
+      }
+      const marker: MigrationMeta = { ...baselineMigration, sql: [] };
+      dialect.migrate([marker], session, config);
+    }
+    dialect.migrate(migrations, session, config);
+  }
 }
 
 class NodeSQLiteSession<

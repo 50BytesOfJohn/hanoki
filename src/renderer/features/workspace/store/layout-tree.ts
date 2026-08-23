@@ -13,13 +13,7 @@ export type SplitDirection = Exclude<PaneDropPosition, "center">;
 const DEFAULT_VIEW: ChatPaneView = "/chat";
 
 export function createItemPane(itemId: string, itemType: ItemType): ItemPaneState {
-  return {
-    id: crypto.randomUUID(),
-    type: "pane",
-    itemId,
-    itemType,
-    view: itemType === "chat" ? DEFAULT_VIEW : "/terminal",
-  } as ItemPaneState;
+  return createPaneWithId(crypto.randomUUID(), itemId, itemType);
 }
 
 export function createChatPane(chatId: string): ItemPaneState {
@@ -87,9 +81,13 @@ export function replacePaneItem(
 }
 
 function createPaneWithId(id: string, itemId: string, itemType: ItemType): ItemPaneState {
-  return itemType === "chat"
-    ? { id, type: "pane", itemId, itemType: "chat", view: DEFAULT_VIEW }
-    : { id, type: "pane", itemId, itemType: "terminal", view: "/terminal" };
+  if (itemType === "chat") {
+    return { id, type: "pane", itemId, itemType: "chat", view: DEFAULT_VIEW };
+  }
+  if (itemType === "terminal") {
+    return { id, type: "pane", itemId, itemType: "terminal", view: "/terminal" };
+  }
+  return { id, type: "pane", itemId, itemType: "markdown", view: "/markdown" };
 }
 
 export function updatePane(

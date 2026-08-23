@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homedir } from "node:os";
 
-import type { ChatItemData, ChatSettings, TerminalItemData } from "@shared/ipc";
+import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -51,7 +51,20 @@ export interface TerminalRow {
   updatedAt: number;
 }
 
-export type ItemRow = ChatRow | TerminalRow;
+export interface MarkdownRow {
+  type: "markdown";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: MarkdownItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ItemRow = ChatRow | TerminalRow | MarkdownRow;
 
 export interface ChatTreeFolderNode {
   id: string;
@@ -150,6 +163,14 @@ function normalizeTerminalData(value: unknown): TerminalItemData {
   };
 }
 
+function normalizeMarkdownData(value: unknown): MarkdownItemData {
+  const data = normalizeJsonObject(value);
+  return {
+    ...data,
+    markdown: typeof data.markdown === "string" ? data.markdown : "",
+  };
+}
+
 function toItemRow(row: ItemTableRow): ItemRow {
   const common = {
     id: row.id,
@@ -167,6 +188,9 @@ function toItemRow(row: ItemTableRow): ItemRow {
   }
   if (row.type === "terminal") {
     return { ...common, type: "terminal", data: normalizeTerminalData(row.data) };
+  }
+  if (row.type === "markdown") {
+    return { ...common, type: "markdown", data: normalizeMarkdownData(row.data) };
   }
   throw new Error(`Item "${row.id}" has unsupported type "${row.type}".`);
 }
@@ -1113,6 +1137,49 @@ export function createTerminal(input: {
   const terminal = requireItemById(id);
   if (terminal.type !== "terminal") throw new Error(`Item "${id}" is not a terminal.`);
   return terminal;
+}
+
+export function createMarkdown(input: {
+  workspaceId: string;
+  title: string;
+  folderId: string | null;
+}): MarkdownRow {
+  requireWorkspaceExists(input.workspaceId);
+  if (input.folderId !== null) {
+    const folder = requireFolderById(input.folderId);
+    if (folder.workspaceId !== input.workspaceId) {
+      throw new Error(`Folder "${input.folderId}" belongs to a different workspace.`);
+    }
+  }
+
+  const id = createUuidV7();
+  getAppDatabase()
+    .insert(items)
+    .values({
+      id,
+      workspaceId: input.workspaceId,
+      folderId: input.folderId,
+      type: "markdown",
+      title: input.title,
+      data: { markdown: "" },
+    })
+    .run();
+  const markdown = requireItemById(id);
+  if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+  return markdown;
+}
+
+export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {
+  const item = requireItemById(id);
+  if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+  getAppDatabase()
+    .update(items)
+    .set({ data: { ...item.data, markdown }, updatedAt: Date.now() })
+    .where(eq(items.id, id))
+    .run();
+  const updated = requireItemById(id);
+  if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+  return updated;
 }
 
 export function updateTerminalData(

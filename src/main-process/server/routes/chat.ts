@@ -10,7 +10,7 @@ import {
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
-import type { ChatTitleUpdatedEvent } from "@shared/events";
+import type { ItemTitleUpdatedEvent } from "@shared/events";
 import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import {
@@ -26,7 +26,7 @@ import { createLanguageModel } from "../providers/language-model-factory";
 import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
-import { generateSumiChatTitle } from "../assistant/title-generation";
+import { generateSumiItemTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
 import { createHanokiTools, HANOKI_TOOL_NAMES } from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
@@ -51,7 +51,7 @@ const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
 
 interface CreateChatRouteOptions {
-  onChatTitleUpdated?: (event: Omit<ChatTitleUpdatedEvent, "type">) => void;
+  onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -165,13 +165,14 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
       const titleGeneration = readSumiSettings().titleGeneration;
       if (shouldAutoGenerateTitle && titleGeneration.enabled && titleGeneration.autoGenerate) {
-        void generateSumiChatTitle({
-          chatId: chat.id,
+        void generateSumiItemTitle({
+          itemId: chat.id,
           sourcePrompt: extractUiMessageText(lastRequestMessage),
         })
           .then((event) => {
-            options?.onChatTitleUpdated?.({
-              chatId: event.chatId,
+            options?.onItemTitleUpdated?.({
+              itemId: event.itemId,
+              itemType: event.itemType,
               workspaceId: event.workspaceId,
               title: event.title,
             });

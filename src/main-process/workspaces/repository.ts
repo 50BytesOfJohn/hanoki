@@ -151,12 +151,16 @@ function isChatLayoutNode(value: unknown, depth = 0): value is ItemLayoutNode {
       record.id.trim().length > 0 &&
       typeof record.itemId === "string" &&
       record.itemId.trim().length > 0 &&
-      (record.itemType === "chat" || record.itemType === "terminal") &&
+      (record.itemType === "chat" ||
+        record.itemType === "terminal" ||
+        record.itemType === "markdown") &&
       (record.itemType === "terminal"
         ? record.view === "/terminal"
-        : ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"].includes(
-            record.view as string,
-          )) &&
+        : record.itemType === "markdown"
+          ? record.view === "/markdown"
+          : ["/chat", "/chat/graph", "/chat/pinned-branches", "/chat/settings"].includes(
+              record.view as string,
+            )) &&
       (record.graphMessageId === undefined || typeof record.graphMessageId === "string")
     );
   }

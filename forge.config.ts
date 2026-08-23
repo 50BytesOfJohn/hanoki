@@ -196,6 +196,7 @@ const config: ForgeConfig = {
     asar: {
       unpack: "**/{*.node,node_modules/node-pty/**}",
     },
+    extraResource: [path.resolve(__dirname, "src/main-process/db/migrations")],
     // Forge's Vite plugin otherwise copies only `.vite`, omitting external native modules.
     ignore: ignoreFilesOutsideViteAndNativeModules,
     appBundleId: APP_IDENTIFIER,

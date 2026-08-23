@@ -64,8 +64,8 @@ if (!app.requestSingleInstanceLock()) {
       broadcastSystemEvent({ type: "ai-server:starting" });
       const { createAiServer } = await import("./main-process/server");
       aiServer = await createAiServer({
-        onChatTitleUpdated: (event) => {
-          broadcastSystemEvent({ type: "chat:title-updated", ...event });
+        onItemTitleUpdated: (event) => {
+          broadcastSystemEvent({ type: "item:title-updated", ...event });
         },
       });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
@@ -94,6 +94,20 @@ if (!app.requestSingleInstanceLock()) {
     });
   }
 
+  function flushPendingMarkdown(): boolean {
+    try {
+      backend?.services.chatTree.flushAllMarkdownContent();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      dialog.showErrorBox(
+        "Markdown save failed",
+        `Hanoki could not save every open Markdown document. The app will stay open.\n\n${message}`,
+      );
+      return false;
+    }
+  }
+
   function openMainWindow() {
     if (!backend) {
       throw new Error("Backend is not initialized.");
@@ -104,6 +118,9 @@ if (!app.requestSingleInstanceLock()) {
       onClosed: () => {
         mainWindow = null;
       },
+    });
+    mainWindow.on("close", (event) => {
+      if (!flushPendingMarkdown()) event.preventDefault();
     });
   }
 
@@ -180,6 +197,10 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     if (shutdownStarted) return;
     shutdownStarted = true;
+    if (!flushPendingMarkdown()) {
+      shutdownStarted = false;
+      return;
+    }
     aiServer?.close();
     void (async () => {
       try {

@@ -7,10 +7,12 @@ import { sql } from "drizzle-orm";
 import { closeAppDatabase, getAppDatabase } from "../db/database";
 import { upsertMessage } from "../messages/repository";
 import { createHanokiTools } from "../server/assistant/hanoki-tools";
+import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
   createChat,
   createFolder,
+  createMarkdown,
   getChatById,
   getChatTreeChildren,
   getFolderById,
@@ -150,6 +152,48 @@ describe("createFolder", () => {
     });
 
     expect(getFolderById(folder.id)).toEqual(expect.objectContaining({ parentId: parent.id }));
+  });
+});
+
+describe("createMarkdown", () => {
+  it("stores Markdown content in the item data object", () => {
+    createWorkspace({ id: "markdown-workspace", name: "Markdown" });
+
+    const item = createMarkdown({
+      workspaceId: "markdown-workspace",
+      title: "New markdown",
+      folderId: null,
+    });
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        type: "markdown",
+        title: "New markdown",
+        data: { markdown: "" },
+      }),
+    );
+  });
+
+  it("persists queued content after the debounce and during an explicit flush", async () => {
+    createWorkspace({ id: "markdown-autosave-workspace", name: "Markdown autosave" });
+    const service = createChatTreeService();
+    const item = service.createMarkdown({
+      workspaceId: "markdown-autosave-workspace",
+      title: "Autosave",
+      folderId: null,
+    });
+
+    service.queueMarkdownContent(item.id, "Debounced content");
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    expect(service.getItem(item.id)).toEqual(
+      expect.objectContaining({ data: { markdown: "Debounced content" } }),
+    );
+
+    service.queueMarkdownContent(item.id, "Flushed content");
+    service.flushAllMarkdownContent();
+    expect(service.getItem(item.id)).toEqual(
+      expect.objectContaining({ data: { markdown: "Flushed content" } }),
+    );
   });
 });
 

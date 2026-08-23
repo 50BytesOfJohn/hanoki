@@ -1,4 +1,4 @@
-import type { GlobalChatSettings } from "../ipc";
+import type { GlobalChatSettings, ItemType } from "../ipc";
 
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
 export const SYSTEM_STATE_CHANNEL = "system:getState" as const;
@@ -29,9 +29,10 @@ export interface GlobalChatSettingsUpdatedEvent {
   settings: GlobalChatSettings;
 }
 
-export interface ChatTitleUpdatedEvent {
-  type: "chat:title-updated";
-  chatId: string;
+export interface ItemTitleUpdatedEvent {
+  type: "item:title-updated";
+  itemId: string;
+  itemType: ItemType;
   workspaceId: string;
   title: string;
 }
@@ -68,7 +69,7 @@ export type SystemEvent =
   | ProviderModelsSyncCompletedEvent
   | ProvidersStartupModelSyncCompletedEvent
   | GlobalChatSettingsUpdatedEvent
-  | ChatTitleUpdatedEvent
+  | ItemTitleUpdatedEvent
   | UpdateStateChangedEvent;
 
 export interface AiServerStateSnapshot {

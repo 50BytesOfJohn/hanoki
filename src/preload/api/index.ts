@@ -6,6 +6,7 @@ import { createEventsApi } from "../events";
 import { createFoldersApi } from "./folders";
 import { createMessagesApi } from "./messages";
 import { createItemsApi } from "./items";
+import { createMarkdownApi } from "./markdown";
 import { createModelsApi } from "./models";
 import { createProvidersApi } from "./providers";
 import { createSettingsApi } from "./settings";
@@ -21,6 +22,7 @@ export function createElectronApi(): IpcApi {
     ...createChatTreeApi(),
     ...createFoldersApi(),
     ...createItemsApi(),
+    ...createMarkdownApi(),
     ...createChatsApi(),
     ...createMessagesApi(),
     ...createTerminalsApi(),
