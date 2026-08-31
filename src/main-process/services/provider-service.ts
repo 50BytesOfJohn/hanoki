@@ -99,6 +99,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         displayName: row.displayName,
         isEnabled: row.isEnabled,
         status: row.lifecycleStatus as ProviderModelInfo["status"],
+        metadata: row.metadata,
       }));
     },
 

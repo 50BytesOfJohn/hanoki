@@ -1,5 +1,6 @@
 import {
   Alert01Icon,
+  ArrowDataTransferVerticalIcon,
   Cancel01Icon,
   FilterHorizontalIcon,
   MoreIcon,
@@ -7,7 +8,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,40 +30,68 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useSetProviderModelsEnabled, useUpdateProviderModel } from "@/mutations/models";
 import { listProviderModelsQueryOptions } from "@/queries/providers";
-import { ProviderModelsTable } from "./models/provider-models-table";
+import {
+  decorateModel,
+  ProviderModelsList,
+  type DecoratedModel,
+} from "./models/provider-models-list";
 
 interface ProviderModelsTabProps {
   providerId: string;
+  /** Provider catalog id, used as the creator for providers that report none. */
+  catalogId: string | null;
 }
 
-export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
+const MODEL_SORT_ORDERS = {
+  released: "Newest first",
+  name: "Name (A–Z)",
+  context: "Largest context",
+  price: "Lowest price",
+} as const;
+
+type ModelSortOrder = keyof typeof MODEL_SORT_ORDERS;
+
+export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabProps) {
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [showEnabledOnly, setShowEnabledOnly] = useState(false);
+  const [sortOrder, setSortOrder] = useState<ModelSortOrder>("released");
   const deferredModelSearchQuery = useDeferredValue(modelSearchQuery);
   const modelsQuery = useQuery(listProviderModelsQueryOptions(providerId));
   const updateModelMutation = useUpdateProviderModel();
   const setProviderModelsEnabledMutation = useSetProviderModelsEnabled();
   const models = modelsQuery.data ?? [];
+
+  // "codex" is the ChatGPT sign-in, not a lab — its models are OpenAI's.
+  const fallbackCreator = catalogId === "codex" ? "openai" : catalogId;
+  const decoratedModels = useMemo(
+    () => models.map((model) => decorateModel(model, fallbackCreator)),
+    [models, fallbackCreator],
+  );
+
   const normalizedSearchQuery = deferredModelSearchQuery.trim().toLocaleLowerCase();
-  const filteredModels = models.filter((model) => {
-    if (showEnabledOnly && !model.isEnabled) {
-      return false;
-    }
+  const visibleModels = useMemo(() => {
+    const filtered = decoratedModels.filter((entry) => {
+      if (showEnabledOnly && !entry.model.isEnabled) {
+        return false;
+      }
 
-    if (normalizedSearchQuery.length === 0) {
-      return true;
-    }
+      if (normalizedSearchQuery.length === 0) {
+        return true;
+      }
 
-    const displayName = model.displayName?.trim().toLocaleLowerCase() ?? "";
-    const providerModelId = model.providerModelId.toLocaleLowerCase();
-    return (
-      displayName.includes(normalizedSearchQuery) || providerModelId.includes(normalizedSearchQuery)
-    );
-  });
+      return [entry.name, entry.model.providerModelId, entry.details.creator ?? ""].some((field) =>
+        field.toLocaleLowerCase().includes(normalizedSearchQuery),
+      );
+    });
+
+    return filtered.sort(compareBy(sortOrder));
+  }, [decoratedModels, normalizedSearchQuery, showEnabledOnly, sortOrder]);
+
   const areAllModelsEnabled = models.length > 0 && models.every((model) => model.isEnabled);
   const areAllModelsDisabled = models.length > 0 && models.every((model) => !model.isEnabled);
   const isBatchMutating = setProviderModelsEnabledMutation.isPending;
   const isModelMutating = isBatchMutating || updateModelMutation.isPending;
+  const enabledCount = models.filter((model) => model.isEnabled).length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border p-3">
@@ -109,6 +138,37 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
                 </InputGroupAddon>
               ) : null}
             </InputGroup>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="shrink-0 text-muted-foreground"
+                    size="icon"
+                    aria-label="Sort models"
+                    variant="ghost"
+                  />
+                }
+              >
+                <HugeiconsIcon icon={ArrowDataTransferVerticalIcon} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuRadioGroup
+                  value={sortOrder}
+                  onValueChange={(value) => {
+                    if (isModelSortOrder(value)) {
+                      setSortOrder(value);
+                    }
+                  }}
+                >
+                  {Object.entries(MODEL_SORT_ORDERS).map(([value, label]) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -175,7 +235,6 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            {isBatchMutating ? <Spinner /> : null}
           </div>
 
           {updateModelMutation.isError ? (
@@ -196,7 +255,7 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
             </Alert>
           ) : null}
 
-          {filteredModels.length === 0 ? (
+          {visibleModels.length === 0 ? (
             <Alert>
               <HugeiconsIcon icon={Alert01Icon} />
               <AlertTitle>No matching models</AlertTitle>
@@ -205,8 +264,8 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
               </AlertDescription>
             </Alert>
           ) : (
-            <ProviderModelsTable
-              models={filteredModels}
+            <ProviderModelsList
+              models={visibleModels}
               areSwitchesDisabled={isModelMutating}
               onModelEnabledChange={(modelId, isEnabled) => {
                 updateModelMutation.mutate({
@@ -217,10 +276,40 @@ export function ProviderModelsTab({ providerId }: ProviderModelsTabProps) {
               }}
             />
           )}
+
+          <p className="shrink-0 text-[11px] text-muted-foreground/80">
+            {visibleModels.length} of {models.length} models · {enabledCount} enabled
+          </p>
         </div>
       )}
     </div>
   );
+}
+
+function isModelSortOrder(value: string): value is ModelSortOrder {
+  return value in MODEL_SORT_ORDERS;
+}
+
+function compareBy(sortOrder: ModelSortOrder): (a: DecoratedModel, b: DecoratedModel) => number {
+  switch (sortOrder) {
+    case "released":
+      // Models the provider gave no date for sink below the dated ones.
+      return (a, b) =>
+        (b.details.releasedAt ?? -1) - (a.details.releasedAt ?? -1) || compareByName(a, b);
+    case "context":
+      return (a, b) =>
+        (b.details.contextLength ?? -1) - (a.details.contextLength ?? -1) || compareByName(a, b);
+    case "price":
+      return (a, b) =>
+        (a.details.pricing?.input ?? Number.POSITIVE_INFINITY) -
+          (b.details.pricing?.input ?? Number.POSITIVE_INFINITY) || compareByName(a, b);
+    case "name":
+      return compareByName;
+  }
+}
+
+function compareByName(a: DecoratedModel, b: DecoratedModel): number {
+  return a.name.localeCompare(b.name);
 }
 
 function getErrorMessage(error: unknown): string {

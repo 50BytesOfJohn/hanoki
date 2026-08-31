@@ -51,7 +51,9 @@ export function useUpdateProviderModel() {
 
       queryClient.setQueryData<ProviderModelInfo[]>(
         queryKey,
-        previousModels.map((model) => (model.id === updatedModel.id ? updatedModel : model)),
+        previousModels.map((model) =>
+          model.id === updatedModel.id ? { ...model, ...updatedModel } : model,
+        ),
       );
     },
     onSettled: (_data, _error, variables) => {

@@ -473,6 +473,12 @@ export interface ProviderModelInfo {
   displayName: string | null;
   isEnabled: boolean;
   status: ProviderModelStatus;
+  /**
+   * Raw model entry as the provider returned it — see `getModelDetails`.
+   * Only `listProviderModels` carries it; the chat-side enabled-model list
+   * leaves it off so a large catalog is not cloned over IPC for nothing.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface SaveProviderInput {
