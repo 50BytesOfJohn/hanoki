@@ -1,4 +1,5 @@
 import type { ProviderId } from "../providers/catalog";
+import type { ReasoningEffort } from "../models/reasoning";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
@@ -329,6 +330,8 @@ export interface ChatSettings {
 
 export interface ChatModelConfig {
   temperature?: number;
+  /** Unset means the provider's own default. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ChatSettingsUpdateInput {
@@ -336,6 +339,7 @@ export interface ChatSettingsUpdateInput {
   systemPrompt?: string | null;
   modelConfig?: {
     temperature?: number | null;
+    reasoningEffort?: ReasoningEffort | null;
   };
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
@@ -479,6 +483,8 @@ export interface ProviderModelInfo {
    * leaves it off so a large catalog is not cloned over IPC for nothing.
    */
   metadata?: Record<string, unknown>;
+  /** Thinking efforts this model accepts; empty when it does not reason. */
+  reasoningEfforts?: ReasoningEffort[];
 }
 
 export interface SaveProviderInput {

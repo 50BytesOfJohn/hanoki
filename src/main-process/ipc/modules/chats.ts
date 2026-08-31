@@ -8,6 +8,7 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
+import { isReasoningEffort } from "@shared/models/reasoning";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -127,7 +128,7 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
 
     const modelConfig = inputRecord.modelConfig as Record<string, unknown>;
     for (const key of Object.keys(modelConfig)) {
-      if (key !== "temperature") {
+      if (key !== "temperature" && key !== "reasoningEffort") {
         throw AppError.badRequest(`Unsupported model config update field "${key}".`);
       }
     }
@@ -144,6 +145,17 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
       }
 
       parsedInput.modelConfig = { temperature: modelConfig.temperature };
+    }
+
+    if (modelConfig.reasoningEffort !== undefined) {
+      if (modelConfig.reasoningEffort !== null && !isReasoningEffort(modelConfig.reasoningEffort)) {
+        throw AppError.badRequest("reasoningEffort must be null or a known effort level.");
+      }
+
+      parsedInput.modelConfig = {
+        ...parsedInput.modelConfig,
+        reasoningEffort: modelConfig.reasoningEffort,
+      };
     }
   }
 

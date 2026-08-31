@@ -68,7 +68,7 @@ export function getModelDetails(
     maxOutputTokens: readMaxOutputTokens(raw),
     pricing,
     isFree: readIsFree(raw, providerModelId, pricing),
-    capabilities: readCapabilities(raw),
+    capabilities: getModelCapabilities(raw),
     parameterSize: readString(readRecord(raw["details"])?.["parameter_size"]),
     quantization: readString(readRecord(raw["details"])?.["quantization_level"]),
     fileSizeBytes: readNumber(raw["size"]),
@@ -228,7 +228,10 @@ function readIsFree(
 
 /* ----------------------------------------------------------- capabilities */
 
-function readCapabilities(raw: Record<string, unknown>): ModelCapability[] {
+export function getModelCapabilities(
+  metadata: Record<string, unknown> | null | undefined,
+): ModelCapability[] {
+  const raw = isRecord(metadata) ? metadata : {};
   const found = new Set<ModelCapability>();
 
   for (const modality of readModalities(raw)) {

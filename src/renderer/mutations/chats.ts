@@ -60,12 +60,18 @@ export function useUpdateChatSettings() {
         const { modelConfig: modelConfigPatch, ...settingsPatch } = input;
         const settings = { ...previous.data.settings, ...settingsPatch };
 
-        if (modelConfigPatch && "temperature" in modelConfigPatch) {
+        if (modelConfigPatch) {
           const modelConfig = { ...previous.data.settings.modelConfig };
           if (modelConfigPatch.temperature === null) {
             delete modelConfig.temperature;
           } else if (modelConfigPatch.temperature !== undefined) {
             modelConfig.temperature = modelConfigPatch.temperature;
+          }
+
+          if (modelConfigPatch.reasoningEffort === null) {
+            delete modelConfig.reasoningEffort;
+          } else if (modelConfigPatch.reasoningEffort !== undefined) {
+            modelConfig.reasoningEffort = modelConfigPatch.reasoningEffort;
           }
 
           if (Object.keys(modelConfig).length === 0) {

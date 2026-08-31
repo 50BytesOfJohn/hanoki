@@ -4,6 +4,9 @@ import type {
   UpdateModelInput,
   UpdateModelResult,
 } from "@shared/ipc";
+import type { ProviderId } from "@shared/providers/catalog";
+import { getModelReasoningEfforts } from "@shared/models/reasoning";
+import { listProviders } from "../providers/repository";
 import {
   listEnabledModels as listEnabledModelsRepo,
   updateModel as updateModelRepo,
@@ -20,14 +23,25 @@ export interface ModelService {
 export function createModelService(): ModelService {
   return {
     listEnabledModels() {
-      return listEnabledModelsRepo().map((row) => ({
-        id: row.id,
-        providerId: row.providerId,
-        providerModelId: row.providerModelId,
-        displayName: row.displayName,
-        isEnabled: row.isEnabled,
-        status: row.lifecycleStatus as ProviderModelInfo["status"],
-      }));
+      const catalogIdByProviderId = new Map(
+        listProviders().map((provider) => [provider.id, provider.catalogId as ProviderId]),
+      );
+
+      return listEnabledModelsRepo().map((row) => {
+        const catalogId = catalogIdByProviderId.get(row.providerId);
+
+        return {
+          id: row.id,
+          providerId: row.providerId,
+          providerModelId: row.providerModelId,
+          displayName: row.displayName,
+          isEnabled: row.isEnabled,
+          status: row.lifecycleStatus as ProviderModelInfo["status"],
+          // The composer needs this and metadata stays out of the list, so the
+          // efforts are resolved here instead of shipping the raw catalog.
+          reasoningEfforts: catalogId ? getModelReasoningEfforts(catalogId, row.metadata) : [],
+        };
+      });
     },
 
     updateModel(modelId, input) {

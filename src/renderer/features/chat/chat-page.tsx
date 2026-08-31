@@ -4,6 +4,7 @@ import { useHotkey } from "@tanstack/react-hotkeys";
 import { useDebouncedCallback } from "@tanstack/react-pacer";
 import {
   Add01Icon,
+  AiBrain01Icon,
   AiWebBrowsingIcon,
   Cancel01Icon,
   ComputerTerminal01Icon,
@@ -28,6 +29,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -59,6 +62,7 @@ import { listProvidersQueryOptions } from "@/queries/providers";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
 import type { ProviderModelInfo } from "@shared/ipc";
+import { REASONING_EFFORT_LABELS, type ReasoningEffort } from "@shared/models/reasoning";
 import {
   createEmptyTiptapDocument,
   createTiptapDocumentFromText,
@@ -431,6 +435,7 @@ function ActiveChatContent() {
                 >
                   <ChatToolsMenu />
                   <ModelSelector />
+                  <ReasoningSelector />
                   <div className="ml-auto flex items-center gap-1.5">
                     <SumiPromptAction
                       prompt={inputText}
@@ -561,6 +566,68 @@ function ChatToolsMenu() {
             </span>
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+const REASONING_DEFAULT_VALUE = "provider-default";
+
+function ReasoningSelector() {
+  const chatId = useChatId();
+  const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
+  const isInteractionLocked = useChatIsInteractionLocked();
+  const modelId = useChatModelId();
+  const updateChatSettings = useUpdateChatSettings();
+
+  const efforts = enabledModels.find((model) => model.id === modelId)?.reasoningEfforts ?? [];
+  const effort = chat?.data.settings.modelConfig?.reasoningEffort;
+
+  if (efforts.length === 0) {
+    return null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Thinking effort"
+            aria-pressed={effort !== undefined}
+            disabled={isInteractionLocked || updateChatSettings.isPending}
+            className="gap-1.5 px-2 text-[13px] font-normal text-foreground"
+          />
+        }
+      >
+        <HugeiconsIcon icon={AiBrain01Icon} className="size-4" />
+        {effort ? REASONING_EFFORT_LABELS[effort] : "Thinking"}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-40">
+        <DropdownMenuRadioGroup
+          value={effort ?? REASONING_DEFAULT_VALUE}
+          onValueChange={(value) => {
+            updateChatSettings.mutate({
+              id: chatId,
+              input: {
+                modelConfig: {
+                  reasoningEffort:
+                    value === REASONING_DEFAULT_VALUE ? null : (value as ReasoningEffort),
+                },
+              },
+            });
+          }}
+        >
+          <DropdownMenuRadioItem value={REASONING_DEFAULT_VALUE}>Default</DropdownMenuRadioItem>
+          {efforts.map((item) => (
+            <DropdownMenuRadioItem key={item} value={item}>
+              {REASONING_EFFORT_LABELS[item]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

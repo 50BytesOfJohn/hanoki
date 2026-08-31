@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homedir } from "node:os";
 
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
+import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -13,6 +14,7 @@ type ItemTableRow = typeof items.$inferSelect;
 type ChatSettingsPatch = Omit<Partial<ChatSettings>, "modelConfig"> & {
   modelConfig?: {
     temperature?: number | null;
+    reasoningEffort?: ReasoningEffort | null;
   };
 };
 
@@ -230,6 +232,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
 
   if (modelConfig && typeof modelConfig === "object" && !Array.isArray(modelConfig)) {
     const temperature = (modelConfig as Record<string, unknown>).temperature;
+    const reasoningEffort = (modelConfig as Record<string, unknown>).reasoningEffort;
     if (
       typeof temperature === "number" &&
       Number.isFinite(temperature) &&
@@ -237,6 +240,10 @@ function normalizeChatSettings(value: unknown): ChatSettings {
       temperature <= 1
     ) {
       normalizedSettings.modelConfig = { temperature };
+    }
+
+    if (isReasoningEffort(reasoningEffort)) {
+      normalizedSettings.modelConfig = { ...normalizedSettings.modelConfig, reasoningEffort };
     }
   }
 
@@ -276,12 +283,18 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
     nextSettings.systemPrompt = settingsPatch.systemPrompt ?? null;
   }
 
-  if (settingsPatch.modelConfig && "temperature" in settingsPatch.modelConfig) {
+  if (settingsPatch.modelConfig) {
     const modelConfig = { ...nextSettings.modelConfig };
     if (settingsPatch.modelConfig.temperature === null) {
       delete modelConfig.temperature;
     } else if (settingsPatch.modelConfig.temperature !== undefined) {
       modelConfig.temperature = settingsPatch.modelConfig.temperature;
+    }
+
+    if (settingsPatch.modelConfig.reasoningEffort === null) {
+      delete modelConfig.reasoningEffort;
+    } else if (settingsPatch.modelConfig.reasoningEffort !== undefined) {
+      modelConfig.reasoningEffort = settingsPatch.modelConfig.reasoningEffort;
     }
 
     if (Object.keys(modelConfig).length === 0) {

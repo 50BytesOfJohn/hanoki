@@ -23,6 +23,8 @@ import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
+import { buildReasoningProviderOptions } from "../providers/reasoning-provider-options";
+import { getModelReasoningEfforts } from "@shared/models/reasoning";
 import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
@@ -244,10 +246,25 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       }
       console.error(message, { chatId: chat.id, ...details }, error);
     };
+    // The setting outlives the model it was chosen for, so a saved effort the
+    // current model does not offer is dropped rather than sent blindly.
+    const savedReasoningEffort = chat.data.settings.modelConfig?.reasoningEffort;
+    const reasoningEffort =
+      savedReasoningEffort &&
+      getModelReasoningEfforts(provider.catalogId as ProviderId, model.metadata).includes(
+        savedReasoningEffort,
+      )
+        ? savedReasoningEffort
+        : undefined;
     const agent = new ToolLoopAgent({
       model: languageModel,
       instructions: chat.data.settings.systemPrompt?.trim() || undefined,
       temperature: chat.data.settings.modelConfig?.temperature,
+      reasoning: reasoningEffort,
+      providerOptions: buildReasoningProviderOptions(
+        provider.catalogId as ProviderId,
+        reasoningEffort,
+      ),
       tools,
       activeTools,
       ...(toolApproval ? { toolApproval } : {}),
@@ -261,6 +278,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           provider: sdkProvider,
           modelId: sdkModelId,
           temperature: chat.data.settings.modelConfig?.temperature ?? null,
+          reasoning: reasoningEffort ?? null,
           hasCustomSystemPrompt: Boolean(chat.data.settings.systemPrompt?.trim()),
           activeTools,
         });
