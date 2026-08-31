@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "Poteto Mode": {
+      "source": "cursor/plugins",
+      "sourceType": "github",
+      "skillPath": "pstack/skills/poteto-mode/SKILL.md",
+      "computedHash": "c922c22b1000ba1806c1ca98a89d4916083c192be3a11aa49ce88a057dc9e62f"
+    },
     "ai-sdk": {
       "source": "vercel/ai",
       "sourceType": "github",
