@@ -11,6 +11,7 @@ import {
   isChatToolId,
   parseTiptapDocument,
   type TiptapDocument,
+  type TiptapNode,
 } from "./document";
 
 function getToolLabel(toolId: unknown): string {
@@ -51,12 +52,25 @@ const markdownManager = new MarkdownManager({
   extensions: createMessageTiptapExtensions(),
 });
 
+// Tiptap's markdown serializer crashes on a childless listItem
+// (renderNestedMarkdownContent destructures content[0]), and stray markdown
+// like a bare "9." parses into one. Drop them on both ends.
+function dropEmptyListItems<T extends TiptapNode>(node: T): T {
+  if (!node.content) {
+    return node;
+  }
+  const content = node.content
+    .map(dropEmptyListItems)
+    .filter((child) => child.type !== "listItem" || (child.content?.length ?? 0) > 0);
+  return { ...node, content };
+}
+
 export function parseMarkdownToTiptap(markdown: string): TiptapDocument {
-  return markdownManager.parse(markdown) as TiptapDocument;
+  return dropEmptyListItems(markdownManager.parse(markdown) as TiptapDocument);
 }
 
 export function serializeTiptapToMarkdown(document: TiptapDocument): string {
-  return markdownManager.serialize(document);
+  return markdownManager.serialize(dropEmptyListItems(document));
 }
 
 export function getTiptapMessageDisplayText(

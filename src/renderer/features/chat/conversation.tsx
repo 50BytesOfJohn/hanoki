@@ -1,4 +1,5 @@
 import * as React from "react";
+import { CatchBoundary } from "@tanstack/react-router";
 
 import {
   useChatContinuingMessageId,
@@ -34,15 +35,20 @@ export function Conversation() {
         <p className="text-sm text-muted-foreground">Send a message to start chatting.</p>
       ) : (
         messages.map((message) => (
-          <ChatMessage
+          <MessageErrorBoundary
             key={message.id}
-            chatId={chatId}
-            isAnimating={animatingMessageId === message.id}
-            isEditing={editingMessageId === message.id}
-            isInteractionLocked={isInteractionLocked}
-            message={message}
-            modelId={modelId}
-          />
+            messageId={message.id}
+            resetKey={`${message.id}:${message.parts.length}`}
+          >
+            <ChatMessage
+              chatId={chatId}
+              isAnimating={animatingMessageId === message.id}
+              isEditing={editingMessageId === message.id}
+              isInteractionLocked={isInteractionLocked}
+              message={message}
+              modelId={modelId}
+            />
+          </MessageErrorBoundary>
         ))
       )}
 
@@ -57,6 +63,35 @@ export function Conversation() {
           {error.message}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+interface MessageErrorBoundaryProps {
+  children: React.ReactNode;
+  messageId: string;
+  resetKey: string;
+}
+
+/** A malformed message must not take down the whole chat route, only its own bubble. */
+export function MessageErrorBoundary({ children, messageId, resetKey }: MessageErrorBoundaryProps) {
+  return (
+    <CatchBoundary
+      getResetKey={() => resetKey}
+      errorComponent={MessageRenderError}
+      onCatch={(renderError) => {
+        console.error(`[chat] Failed to render message "${messageId}".`, renderError);
+      }}
+    >
+      {children}
+    </CatchBoundary>
+  );
+}
+
+function MessageRenderError({ error }: { error: Error }) {
+  return (
+    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+      This message could not be displayed. {error.message}
     </div>
   );
 }

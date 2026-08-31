@@ -213,4 +213,20 @@ describe("parseTiptapDocument", () => {
 
     expect(serializeTiptapToMarkdown(parseMarkdownToTiptap(markdown))).toBe(markdown);
   });
+
+  it("serializes documents containing childless list items", () => {
+    const document: TiptapDocument = {
+      type: "doc",
+      content: [
+        { type: "orderedList", attrs: { start: 9 }, content: [{ type: "listItem", content: [] }] },
+        { type: "paragraph", content: [{ type: "text", text: "after" }] },
+      ],
+    };
+
+    expect(serializeTiptapToMarkdown(document).trim()).toBe("after");
+    expect(parseMarkdownToTiptap("9.\n")).toEqual({
+      type: "doc",
+      content: [{ type: "orderedList", attrs: { start: 9 }, content: [] }],
+    });
+  });
 });
