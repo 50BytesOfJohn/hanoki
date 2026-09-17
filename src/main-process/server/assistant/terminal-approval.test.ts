@@ -35,7 +35,7 @@ function createToolCallingModel(toolName: string, input: unknown) {
     callCount += 1;
     return callCount === 1
       ? {
-          finishReason: "tool-calls",
+          finishReason: { unified: "tool-calls", raw: "tool-calls" },
           usage,
           content: [
             { type: "tool-call", toolCallId: "call-1", toolName, input: JSON.stringify(input) },
@@ -43,7 +43,7 @@ function createToolCallingModel(toolName: string, input: unknown) {
           warnings: [],
         }
       : {
-          finishReason: "stop",
+          finishReason: { unified: "stop", raw: "stop" },
           usage,
           content: [{ type: "text", text: "done" }],
           warnings: [],
@@ -103,13 +103,11 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
     messages.push(...first.responseMessages);
     messages.push({
       role: "tool",
-      content: approvalRequests.map(
-        (part): ToolApprovalResponse => ({
-          type: "tool-approval-response",
-          approvalId: (part as { approvalId: string }).approvalId,
-          approved: true,
-        }),
-      ),
+      content: approvalRequests.map((part): ToolApprovalResponse => ({
+        type: "tool-approval-response",
+        approvalId: (part as { approvalId: string }).approvalId,
+        approved: true,
+      })),
     });
 
     await agent.generate({ messages });

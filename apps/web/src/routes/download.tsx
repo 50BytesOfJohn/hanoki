@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowRight, Github } from "lucide-react";
+import { ArrowRight01Icon, GithubIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "#/components/ui/button";
 import { Footer, Nav, Reveal } from "#/components/site-chrome";
@@ -102,12 +103,12 @@ function Download() {
             <Button size="lg" asChild>
               <a href={RELEASES} target="_blank" rel="noreferrer">
                 Get the latest .dmg
-                <ArrowRight />
+                <HugeiconsIcon icon={ArrowRight01Icon} />
               </a>
             </Button>
             <Button size="lg" variant="outline" asChild>
               <a href={GITHUB} target="_blank" rel="noreferrer">
-                <Github />
+                <HugeiconsIcon icon={GithubIcon} />
                 Build it from source
               </a>
             </Button>

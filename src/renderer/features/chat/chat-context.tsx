@@ -442,15 +442,39 @@ export function ChatContextProvider({
   enabledModelIds,
   children,
 }: ChatContextProviderProps) {
-  // const { markTabTouched } = useChatTabsState();
-  const getOrCreateChat = useChatStore((s) => s.getOrCreateChat);
-  const chat = React.useMemo(
-    () => getOrCreateChat(chatId, apiUrl),
-    // apiUrl is stable once the server is ready (determined at mount time).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chatId],
-  );
+  const chat = useChatStore((state) => state.chatEntries.get(chatId) ?? null);
+  const getOrCreateChat = useChatStore((state) => state.getOrCreateChat);
 
+  React.useEffect(() => {
+    getOrCreateChat(chatId, apiUrl);
+  }, [apiUrl, chatId, getOrCreateChat]);
+
+  if (!chat) {
+    return null;
+  }
+
+  return (
+    <InitializedChatContextProvider
+      chat={chat}
+      chatId={chatId}
+      apiUrl={apiUrl}
+      initialModelId={initialModelId}
+      enabledModelIds={enabledModelIds}
+    >
+      {children}
+    </InitializedChatContextProvider>
+  );
+}
+
+function InitializedChatContextProvider({
+  chat,
+  chatId,
+  apiUrl,
+  initialModelId,
+  enabledModelIds,
+  children,
+}: ChatContextProviderProps & { chat: Chat<HanokiUiMessage> }) {
+  // const { markTabTouched } = useChatTabsState();
   const wasStoppedRef = React.useRef(false);
   const transportRefs = React.useRef<ChatTransportRefs>({
     sendMessage: null,

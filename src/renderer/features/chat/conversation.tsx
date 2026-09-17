@@ -1,5 +1,6 @@
 import * as React from "react";
 import { CatchBoundary } from "@tanstack/react-router";
+import type { ErrorComponentProps } from "@tanstack/react-router";
 
 import {
   useChatContinuingMessageId,
@@ -88,10 +89,12 @@ export function MessageErrorBoundary({ children, messageId, resetKey }: MessageE
   );
 }
 
-function MessageRenderError({ error }: { error: Error }) {
+function MessageRenderError({ error }: ErrorComponentProps) {
+  const message = error instanceof Error ? error.message : String(error);
+
   return (
     <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
-      This message could not be displayed. {error.message}
+      This message could not be displayed. {message}
     </div>
   );
 }

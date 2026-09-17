@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowRight, Github } from "lucide-react";
+import { ArrowRight01Icon, GithubIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "#/components/ui/button";
 import { Footer, Nav, Reveal } from "#/components/site-chrome";
@@ -122,12 +123,12 @@ function Hero() {
         <Button size="lg" asChild>
           <Link to="/download">
             Download for macOS
-            <ArrowRight />
+            <HugeiconsIcon icon={ArrowRight01Icon} />
           </Link>
         </Button>
         <Button size="lg" variant="outline" asChild>
           <a href={GITHUB} target="_blank" rel="noreferrer">
-            <Github />
+            <HugeiconsIcon icon={GithubIcon} />
             Star on GitHub
           </a>
         </Button>
@@ -421,7 +422,7 @@ function Honest() {
           <Button variant="ghost" asChild>
             <a href={`${GITHUB}/issues`} target="_blank" rel="noreferrer">
               Report a bug
-              <ArrowRight />
+              <HugeiconsIcon icon={ArrowRight01Icon} />
             </a>
           </Button>
         </div>
@@ -497,7 +498,7 @@ function CallToAction() {
           >
             <Link to="/download">
               Download Hanoki
-              <ArrowRight />
+              <HugeiconsIcon icon={ArrowRight01Icon} />
             </Link>
           </Button>
           <Button
@@ -507,7 +508,7 @@ function CallToAction() {
             className="border-white/20 bg-white/5 text-[var(--cta-fg)] hover:bg-white/10 hover:text-white"
           >
             <a href={GITHUB} target="_blank" rel="noreferrer">
-              <Github />
+              <HugeiconsIcon icon={GithubIcon} />
               Read the source
             </a>
           </Button>

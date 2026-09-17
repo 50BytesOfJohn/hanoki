@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Github, Moon, Sun } from "lucide-react";
+import { GithubIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "#/components/ui/button";
 import { DISCORD, GITHUB, LICENSE_URL, RELEASES } from "#/lib/seo";
@@ -56,9 +57,9 @@ function ThemeToggle() {
       className="size-9 rounded-full"
     >
       {mounted && theme === "dark" ? (
-        <Sun className="size-[1.05rem]" />
+        <HugeiconsIcon icon={Sun03Icon} className="size-[1.05rem]" />
       ) : (
-        <Moon className="size-[1.05rem]" />
+        <HugeiconsIcon icon={Moon02Icon} className="size-[1.05rem]" />
       )}
     </Button>
   );
@@ -152,7 +153,7 @@ export function Nav() {
           <ThemeToggle />
           <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
             <a href={GITHUB} target="_blank" rel="noreferrer">
-              <Github />
+              <HugeiconsIcon icon={GithubIcon} />
               GitHub
             </a>
           </Button>

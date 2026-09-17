@@ -37,7 +37,7 @@ afterEach(() => {
   }
 });
 
-describe.sequential("initializeAppDatabase", () => {
+describe("initializeAppDatabase", { concurrent: false }, () => {
   it("applies every generated migration to a fresh database once", () => {
     const databasePath = useTestDatabase();
 
