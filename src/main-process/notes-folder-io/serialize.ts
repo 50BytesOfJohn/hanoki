@@ -2,12 +2,11 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { CHAT_TITLE_MAX_LENGTH } from "@shared/chat/chat-title";
+import { safeFileName, uniqueName } from "@shared/files/safe-file-name";
 import { FOLDER_NAME_MAX_LENGTH } from "@shared/folder/folder-name";
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
 import { MAX_MARKDOWN_FILE_BYTES, MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
-
-import { safeFileName, uniqueName } from "./safe-file-name";
 
 export const IGNORED_DIRECTORY_NAMES = new Set([".obsidian", ".git"]);
 
@@ -28,9 +27,17 @@ export interface CollectedMarkdownFile {
   body: string;
 }
 
+export type NotesFolderSkipKind = "oversized" | "non-markdown" | "ignored-directory" | "unreadable";
+
+export interface NotesFolderSkippedEntry {
+  relativePath: string;
+  kind: NotesFolderSkipKind;
+  reason?: string;
+}
+
 export interface CollectMarkdownFilesResult {
   files: CollectedMarkdownFile[];
-  skipped: { relativePath: string; reason: string }[];
+  skipped: NotesFolderSkippedEntry[];
 }
 
 export function buildNotesFolderExportPlan(snapshot: ChatTreeSnapshot): NotesFolderExportPlan {
@@ -57,7 +64,7 @@ export async function writeNotesFolderExportPlan(
   for (const file of plan.files) {
     const fullPath = resolveUnder(destination, file.relativePath);
     await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, file.body, "utf8");
+    await writeFile(fullPath, Buffer.from(file.body, "utf8"));
   }
 }
 
@@ -65,7 +72,7 @@ export async function collectMarkdownFiles(
   sourceRoot: string,
 ): Promise<CollectMarkdownFilesResult> {
   const files: CollectedMarkdownFile[] = [];
-  const skipped: { relativePath: string; reason: string }[] = [];
+  const skipped: NotesFolderSkippedEntry[] = [];
   await walkImportDirectory(sourceRoot, [], files, skipped);
   return { files, skipped };
 }
@@ -119,16 +126,19 @@ async function walkImportDirectory(
   directory: string,
   relativeSegments: string[],
   files: CollectedMarkdownFile[],
-  skipped: { relativePath: string; reason: string }[],
+  skipped: NotesFolderSkippedEntry[],
 ): Promise<void> {
   const entries = await readdir(directory, { withFileTypes: true });
 
   for (const entry of entries) {
-    if (IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
-
     const nextSegments = [...relativeSegments, entry.name];
     const relativePath = nextSegments.join("/");
     const fullPath = join(directory, entry.name);
+
+    if (IGNORED_DIRECTORY_NAMES.has(entry.name)) {
+      skipped.push({ relativePath, kind: "ignored-directory" });
+      continue;
+    }
 
     if (entry.isSymbolicLink()) continue;
 
@@ -137,22 +147,29 @@ async function walkImportDirectory(
       continue;
     }
 
-    if (!entry.isFile() || !isMarkdownFileName(entry.name)) continue;
+    if (!entry.isFile()) continue;
+
+    if (!isMarkdownFileName(entry.name)) {
+      skipped.push({ relativePath, kind: "non-markdown" });
+      continue;
+    }
 
     try {
       const fileStat = await stat(fullPath);
       if (fileStat.size > MAX_MARKDOWN_FILE_BYTES) {
         skipped.push({
           relativePath,
+          kind: "oversized",
           reason: `${relativePath} is larger than 5 MiB and was skipped.`,
         });
         continue;
       }
 
-      const body = await readFile(fullPath, "utf8");
+      const body = decodeUtf8WithoutBom(await readFile(fullPath));
       if (body.length > MAX_MARKDOWN_LENGTH) {
         skipped.push({
           relativePath,
+          kind: "oversized",
           reason: `${relativePath} is larger than 5 MiB and was skipped.`,
         });
         continue;
@@ -167,10 +184,18 @@ async function walkImportDirectory(
     } catch (error) {
       skipped.push({
         relativePath,
+        kind: "unreadable",
         reason: `${relativePath} could not be read${error instanceof Error ? `: ${error.message}` : "."}`,
       });
     }
   }
+}
+
+function decodeUtf8WithoutBom(bytes: Buffer): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return bytes.subarray(3).toString("utf8");
+  }
+  return bytes.toString("utf8");
 }
 
 function isMarkdownFileName(name: string): boolean {

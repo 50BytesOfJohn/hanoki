@@ -13,6 +13,19 @@ describe("safeFileName", () => {
     expect(safeFileName("///", "Folder")).toBe("Folder");
     expect(safeFileName("", "Note")).toBe("Note");
   });
+
+  it("renames Windows reserved device names", () => {
+    expect(safeFileName("CON", "Note")).toBe("CON-file");
+    expect(safeFileName("prn", "Note")).toBe("prn-file");
+    expect(safeFileName("AUX", "Chat")).toBe("AUX-file");
+    expect(safeFileName("NUL", "Note")).toBe("NUL-file");
+    expect(safeFileName("COM1", "Note")).toBe("COM1-file");
+    expect(safeFileName("COM9", "Note")).toBe("COM9-file");
+    expect(safeFileName("LPT1", "Note")).toBe("LPT1-file");
+    expect(safeFileName("LPT9", "Note")).toBe("LPT9-file");
+    expect(safeFileName("con.txt", "Note")).toBe("con-file.txt");
+    expect(safeFileName("COM10", "Note")).toBe("COM10");
+  });
 });
 
 describe("uniqueName", () => {

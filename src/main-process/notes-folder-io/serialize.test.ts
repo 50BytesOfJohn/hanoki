@@ -135,6 +135,11 @@ describe("buildNotesFolderExportPlan", () => {
             title: "Hello/World:Note?",
             data: { markdown: "# Hello\n\nBody with 日本語 and emoji 🌲.\n" },
           }),
+          markdownItem({
+            id: "md-con",
+            title: "CON",
+            data: { markdown: "reserved name" },
+          }),
           terminal,
         ],
       }),
@@ -145,13 +150,15 @@ describe("buildNotesFolderExportPlan", () => {
       { relativePath: "Drafts/Scene.md", body: "Once upon a time.\n" },
       { relativePath: "Drafts/Scene-2.md", body: "A colliding scene." },
       { relativePath: "Hello-World-Note.md", body: "# Hello\n\nBody with 日本語 and emoji 🌲.\n" },
+      { relativePath: "CON-file.md", body: "reserved name" },
     ]);
   });
 });
 
 describe("notes folder round-trip", () => {
-  it("preserves markdown body characters exactly", async () => {
+  it("preserves exported markdown text as imported body, not item identity", async () => {
     const body = "# Title\n\nLine with trailing spaces  \n\n```\ncode\n```\n\n日本語\n";
+    const originalIds = ["md-1", "md-2"];
     const plan = buildNotesFolderExportPlan(
       snapshot({
         rootFolders: [
@@ -160,7 +167,7 @@ describe("notes folder round-trip", () => {
             name: "Chapters",
             items: [
               markdownItem({
-                id: "md-1",
+                id: originalIds[0],
                 folderId: "folder-1",
                 title: "One",
                 data: { markdown: body },
@@ -170,7 +177,7 @@ describe("notes folder round-trip", () => {
         ],
         rootItems: [
           markdownItem({
-            id: "md-2",
+            id: originalIds[1],
             title: "Loose note",
             data: { markdown: "" },
           }),
@@ -181,30 +188,37 @@ describe("notes folder round-trip", () => {
     const dest = await makeTempDir();
     await writeNotesFolderExportPlan(dest, plan);
     const collected = await collectMarkdownFiles(dest);
+    const exportedBodies = [...plan.files]
+      .map((file) => file.body)
+      .sort((left, right) => left.localeCompare(right));
+    const importedBodies = [...collected.files]
+      .map((file) => file.body)
+      .sort((left, right) => left.localeCompare(right));
 
-    expect(await readFile(join(dest, "Chapters", "One.md"), "utf8")).toBe(body);
-    expect(
-      [...collected.files].sort((left, right) =>
-        left.relativePath.localeCompare(right.relativePath),
-      ),
-    ).toEqual([
-      {
-        relativePath: "Chapters/One.md",
-        folderSegments: ["Chapters"],
-        title: "One",
-        body,
-      },
-      {
-        relativePath: "Loose note.md",
-        folderSegments: [],
-        title: "Loose note",
-        body: "",
-      },
-    ]);
+    expect(importedBodies).toEqual(exportedBodies);
     expect(collected.skipped).toEqual([]);
   });
 
-  it("ignores .obsidian, .git, non-markdown files, and oversized notes", async () => {
+  it("writes UTF-8 without BOM and strips a leading BOM on import", async () => {
+    const dest = await makeTempDir();
+    await writeNotesFolderExportPlan(dest, {
+      directories: [],
+      files: [{ relativePath: "Note.md", body: "café" }],
+    });
+    const written = await readFile(join(dest, "Note.md"));
+    expect(written.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(false);
+    expect(written.toString("utf8")).toBe("café");
+
+    const bomRoot = await makeTempDir();
+    await writeFile(
+      join(bomRoot, "bom.md"),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("café", "utf8")]),
+    );
+    const collected = await collectMarkdownFiles(bomRoot);
+    expect(collected.files.map((file) => file.body)).toEqual(["café"]);
+  });
+
+  it("records oversized files and ignored non-markdown, .obsidian/, and .git/", async () => {
     const root = await makeTempDir();
     await mkdir(join(root, ".obsidian"), { recursive: true });
     await mkdir(join(root, ".git"), { recursive: true });
@@ -216,17 +230,18 @@ describe("notes folder round-trip", () => {
     await writeFile(join(root, "huge.md"), "x".repeat(MAX_MARKDOWN_FILE_BYTES + 1), "utf8");
 
     const collected = await collectMarkdownFiles(root);
-    expect(collected.files).toEqual([
-      {
-        relativePath: "Keep/ok.md",
-        folderSegments: ["Keep"],
-        title: "ok",
-        body: "kept",
-      },
-    ]);
-    expect(collected.skipped).toEqual([
+    expect(collected.files.map((file) => file.body)).toEqual(["kept"]);
+    expect(
+      [...collected.skipped].sort((left, right) =>
+        left.relativePath < right.relativePath ? -1 : 1,
+      ),
+    ).toEqual([
+      { relativePath: ".git", kind: "ignored-directory" },
+      { relativePath: ".obsidian", kind: "ignored-directory" },
+      { relativePath: "Keep/skip.txt", kind: "non-markdown" },
       {
         relativePath: "huge.md",
+        kind: "oversized",
         reason: "huge.md is larger than 5 MiB and was skipped.",
       },
     ]);

@@ -10,5 +10,26 @@ export type NotesFolderImportResult =
       noteCount: number;
       folderCount: number;
       skippedCount: number;
+      skippedOversizedCount: number;
+      ignoredNonMarkdownCount: number;
+      ignoredDirectoryNames: string[];
       warnings: string[];
     };
+
+export function formatNotesFolderImportSummary(
+  result: Extract<NotesFolderImportResult, { status: "imported" }>,
+): string {
+  const parts = [`${result.noteCount} notes added from ${result.folderPath}.`];
+  if (result.skippedOversizedCount > 0) {
+    const noun = result.skippedOversizedCount === 1 ? "file" : "files";
+    parts.push(`${result.skippedOversizedCount} oversized ${noun} skipped.`);
+  }
+  if (result.ignoredNonMarkdownCount > 0) {
+    const noun = result.ignoredNonMarkdownCount === 1 ? "file" : "files";
+    parts.push(`${result.ignoredNonMarkdownCount} non-markdown ${noun} ignored.`);
+  }
+  if (result.ignoredDirectoryNames.length > 0) {
+    parts.push(`Ignored ${result.ignoredDirectoryNames.map((name) => `${name}/`).join(", ")}.`);
+  }
+  return parts.join(" ");
+}
