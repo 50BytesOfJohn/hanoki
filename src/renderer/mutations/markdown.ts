@@ -46,3 +46,49 @@ export function useFlushMarkdownContent() {
     },
   });
 }
+
+export function useExportMarkdownNotesFolder() {
+  return useMutation({
+    mutationFn: ({ workspaceId }: { workspaceId: string }) => markdownApi.exportFolder(workspaceId),
+    onSuccess: (result) => {
+      if (result.status !== "exported") return;
+      toastManager.add({
+        type: "success",
+        title: "Markdown notes exported",
+        description: `${result.noteCount} notes saved to ${result.folderPath}`,
+      });
+    },
+    onError: (error) => {
+      toastManager.add({
+        type: "error",
+        title: "Markdown notes could not be exported",
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function useImportMarkdownNotesFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ workspaceId }: { workspaceId: string }) => markdownApi.importFolder(workspaceId),
+    onSuccess: (result) => {
+      if (result.status !== "imported") return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
+      const skipped = result.skippedCount > 0 ? ` ${result.skippedCount} skipped.` : "";
+      toastManager.add({
+        type: result.skippedCount > 0 ? "warning" : "success",
+        title: "Markdown notes imported",
+        description: `${result.noteCount} notes added from ${result.folderPath}.${skipped}`,
+      });
+    },
+    onError: (error) => {
+      toastManager.add({
+        type: "error",
+        title: "Markdown notes could not be imported",
+        description: error.message,
+      });
+    },
+  });
+}

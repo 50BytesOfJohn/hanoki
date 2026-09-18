@@ -2,6 +2,7 @@ import type { ProviderId } from "../providers/catalog";
 import type { ReasoningEffort } from "../models/reasoning";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
+import type { NotesFolderExportResult, NotesFolderImportResult } from "../markdown/folder-io";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
 import type { TiptapDocument } from "../tiptap/document";
 
@@ -68,6 +69,8 @@ export const IPC_CHANNELS = {
     create: "markdown:create",
     queueContent: "markdown:queueContent",
     flushContent: "markdown:flushContent",
+    exportFolder: "markdown:exportFolder",
+    importFolder: "markdown:importFolder",
   },
   messages: {
     listByChat: "messages:listByChat",
@@ -617,6 +620,8 @@ export interface IpcApi {
   ) => Promise<MarkdownInfo>;
   queueMarkdownContent: (id: string, markdown: string) => Promise<void>;
   flushMarkdownContent: (id: string) => Promise<MarkdownInfo>;
+  exportMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderExportResult>;
+  importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   testProviderCredentials: (
