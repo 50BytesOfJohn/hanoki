@@ -4,7 +4,7 @@ import { safeFileName, uniqueName } from "./safe-file-name";
 
 describe("safeFileName", () => {
   it("replaces reserved characters and trims trailing dots", () => {
-    expect(safeFileName("Act 1/Scene:Take?", "Note")).toBe("Act 1-Scene-Take-");
+    expect(safeFileName("Act 1/Scene:Take?", "Note")).toBe("Act 1-Scene-Take");
     expect(safeFileName("Ending...", "Note")).toBe("Ending");
     expect(safeFileName("   ", "Note")).toBe("Note");
   });

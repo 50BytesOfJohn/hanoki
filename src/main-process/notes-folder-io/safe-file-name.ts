@@ -2,6 +2,8 @@ export function safeFileName(title: string, fallback: string): string {
   return (
     title
       .replace(/[<>:"/\\|?*\p{Cc}]/gu, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
       .replace(/[. ]+$/g, "")
       .trim()
       .slice(0, 120) || fallback

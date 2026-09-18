@@ -144,7 +144,7 @@ describe("buildNotesFolderExportPlan", () => {
     expect(plan.files).toEqual([
       { relativePath: "Drafts/Scene.md", body: "Once upon a time.\n" },
       { relativePath: "Drafts/Scene-2.md", body: "A colliding scene." },
-      { relativePath: "Hello-World-Note-.md", body: "# Hello\n\nBody with 日本語 and emoji 🌲.\n" },
+      { relativePath: "Hello-World-Note.md", body: "# Hello\n\nBody with 日本語 and emoji 🌲.\n" },
     ]);
   });
 });
@@ -184,7 +184,9 @@ describe("notes folder round-trip", () => {
 
     expect(await readFile(join(dest, "Chapters", "One.md"), "utf8")).toBe(body);
     expect(
-      collected.files.toSorted((a, b) => a.relativePath.localeCompare(b.relativePath)),
+      [...collected.files].sort((left, right) =>
+        left.relativePath.localeCompare(right.relativePath),
+      ),
     ).toEqual([
       {
         relativePath: "Chapters/One.md",
