@@ -14,8 +14,7 @@ export async function exportMarkdownNotesFolder({
   sender: WebContents;
   workspaceId: string;
 }): Promise<NotesFolderExportResult> {
-  services.chatTree.flushAllMarkdownContent();
-  const snapshot = services.chatTree.getChatTree(workspaceId);
+  requireWorkspace(services, workspaceId);
   const destination = await pickNotesFolder({
     sender,
     title: "Export markdown notes",
@@ -26,7 +25,8 @@ export async function exportMarkdownNotesFolder({
     return { status: "canceled" };
   }
 
-  const plan = buildNotesFolderExportPlan(snapshot);
+  services.chatTree.flushAllMarkdownContent();
+  const plan = buildNotesFolderExportPlan(services.chatTree.getChatTree(workspaceId));
   await writeNotesFolderExportPlan(destination, plan);
 
   return {
@@ -35,4 +35,11 @@ export async function exportMarkdownNotesFolder({
     noteCount: plan.files.length,
     folderCount: plan.directories.length,
   };
+}
+
+function requireWorkspace(services: AppServices, workspaceId: string): void {
+  const workspace = services.workspaces.listWorkspaces().find((entry) => entry.id === workspaceId);
+  if (!workspace) {
+    throw new Error(`Workspace "${workspaceId}" does not exist.`);
+  }
 }
