@@ -1,9 +1,15 @@
 import type { WebContents } from "electron";
 
 import type { NotesFolderExportResult } from "@shared/markdown/folder-io";
+import type { ChatTreeService } from "../services/chat-tree-service";
 import type { AppServices } from "../services";
 import { pickNotesFolder } from "./pick-directory";
 import { buildNotesFolderExportPlan, writeNotesFolderExportPlan } from "./serialize";
+
+export type NotesFolderExportTree = Pick<
+  ChatTreeService,
+  "flushAllMarkdownContent" | "getChatTree"
+>;
 
 export async function exportMarkdownNotesFolder({
   services,
@@ -25,8 +31,16 @@ export async function exportMarkdownNotesFolder({
     return { status: "canceled" };
   }
 
-  services.chatTree.flushAllMarkdownContent();
-  const plan = buildNotesFolderExportPlan(services.chatTree.getChatTree(workspaceId));
+  return exportMarkdownNotesToDirectory(services.chatTree, workspaceId, destination);
+}
+
+export async function exportMarkdownNotesToDirectory(
+  chatTree: NotesFolderExportTree,
+  workspaceId: string,
+  destination: string,
+): Promise<Extract<NotesFolderExportResult, { status: "exported" }>> {
+  chatTree.flushAllMarkdownContent();
+  const plan = buildNotesFolderExportPlan(chatTree.getChatTree(workspaceId));
   await writeNotesFolderExportPlan(destination, plan);
 
   return {

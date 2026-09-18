@@ -26,6 +26,11 @@ describe("safeFileName", () => {
     expect(safeFileName("con.txt", "Note")).toBe("con-file.txt");
     expect(safeFileName("COM10", "Note")).toBe("COM10");
   });
+
+  it("truncates to 120 characters", () => {
+    const name = safeFileName("a".repeat(200), "Note");
+    expect(name).toBe("a".repeat(120));
+  });
 });
 
 describe("uniqueName", () => {
@@ -46,5 +51,12 @@ describe("uniqueName", () => {
     const used = new Set<string>();
     expect(uniqueName("Notes", used)).toBe("Notes");
     expect(uniqueName("Notes", used, ".md")).toBe("Notes.md");
+  });
+
+  it("disambiguates duplicate sibling folders as Notes, Notes-2, …", () => {
+    const used = new Set<string>();
+    expect(uniqueName("Notes", used)).toBe("Notes");
+    expect(uniqueName("Notes", used)).toBe("Notes-2");
+    expect(uniqueName("notes", used)).toBe("notes-3");
   });
 });

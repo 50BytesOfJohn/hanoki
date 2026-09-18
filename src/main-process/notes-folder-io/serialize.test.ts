@@ -209,6 +209,61 @@ describe("buildNotesFolderExportPlan", () => {
     expect(plan.files).toEqual([{ relativePath: "Archive/2024/Kept.md", body: "nested" }]);
     expect(plan.skippedNonMarkdownCount).toBe(1);
   });
+
+  it("disambiguates duplicate sibling folder names as Notes and Notes-2", () => {
+    const plan = buildNotesFolderExportPlan(
+      snapshot({
+        rootFolders: [
+          folderNode({
+            id: "folder-notes-1",
+            name: "Notes",
+            items: [
+              markdownItem({
+                id: "md-a",
+                folderId: "folder-notes-1",
+                title: "A",
+                data: { markdown: "first" },
+              }),
+            ],
+          }),
+          folderNode({
+            id: "folder-notes-2",
+            name: "Notes",
+            items: [
+              markdownItem({
+                id: "md-b",
+                folderId: "folder-notes-2",
+                title: "B",
+                data: { markdown: "second" },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(plan.directories).toEqual(["Notes", "Notes-2"]);
+    expect(plan.files).toEqual([
+      { relativePath: "Notes/A.md", body: "first" },
+      { relativePath: "Notes-2/B.md", body: "second" },
+    ]);
+  });
+
+  it("writes the stored items.data.markdown bytes, not a re-serialized editor view", () => {
+    const stored = "# Title\n\nTrailing spaces  \n\n<div>raw html</div>\n";
+    const plan = buildNotesFolderExportPlan(
+      snapshot({
+        rootItems: [
+          markdownItem({
+            id: "md-raw",
+            title: "Raw",
+            data: { markdown: stored },
+          }),
+        ],
+      }),
+    );
+    expect(plan.files).toEqual([{ relativePath: "Raw.md", body: stored }]);
+  });
 });
 
 describe("notes folder round-trip", () => {
@@ -310,5 +365,23 @@ describe("titleFromMarkdownFileName", () => {
     expect(titleFromMarkdownFileName("Scene 1.md")).toBe("Scene 1");
     expect(titleFromMarkdownFileName(".md")).toBe(DEFAULT_MARKDOWN_TITLE);
     expect(titleFromMarkdownFileName("NOTE.MD")).toBe("NOTE");
+  });
+
+  it("is best-effort: a truncated filename cannot restore a longer original title", () => {
+    const originalTitle = "n".repeat(200);
+    const plan = buildNotesFolderExportPlan(
+      snapshot({
+        rootItems: [
+          markdownItem({
+            id: "md-long",
+            title: originalTitle,
+            data: { markdown: "body" },
+          }),
+        ],
+      }),
+    );
+    expect(plan.files).toEqual([{ relativePath: `${"n".repeat(120)}.md`, body: "body" }]);
+    expect(titleFromMarkdownFileName(`${"n".repeat(120)}.md`)).toBe("n".repeat(120));
+    expect(titleFromMarkdownFileName(`${"n".repeat(120)}.md`)).not.toBe(originalTitle);
   });
 });
