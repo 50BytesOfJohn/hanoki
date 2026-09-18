@@ -6,4 +6,6 @@ export const markdownApi = {
   queueContent: (id: string, markdown: string) =>
     window.electronAPI.queueMarkdownContent(id, markdown),
   flushContent: (id: string) => window.electronAPI.flushMarkdownContent(id),
+  exportFolder: (workspaceId: string) => window.electronAPI.exportMarkdownNotesFolder(workspaceId),
+  importFolder: (workspaceId: string) => window.electronAPI.importMarkdownNotesFolder(workspaceId),
 };

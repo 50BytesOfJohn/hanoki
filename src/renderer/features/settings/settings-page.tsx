@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { FileExportIcon, FileImportIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -11,8 +14,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { WorkspaceOrb } from "@/components/ui/workspace-orb";
+import { useExportMarkdownNotesFolder, useImportMarkdownNotesFolder } from "@/mutations/markdown";
 import { useUpdateGlobalChatSettings } from "@/mutations/settings";
 import { useUpdateWorkspace } from "@/mutations/workspaces";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
@@ -263,6 +268,10 @@ function WorkspaceSettings({ workspace }: { workspace: WorkspaceInfo }) {
       <SettingsSection title="Chat list">
         <WorkspaceChatTreeSortRows workspaceId={workspace.id} />
       </SettingsSection>
+
+      <SettingsSection title="Markdown notes">
+        <MarkdownNotesFolderIoRows workspaceId={workspace.id} />
+      </SettingsSection>
     </>
   );
 }
@@ -329,6 +338,55 @@ function WorkspaceChatTreeSortRows({ workspaceId }: { workspaceId: string }) {
               </SelectGroup>
             </SelectContent>
           </Select>
+        }
+      />
+    </>
+  );
+}
+
+function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
+  const exportNotes = useExportMarkdownNotesFolder();
+  const importNotes = useImportMarkdownNotesFolder();
+  const isBusy = exportNotes.isPending || importNotes.isPending;
+
+  return (
+    <>
+      <SettingsRow
+        title="Export notes"
+        description="Save this workspace's markdown notes as nested .md files. Chats and terminals are skipped."
+        control={
+          <Button
+            type="button"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => void exportNotes.mutateAsync({ workspaceId })}
+          >
+            {exportNotes.isPending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <HugeiconsIcon icon={FileExportIcon} data-icon="inline-start" />
+            )}
+            Export
+          </Button>
+        }
+      />
+      <SettingsRow
+        title="Import notes"
+        description="Create new markdown notes from a folder of .md files. Existing notes are not overwritten."
+        control={
+          <Button
+            type="button"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => void importNotes.mutateAsync({ workspaceId })}
+          >
+            {importNotes.isPending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <HugeiconsIcon icon={FileImportIcon} data-icon="inline-start" />
+            )}
+            Import
+          </Button>
         }
       />
     </>

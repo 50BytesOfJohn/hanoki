@@ -22,6 +22,8 @@ import {
   Folder01Icon,
   FolderAddIcon,
   FileScriptIcon,
+  FileExportIcon,
+  FileImportIcon,
   LayoutBottomIcon,
   LayoutLeftIcon,
   LayoutRightIcon,
@@ -91,7 +93,11 @@ import {
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 import { useCreateTerminal } from "@/mutations/terminals";
-import { useCreateMarkdown } from "@/mutations/markdown";
+import {
+  useCreateMarkdown,
+  useExportMarkdownNotesFolder,
+  useImportMarkdownNotesFolder,
+} from "@/mutations/markdown";
 
 import type {
   ChatInfo,
@@ -141,6 +147,8 @@ type ChatTreeContextMenuAction =
   | "add-chat"
   | "add-terminal"
   | "add-markdown"
+  | "export-markdown-notes"
+  | "import-markdown-notes"
   | "open-in-focused-pane"
   | "open-in-new-tab"
   | "open-to-left"
@@ -181,6 +189,14 @@ function ChatTreeItemContextMenu({
             <ContextMenuItem onClick={() => onAction("add-markdown")}>
               <HugeiconsIcon icon={FileScriptIcon} />
               Add Markdown
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("export-markdown-notes")}>
+              <HugeiconsIcon icon={FileExportIcon} />
+              Export Notes
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("import-markdown-notes")}>
+              <HugeiconsIcon icon={FileImportIcon} />
+              Import Notes
             </ContextMenuItem>
           </ContextMenuGroup>
         ) : (
@@ -289,6 +305,9 @@ function ChatSidebarViewModeMenu({
   const setSidebarViewMode = useWorkspaceStore((s) => s.setSidebarViewMode);
   const { sortOrder, folderPlacement, setSortOrder, setFolderPlacement } =
     useChatTreeSort(workspaceId);
+  const exportNotes = useExportMarkdownNotesFolder();
+  const importNotes = useImportMarkdownNotesFolder();
+  const notesIoBusy = exportNotes.isPending || importNotes.isPending;
 
   return (
     <DropdownMenu>
@@ -374,6 +393,24 @@ function ChatSidebarViewModeMenu({
             </DropdownMenuGroup>
           </>
         ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Markdown notes</DropdownMenuLabel>
+          <DropdownMenuItem
+            disabled={notesIoBusy}
+            onClick={() => void exportNotes.mutateAsync({ workspaceId })}
+          >
+            <HugeiconsIcon icon={FileExportIcon} />
+            Export to folder…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={notesIoBusy}
+            onClick={() => void importNotes.mutateAsync({ workspaceId })}
+          >
+            <HugeiconsIcon icon={FileImportIcon} />
+            Import from folder…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -397,6 +434,8 @@ function ChatSidebarTreeInner({
   const createFolderMutation = useCreateFolder();
   const createTerminalMutation = useCreateTerminal();
   const createMarkdownMutation = useCreateMarkdown();
+  const exportMarkdownNotes = useExportMarkdownNotesFolder();
+  const importMarkdownNotes = useImportMarkdownNotesFolder();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
   const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
@@ -865,6 +904,10 @@ function ChatSidebarTreeInner({
                   } else if (action === "add-markdown" && itemKind === "folder") {
                     ensureFolderExpanded();
                     void createMarkdown(item.getId().slice("folder:".length));
+                  } else if (action === "export-markdown-notes") {
+                    void exportMarkdownNotes.mutateAsync({ workspaceId });
+                  } else if (action === "import-markdown-notes") {
+                    void importMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "open-in-focused-pane" && data.kind === "item") {
                     navigateToItem(data.item);
                   } else if (action === "open-in-new-tab" && data.kind === "item") {

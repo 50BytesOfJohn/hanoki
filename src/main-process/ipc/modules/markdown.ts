@@ -2,15 +2,24 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { IPC_CHANNELS, type MarkdownInfo } from "@shared/ipc";
+import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
+import type { NotesFolderExportResult, NotesFolderImportResult } from "@shared/markdown/folder-io";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import { type } from "arktype";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
+import { exportMarkdownNotesFolder } from "../../notes-folder-io/export-notes";
+import { importMarkdownNotesFolder } from "../../notes-folder-io/import-notes";
 
-const MAX_MARKDOWN_LENGTH = 5 * 1024 * 1024;
 const markdownContentSchema = type(`string <= ${MAX_MARKDOWN_LENGTH}`);
 type UntrustedIpcValue = Parameters<typeof parseChatId>[0];
+
+function parseValidWorkspaceId(value: UntrustedIpcValue): string {
+  const parsedWorkspaceId = parseWorkspaceId(value);
+  if (!parsedWorkspaceId.ok) throw AppError.badRequest(parsedWorkspaceId.error);
+  return parsedWorkspaceId.value;
+}
 
 function parseMarkdownId(value: UntrustedIpcValue): string {
   const parsedId = parseChatId(value);
@@ -83,5 +92,23 @@ export function registerMarkdownIpcModule(
       return [parseMarkdownId(args[0])];
     },
     handler: ({ services }, _event, itemId) => services.chatTree.flushMarkdownContent(itemId),
+  });
+  registerInvokeHandler<[string], NotesFolderExportResult>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.exportFolder,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseValidWorkspaceId(args[0])];
+    },
+    handler: ({ services }, event, workspaceId) =>
+      exportMarkdownNotesFolder({ services, sender: event.sender, workspaceId }),
+  });
+  registerInvokeHandler<[string], NotesFolderImportResult>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.importFolder,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseValidWorkspaceId(args[0])];
+    },
+    handler: ({ services }, event, workspaceId) =>
+      importMarkdownNotesFolder({ services, sender: event.sender, workspaceId }),
   });
 }

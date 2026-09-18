@@ -1,7 +1,14 @@
 import { IPC_CHANNELS, type IpcApi } from "@shared/ipc";
 import { invokeIpc } from "../invoke";
 
-type MarkdownApi = Pick<IpcApi, "createMarkdown" | "queueMarkdownContent" | "flushMarkdownContent">;
+type MarkdownApi = Pick<
+  IpcApi,
+  | "createMarkdown"
+  | "queueMarkdownContent"
+  | "flushMarkdownContent"
+  | "exportMarkdownNotesFolder"
+  | "importMarkdownNotesFolder"
+>;
 
 export function createMarkdownApi(): MarkdownApi {
   return {
@@ -10,5 +17,9 @@ export function createMarkdownApi(): MarkdownApi {
     queueMarkdownContent: (id, markdown) =>
       invokeIpc(IPC_CHANNELS.markdown.queueContent, id, markdown),
     flushMarkdownContent: (id) => invokeIpc(IPC_CHANNELS.markdown.flushContent, id),
+    exportMarkdownNotesFolder: (workspaceId) =>
+      invokeIpc(IPC_CHANNELS.markdown.exportFolder, workspaceId),
+    importMarkdownNotesFolder: (workspaceId) =>
+      invokeIpc(IPC_CHANNELS.markdown.importFolder, workspaceId),
   };
 }
