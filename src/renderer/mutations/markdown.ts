@@ -1,7 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { MarkdownInfo } from "@shared/ipc";
 
-import { formatNotesFolderImportSummary } from "@shared/markdown/folder-io";
+import {
+  formatNotesFolderExportSummary,
+  formatNotesFolderImportSummary,
+} from "@shared/markdown/folder-io";
 
 import { markdownApi } from "../api/markdown";
 import { toastManager } from "../components/ui/toast";
@@ -55,9 +58,9 @@ export function useExportMarkdownNotesFolder() {
     onSuccess: (result) => {
       if (result.status !== "exported") return;
       toastManager.add({
-        type: "success",
+        type: result.skippedNonMarkdownCount > 0 ? "warning" : "success",
         title: "Markdown notes exported",
-        description: `${result.noteCount} notes saved to ${result.folderPath}`,
+        description: formatNotesFolderExportSummary(result),
       });
     },
     onError: (error) => {

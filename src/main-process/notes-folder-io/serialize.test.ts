@@ -145,13 +145,69 @@ describe("buildNotesFolderExportPlan", () => {
       }),
     );
 
-    expect(plan.directories).toEqual(["Drafts", "Drafts/Empty"]);
+    expect(plan.directories).toEqual(["Drafts"]);
+    expect(plan.skippedNonMarkdownCount).toBe(2);
     expect(plan.files).toEqual([
       { relativePath: "Drafts/Scene.md", body: "Once upon a time.\n" },
       { relativePath: "Drafts/Scene-2.md", body: "A colliding scene." },
       { relativePath: "Hello-World-Note.md", body: "# Hello\n\nBody with 日本語 and emoji 🌲.\n" },
       { relativePath: "CON-file.md", body: "reserved name" },
     ]);
+  });
+
+  it("exports folders that contain markdown descendants and skips empty ones", () => {
+    const plan = buildNotesFolderExportPlan(
+      snapshot({
+        rootFolders: [
+          folderNode({
+            id: "folder-archive",
+            name: "Archive",
+            folders: [
+              folderNode({
+                id: "folder-year",
+                name: "2024",
+                parentId: "folder-archive",
+                items: [
+                  markdownItem({
+                    id: "md-nested",
+                    folderId: "folder-year",
+                    title: "Kept",
+                    data: { markdown: "nested" },
+                  }),
+                ],
+              }),
+              folderNode({
+                id: "folder-empty",
+                name: "Empty",
+                parentId: "folder-archive",
+              }),
+            ],
+          }),
+          folderNode({
+            id: "folder-chats",
+            name: "Chats only",
+            items: [
+              {
+                type: "chat",
+                id: "chat-1",
+                workspaceId: "workspace-1",
+                folderId: "folder-chats",
+                title: "Chat",
+                data: { settings: {} },
+                metadata: {},
+                extensions: {},
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(plan.directories).toEqual(["Archive", "Archive/2024"]);
+    expect(plan.files).toEqual([{ relativePath: "Archive/2024/Kept.md", body: "nested" }]);
+    expect(plan.skippedNonMarkdownCount).toBe(1);
   });
 });
 
@@ -204,6 +260,7 @@ describe("notes folder round-trip", () => {
     await writeNotesFolderExportPlan(dest, {
       directories: [],
       files: [{ relativePath: "Note.md", body: "café" }],
+      skippedNonMarkdownCount: 0,
     });
     const written = await readFile(join(dest, "Note.md"));
     expect(written.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(false);

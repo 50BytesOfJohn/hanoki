@@ -18,6 +18,7 @@ export interface NotesFolderExportFile {
 export interface NotesFolderExportPlan {
   directories: string[];
   files: NotesFolderExportFile[];
+  skippedNonMarkdownCount: number;
 }
 
 export interface CollectedMarkdownFile {
@@ -44,13 +45,15 @@ export function buildNotesFolderExportPlan(snapshot: ChatTreeSnapshot): NotesFol
   const directories: string[] = [];
   const files: NotesFolderExportFile[] = [];
   const rootUsed = new Set<string>();
+  let skippedNonMarkdownCount = 0;
 
   for (const folder of snapshot.rootFolders) {
-    walkFolder(folder, "", rootUsed, directories, files);
+    skippedNonMarkdownCount += walkFolder(folder, "", rootUsed, directories, files);
   }
+  skippedNonMarkdownCount += countNonMarkdownItems(snapshot.rootItems);
   writeMarkdownItems(snapshot.rootItems, "", rootUsed, files);
 
-  return { directories, files };
+  return { directories, files, skippedNonMarkdownCount };
 }
 
 export async function writeNotesFolderExportPlan(
@@ -94,16 +97,22 @@ function walkFolder(
   siblingNames: Set<string>,
   directories: string[],
   files: NotesFolderExportFile[],
-): void {
+): number {
+  if (!folderHasMarkdownDescendant(folder)) {
+    return countNonMarkdownInFolder(folder);
+  }
+
   const folderName = uniqueName(safeFileName(folder.name, "Folder"), siblingNames);
   const relativePath = joinRelative(parentRelativePath, folderName);
   directories.push(relativePath);
 
   const childNames = new Set<string>();
+  let skippedNonMarkdownCount = countNonMarkdownItems(folder.items);
   for (const child of folder.folders) {
-    walkFolder(child, relativePath, childNames, directories, files);
+    skippedNonMarkdownCount += walkFolder(child, relativePath, childNames, directories, files);
   }
   writeMarkdownItems(folder.items, relativePath, childNames, files);
+  return skippedNonMarkdownCount;
 }
 
 function writeMarkdownItems(
@@ -120,6 +129,27 @@ function writeMarkdownItems(
       body: item.data.markdown,
     });
   }
+}
+
+function folderHasMarkdownDescendant(folder: ChatTreeFolderNode): boolean {
+  if (folder.items.some((item) => item.type === "markdown")) return true;
+  return folder.folders.some(folderHasMarkdownDescendant);
+}
+
+function countNonMarkdownInFolder(folder: ChatTreeFolderNode): number {
+  let count = countNonMarkdownItems(folder.items);
+  for (const child of folder.folders) {
+    count += countNonMarkdownInFolder(child);
+  }
+  return count;
+}
+
+function countNonMarkdownItems(items: readonly ItemInfo[]): number {
+  let count = 0;
+  for (const item of items) {
+    if (item.type !== "markdown") count += 1;
+  }
+  return count;
 }
 
 async function walkImportDirectory(

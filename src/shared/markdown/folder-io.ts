@@ -1,6 +1,12 @@
 export type NotesFolderExportResult =
   | { status: "canceled" }
-  | { status: "exported"; folderPath: string; noteCount: number; folderCount: number };
+  | {
+      status: "exported";
+      folderPath: string;
+      noteCount: number;
+      folderCount: number;
+      skippedNonMarkdownCount: number;
+    };
 
 export type NotesFolderImportResult =
   | { status: "canceled" }
@@ -15,6 +21,17 @@ export type NotesFolderImportResult =
       ignoredDirectoryNames: string[];
       warnings: string[];
     };
+
+export function formatNotesFolderExportSummary(
+  result: Extract<NotesFolderExportResult, { status: "exported" }>,
+): string {
+  const parts = [`${result.noteCount} notes saved to ${result.folderPath}.`];
+  if (result.skippedNonMarkdownCount > 0) {
+    const noun = result.skippedNonMarkdownCount === 1 ? "item" : "items";
+    parts.push(`${result.skippedNonMarkdownCount} non-markdown ${noun} skipped.`);
+  }
+  return parts.join(" ");
+}
 
 export function formatNotesFolderImportSummary(
   result: Extract<NotesFolderImportResult, { status: "imported" }>,

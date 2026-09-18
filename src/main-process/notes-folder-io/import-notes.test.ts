@@ -147,6 +147,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     const root = await makeTempDir();
     await mkdir(join(root, ".obsidian"), { recursive: true });
     await mkdir(join(root, ".git"), { recursive: true });
+    await mkdir(join(root, "Empty"), { recursive: true });
     await writeFile(join(root, ".obsidian", "note.md"), "vault", "utf8");
     await writeFile(join(root, ".git", "HEAD.md"), "git", "utf8");
     await writeFile(join(root, "ok.md"), "kept", "utf8");
@@ -157,6 +158,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
 
     expect(tree.notes.map((note) => note.data.markdown)).toEqual(["kept"]);
+    expect(tree.folders).toHaveLength(0);
     expect(result.skippedOversizedCount).toBe(1);
     expect(result.ignoredNonMarkdownCount).toBe(1);
     expect(result.ignoredDirectoryNames).toEqual([".git", ".obsidian"]);

@@ -34,6 +34,7 @@ export async function exportMarkdownNotesFolder({
     folderPath: destination,
     noteCount: plan.files.length,
     folderCount: plan.directories.length,
+    skippedNonMarkdownCount: plan.skippedNonMarkdownCount,
   };
 }
 
