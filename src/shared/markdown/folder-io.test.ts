@@ -24,7 +24,33 @@ describe("formatNotesFolderExportSummary", () => {
         folderCount: 0,
         skippedNonMarkdownCount: 0,
       }),
-    ).toBe("1 notes saved to /notes.");
+    ).toBe("1 note saved to /notes.");
+  });
+
+  it("warns that an empty workspace has nothing to export", () => {
+    expect(
+      formatNotesFolderExportSummary({
+        status: "exported",
+        folderPath: "/notes",
+        noteCount: 0,
+        folderCount: 0,
+        skippedNonMarkdownCount: 0,
+      }),
+    ).toBe("This workspace has no markdown notes to write as a snapshot.");
+  });
+
+  it("mentions skipped chats when the snapshot has no notes", () => {
+    expect(
+      formatNotesFolderExportSummary({
+        status: "exported",
+        folderPath: "/notes",
+        noteCount: 0,
+        folderCount: 0,
+        skippedNonMarkdownCount: 2,
+      }),
+    ).toBe(
+      "This workspace has no markdown notes to write as a snapshot. 2 non-markdown items skipped.",
+    );
   });
 });
 
@@ -60,6 +86,6 @@ describe("formatNotesFolderImportSummary", () => {
         ignoredDirectoryNames: [],
         warnings: [],
       }),
-    ).toBe("1 notes added from /notes.");
+    ).toBe("1 note added from /notes.");
   });
 });

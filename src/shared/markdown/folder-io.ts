@@ -22,13 +22,20 @@ export type NotesFolderImportResult =
       warnings: string[];
     };
 
+function counted(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function formatNotesFolderExportSummary(
   result: Extract<NotesFolderExportResult, { status: "exported" }>,
 ): string {
-  const parts = [`${result.noteCount} notes saved to ${result.folderPath}.`];
+  const parts = [
+    result.noteCount === 0
+      ? "This workspace has no markdown notes to write as a snapshot."
+      : `${counted(result.noteCount, "note")} saved to ${result.folderPath}.`,
+  ];
   if (result.skippedNonMarkdownCount > 0) {
-    const noun = result.skippedNonMarkdownCount === 1 ? "item" : "items";
-    parts.push(`${result.skippedNonMarkdownCount} non-markdown ${noun} skipped.`);
+    parts.push(`${counted(result.skippedNonMarkdownCount, "non-markdown item")} skipped.`);
   }
   return parts.join(" ");
 }
@@ -36,14 +43,12 @@ export function formatNotesFolderExportSummary(
 export function formatNotesFolderImportSummary(
   result: Extract<NotesFolderImportResult, { status: "imported" }>,
 ): string {
-  const parts = [`${result.noteCount} notes added from ${result.folderPath}.`];
+  const parts = [`${counted(result.noteCount, "note")} added from ${result.folderPath}.`];
   if (result.skippedOversizedCount > 0) {
-    const noun = result.skippedOversizedCount === 1 ? "file" : "files";
-    parts.push(`${result.skippedOversizedCount} oversized ${noun} skipped.`);
+    parts.push(`${counted(result.skippedOversizedCount, "oversized file")} skipped.`);
   }
   if (result.ignoredNonMarkdownCount > 0) {
-    const noun = result.ignoredNonMarkdownCount === 1 ? "file" : "files";
-    parts.push(`${result.ignoredNonMarkdownCount} non-markdown ${noun} ignored.`);
+    parts.push(`${counted(result.ignoredNonMarkdownCount, "non-markdown file")} ignored.`);
   }
   if (result.ignoredDirectoryNames.length > 0) {
     parts.push(`Ignored ${result.ignoredDirectoryNames.map((name) => `${name}/`).join(", ")}.`);

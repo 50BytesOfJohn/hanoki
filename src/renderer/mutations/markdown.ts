@@ -57,9 +57,10 @@ export function useExportMarkdownNotesFolder() {
     mutationFn: ({ workspaceId }: { workspaceId: string }) => markdownApi.exportFolder(workspaceId),
     onSuccess: (result) => {
       if (result.status !== "exported") return;
+      const empty = result.noteCount === 0;
       toastManager.add({
-        type: result.skippedNonMarkdownCount > 0 ? "warning" : "success",
-        title: "Markdown notes exported",
+        type: empty || result.skippedNonMarkdownCount > 0 ? "warning" : "success",
+        title: empty ? "Nothing to export" : "Markdown notes exported",
         description: formatNotesFolderExportSummary(result),
       });
     },

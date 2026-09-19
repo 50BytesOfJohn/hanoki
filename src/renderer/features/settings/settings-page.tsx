@@ -353,7 +353,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
     <>
       <SettingsRow
         title="Export notes"
-        description="Save this workspace's markdown notes as nested .md files. Chats and terminals are skipped."
+        description="Write a snapshot of this workspace's markdown notes as nested .md files. This is not a live vault. Chats and terminals are skipped."
         control={
           <Button
             type="button"
@@ -372,7 +372,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
       />
       <SettingsRow
         title="Import notes"
-        description="Create new markdown notes from a folder of .md files. Existing notes are not overwritten."
+        description="Create new markdown notes from a folder of .md files. Re-importing creates duplicates (new items); existing notes are not overwritten or synced."
         control={
           <Button
             type="button"
