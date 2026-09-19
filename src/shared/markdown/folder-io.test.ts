@@ -88,4 +88,22 @@ describe("formatNotesFolderImportSummary", () => {
       }),
     ).toBe("1 note added from /notes.");
   });
+
+  it("appends warning paths", () => {
+    expect(
+      formatNotesFolderImportSummary({
+        status: "imported",
+        folderPath: "/notes",
+        noteCount: 1,
+        folderCount: 0,
+        skippedCount: 1,
+        skippedOversizedCount: 1,
+        ignoredNonMarkdownCount: 0,
+        ignoredDirectoryNames: [],
+        warnings: ["huge.md is larger than 5 MiB and was skipped."],
+      }),
+    ).toBe(
+      "1 note added from /notes. 1 oversized file skipped. huge.md is larger than 5 MiB and was skipped.",
+    );
+  });
 });

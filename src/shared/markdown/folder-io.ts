@@ -53,5 +53,8 @@ export function formatNotesFolderImportSummary(
   if (result.ignoredDirectoryNames.length > 0) {
     parts.push(`Ignored ${result.ignoredDirectoryNames.map((name) => `${name}/`).join(", ")}.`);
   }
+  if (result.warnings.length > 0) {
+    parts.push(result.warnings.join(" "));
+  }
   return parts.join(" ");
 }

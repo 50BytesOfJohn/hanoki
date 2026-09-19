@@ -41,11 +41,11 @@ export async function exportMarkdownNotesToDirectory(
 ): Promise<Extract<NotesFolderExportResult, { status: "exported" }>> {
   chatTree.flushAllMarkdownContent();
   const plan = buildNotesFolderExportPlan(chatTree.getChatTree(workspaceId));
-  await writeNotesFolderExportPlan(destination, plan);
+  const folderPath = await writeNotesFolderExportPlan(destination, plan);
 
   return {
     status: "exported",
-    folderPath: destination,
+    folderPath,
     noteCount: plan.files.length,
     folderCount: plan.directories.length,
     skippedNonMarkdownCount: plan.skippedNonMarkdownCount,

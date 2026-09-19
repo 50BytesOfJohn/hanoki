@@ -56,19 +56,114 @@ export function buildNotesFolderExportPlan(snapshot: ChatTreeSnapshot): NotesFol
   return { directories, files, skippedNonMarkdownCount };
 }
 
+const EXPORT_SUBFOLDER_ATTEMPTS = 1000;
+
 export async function writeNotesFolderExportPlan(
   destination: string,
   plan: NotesFolderExportPlan,
-): Promise<void> {
+): Promise<string> {
+  const root = await resolveExportRoot(destination, plan);
+
   for (const directory of plan.directories) {
-    await mkdir(resolveUnder(destination, directory), { recursive: true });
+    await mkdir(resolveUnder(root, directory), { recursive: true });
   }
 
   for (const file of plan.files) {
-    const fullPath = resolveUnder(destination, file.relativePath);
+    const fullPath = resolveUnder(root, file.relativePath);
     await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, Buffer.from(file.body, "utf8"));
+    try {
+      await writeFile(fullPath, Buffer.from(file.body, "utf8"), { flag: "wx" });
+    } catch (error) {
+      if (isErrorCode(error, "EEXIST")) {
+        throw new Error(`Refusing to overwrite existing file "${fullPath}".`);
+      }
+      throw error;
+    }
   }
+
+  return root;
+}
+
+async function resolveExportRoot(
+  destination: string,
+  plan: NotesFolderExportPlan,
+): Promise<string> {
+  const entries = await readDestinationEntries(destination);
+  if (plan.files.length === 0 && plan.directories.length === 0) {
+    return destination;
+  }
+  if (entries.length > 0 || (await anyPlanPathExists(destination, plan))) {
+    return createEmptyExportSubfolder(destination);
+  }
+  return destination;
+}
+
+async function readDestinationEntries(destination: string): Promise<string[]> {
+  try {
+    return await readdir(destination);
+  } catch (error) {
+    throw new Error(
+      `Export destination "${destination}" is not a writable folder${
+        error instanceof Error ? `: ${error.message}` : "."
+      }`,
+    );
+  }
+}
+
+async function anyPlanPathExists(root: string, plan: NotesFolderExportPlan): Promise<boolean> {
+  for (const directory of plan.directories) {
+    if (await pathExists(resolveUnder(root, directory))) return true;
+  }
+  for (const file of plan.files) {
+    if (await pathExists(resolveUnder(root, file.relativePath))) return true;
+  }
+  return false;
+}
+
+async function pathExists(fullPath: string): Promise<boolean> {
+  try {
+    await stat(fullPath);
+    return true;
+  } catch (error) {
+    if (isErrorCode(error, "ENOENT")) return false;
+    throw error;
+  }
+}
+
+async function createEmptyExportSubfolder(parent: string): Promise<string> {
+  const stamp = localIsoDate(new Date());
+  const base = `Hanoki Notes Export ${stamp}`;
+
+  for (let attempt = 1; attempt <= EXPORT_SUBFOLDER_ATTEMPTS; attempt += 1) {
+    const name = attempt === 1 ? base : `${base}-${attempt}`;
+    const fullPath = join(parent, name);
+    try {
+      await mkdir(fullPath);
+      return fullPath;
+    } catch (error) {
+      if (isErrorCode(error, "EEXIST")) continue;
+      throw new Error(
+        `Could not create a safe empty export folder under "${parent}"${
+          error instanceof Error ? `: ${error.message}` : "."
+        } Existing files were not changed.`,
+      );
+    }
+  }
+
+  throw new Error(
+    `Could not create a safe empty export folder under "${parent}". Existing files were not changed.`,
+  );
+}
+
+function localIsoDate(date: Date): string {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isErrorCode(error: unknown, code: "EEXIST" | "ENOENT"): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 export async function collectMarkdownFiles(

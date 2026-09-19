@@ -192,11 +192,11 @@ function ChatTreeItemContextMenu({
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("export-markdown-notes")}>
               <HugeiconsIcon icon={FileExportIcon} />
-              Export Notes
+              Export Workspace Notes…
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("import-markdown-notes")}>
               <HugeiconsIcon icon={FileImportIcon} />
-              Import Notes
+              Import Workspace Notes…
             </ContextMenuItem>
           </ContextMenuGroup>
         ) : (

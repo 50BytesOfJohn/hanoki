@@ -163,7 +163,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     expect(result.ignoredNonMarkdownCount).toBe(1);
     expect(result.ignoredDirectoryNames).toEqual([".git", ".obsidian"]);
     expect(formatNotesFolderImportSummary(result)).toBe(
-      `1 note added from ${root}. 1 oversized file skipped. 1 non-markdown file ignored. Ignored .git/, .obsidian/.`,
+      `1 note added from ${root}. 1 oversized file skipped. 1 non-markdown file ignored. Ignored .git/, .obsidian/. huge.md is larger than 5 MiB and was skipped.`,
     );
   });
 });

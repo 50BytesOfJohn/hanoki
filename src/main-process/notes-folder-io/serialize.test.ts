@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo, MarkdownInfo } from "@shared/ipc";
@@ -10,6 +10,7 @@ import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 import {
   buildNotesFolderExportPlan,
   collectMarkdownFiles,
+  type NotesFolderExportPlan,
   titleFromMarkdownFileName,
   writeNotesFolderExportPlan,
 } from "./serialize";
@@ -383,5 +384,82 @@ describe("titleFromMarkdownFileName", () => {
     expect(plan.files).toEqual([{ relativePath: `${"n".repeat(120)}.md`, body: "body" }]);
     expect(titleFromMarkdownFileName(`${"n".repeat(120)}.md`)).toBe("n".repeat(120));
     expect(titleFromMarkdownFileName(`${"n".repeat(120)}.md`)).not.toBe(originalTitle);
+  });
+});
+
+describe("writeNotesFolderExportPlan destination safety", () => {
+  const plan: NotesFolderExportPlan = {
+    directories: ["Drafts"],
+    files: [{ relativePath: "Drafts/Scene.md", body: "once" }],
+    skippedNonMarkdownCount: 0,
+  };
+
+  it("writes into an empty destination in place", async () => {
+    const dest = await makeTempDir();
+    const root = await writeNotesFolderExportPlan(dest, plan);
+    expect(root).toBe(dest);
+    expect(await readFile(join(dest, "Drafts", "Scene.md"), "utf8")).toBe("once");
+  });
+
+  it("nests into a fresh subfolder when the destination is not empty", async () => {
+    const dest = await makeTempDir();
+    await writeFile(join(dest, "keep.txt"), "untouched");
+    const root = await writeNotesFolderExportPlan(dest, plan);
+
+    expect(root).not.toBe(dest);
+    expect(basename(root)).toMatch(/^Hanoki Notes Export \d{4}-\d{2}-\d{2}$/);
+    expect(await readFile(join(dest, "keep.txt"), "utf8")).toBe("untouched");
+    expect(await readFile(join(root, "Drafts", "Scene.md"), "utf8")).toBe("once");
+    await expect(readFile(join(dest, "Drafts", "Scene.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("does not overwrite an existing planned path", async () => {
+    const dest = await makeTempDir();
+    await mkdir(join(dest, "Drafts"));
+    await writeFile(join(dest, "Drafts", "Scene.md"), "original");
+    const root = await writeNotesFolderExportPlan(dest, plan);
+
+    expect(root).not.toBe(dest);
+    expect(await readFile(join(dest, "Drafts", "Scene.md"), "utf8")).toBe("original");
+    expect(await readFile(join(root, "Drafts", "Scene.md"), "utf8")).toBe("once");
+  });
+
+  it("suffixes the nested folder when today's export name is already taken", async () => {
+    const dest = await makeTempDir();
+    await writeFile(join(dest, "keep.txt"), "untouched");
+    const first = await writeNotesFolderExportPlan(dest, plan);
+    const second = await writeNotesFolderExportPlan(dest, plan);
+
+    expect(first).not.toBe(second);
+    expect(await readdir(dest)).toEqual(
+      expect.arrayContaining([basename(first), basename(second), "keep.txt"]),
+    );
+    expect(await readFile(join(dest, "keep.txt"), "utf8")).toBe("untouched");
+    expect(await readFile(join(first, "Drafts", "Scene.md"), "utf8")).toBe("once");
+    expect(await readFile(join(second, "Drafts", "Scene.md"), "utf8")).toBe("once");
+  });
+
+  it("refuses a destination that is not a folder", async () => {
+    const dest = await makeTempDir();
+    const filePath = join(dest, "not-a-folder");
+    await writeFile(filePath, "nope");
+    await expect(writeNotesFolderExportPlan(filePath, plan)).rejects.toThrow(
+      /not a writable folder/,
+    );
+    expect(await readFile(filePath, "utf8")).toBe("nope");
+  });
+
+  it("does not create a nested folder when there is nothing to write", async () => {
+    const dest = await makeTempDir();
+    await writeFile(join(dest, "keep.txt"), "untouched");
+    const root = await writeNotesFolderExportPlan(dest, {
+      directories: [],
+      files: [],
+      skippedNonMarkdownCount: 0,
+    });
+    expect(root).toBe(dest);
+    expect(await readdir(dest)).toEqual(["keep.txt"]);
   });
 });
