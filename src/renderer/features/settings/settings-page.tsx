@@ -353,7 +353,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
     <>
       <SettingsRow
         title="Export notes"
-        description="Write a snapshot of this workspace's markdown notes as nested .md files. This is not a live vault. Chats and terminals are skipped."
+        description="Write a snapshot of this workspace's markdown notes as nested .md files in a new subfolder. This is not a live vault. Chats and terminals are skipped."
         control={
           <Button
             type="button"

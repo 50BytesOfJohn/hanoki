@@ -88,19 +88,16 @@ async function resolveExportRoot(
   destination: string,
   plan: NotesFolderExportPlan,
 ): Promise<string> {
-  const entries = await readDestinationEntries(destination);
+  await assertWritableDirectory(destination);
   if (plan.files.length === 0 && plan.directories.length === 0) {
     return destination;
   }
-  if (entries.length > 0 || (await anyPlanPathExists(destination, plan))) {
-    return createEmptyExportSubfolder(destination);
-  }
-  return destination;
+  return createEmptyExportSubfolder(destination);
 }
 
-async function readDestinationEntries(destination: string): Promise<string[]> {
+async function assertWritableDirectory(destination: string): Promise<void> {
   try {
-    return await readdir(destination);
+    await readdir(destination);
   } catch (error) {
     throw new Error(
       `Export destination "${destination}" is not a writable folder${
@@ -110,29 +107,8 @@ async function readDestinationEntries(destination: string): Promise<string[]> {
   }
 }
 
-async function anyPlanPathExists(root: string, plan: NotesFolderExportPlan): Promise<boolean> {
-  for (const directory of plan.directories) {
-    if (await pathExists(resolveUnder(root, directory))) return true;
-  }
-  for (const file of plan.files) {
-    if (await pathExists(resolveUnder(root, file.relativePath))) return true;
-  }
-  return false;
-}
-
-async function pathExists(fullPath: string): Promise<boolean> {
-  try {
-    await stat(fullPath);
-    return true;
-  } catch (error) {
-    if (error instanceof Error && isNodeErrorCode(error, "ENOENT")) return false;
-    throw error;
-  }
-}
-
 async function createEmptyExportSubfolder(parent: string): Promise<string> {
-  const stamp = localIsoDate(new Date());
-  const base = `Hanoki Notes Export ${stamp}`;
+  const base = `Hanoki-export-${exportTimestamp(new Date())}`;
 
   for (let attempt = 1; attempt <= EXPORT_SUBFOLDER_ATTEMPTS; attempt += 1) {
     const name = attempt === 1 ? base : `${base}-${attempt}`;
@@ -155,14 +131,17 @@ async function createEmptyExportSubfolder(parent: string): Promise<string> {
   );
 }
 
-function localIsoDate(date: Date): string {
+function exportTimestamp(date: Date): string {
   const year = String(date.getFullYear());
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}${minutes}${seconds}`;
 }
 
-function isNodeErrorCode(error: Error, code: "EEXIST" | "ENOENT"): boolean {
+function isNodeErrorCode(error: Error, code: "EEXIST"): boolean {
   return "code" in error && error.code === code;
 }
 

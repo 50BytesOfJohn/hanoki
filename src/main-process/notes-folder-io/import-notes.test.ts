@@ -79,7 +79,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     const body = "# Title\n\nLine with trailing spaces  \n\n```\ncode\n```\n\n日本語\n";
     const originalIds = ["md-existing-1", "md-existing-2"];
     const dest = await makeTempDir();
-    await writeNotesFolderExportPlan(
+    const exported = await writeNotesFolderExportPlan(
       dest,
       buildNotesFolderExportPlan({
         workspaceId: "workspace-1",
@@ -126,7 +126,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     );
 
     const tree = memoryTree();
-    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", dest);
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", exported);
     const importedBodies = tree.notes
       .map((note) => note.data.markdown)
       .sort((left, right) => left.localeCompare(right));
@@ -134,7 +134,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     expect(importedBodies).toEqual([body, "second"].sort((left, right) => (left < right ? -1 : 1)));
     expect(tree.notes.every((note) => !originalIds.includes(note.id))).toBe(true);
 
-    const again = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", dest);
+    const again = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", exported);
     expect(again.noteCount).toBe(2);
     expect(tree.notes).toHaveLength(4);
     expect(

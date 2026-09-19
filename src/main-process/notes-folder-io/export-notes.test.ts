@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChatTreeSnapshot } from "@shared/ipc";
@@ -51,8 +51,9 @@ describe("exportMarkdownNotesToDirectory", () => {
 
     expect(calls).toEqual(["flush", "tree:workspace-1"]);
     expect(result.noteCount).toBe(1);
-    expect(result.folderPath).toBe(dest);
-    expect(await readFile(join(dest, "Stored.md"), "utf8")).toBe(storedBody);
+    expect(result.folderPath).not.toBe(dest);
+    expect(basename(result.folderPath)).toMatch(/^Hanoki-export-\d{4}-\d{2}-\d{2}T\d{6}(-\d+)?$/);
+    expect(await readFile(join(result.folderPath, "Stored.md"), "utf8")).toBe(storedBody);
   });
 
   it("reports a nested folderPath when the picked directory is not empty", async () => {
@@ -87,7 +88,7 @@ describe("exportMarkdownNotesToDirectory", () => {
     const result = await exportMarkdownNotesToDirectory(chatTree, "workspace-1", dest);
 
     expect(result.folderPath).not.toBe(dest);
-    expect(result.folderPath).toMatch(/Hanoki Notes Export \d{4}-\d{2}-\d{2}$/);
+    expect(basename(result.folderPath)).toMatch(/^Hanoki-export-\d{4}-\d{2}-\d{2}T\d{6}(-\d+)?$/);
     expect(await readFile(join(dest, "keep.txt"), "utf8")).toBe("untouched");
     expect(await readFile(join(result.folderPath, "Stored.md"), "utf8")).toBe("body");
   });

@@ -298,8 +298,8 @@ describe("notes folder round-trip", () => {
     );
 
     const dest = await makeTempDir();
-    await writeNotesFolderExportPlan(dest, plan);
-    const collected = await collectMarkdownFiles(dest);
+    const root = await writeNotesFolderExportPlan(dest, plan);
+    const collected = await collectMarkdownFiles(root);
     const exportedBodies = [...plan.files]
       .map((file) => file.body)
       .sort((left, right) => left.localeCompare(right));
@@ -313,12 +313,12 @@ describe("notes folder round-trip", () => {
 
   it("writes UTF-8 without BOM and strips a leading BOM on import", async () => {
     const dest = await makeTempDir();
-    await writeNotesFolderExportPlan(dest, {
+    const root = await writeNotesFolderExportPlan(dest, {
       directories: [],
       files: [{ relativePath: "Note.md", body: "café" }],
       skippedNonMarkdownCount: 0,
     });
-    const written = await readFile(join(dest, "Note.md"));
+    const written = await readFile(join(root, "Note.md"));
     expect(written.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(false);
     expect(written.toString("utf8")).toBe("café");
 
@@ -393,21 +393,26 @@ describe("writeNotesFolderExportPlan destination safety", () => {
     files: [{ relativePath: "Drafts/Scene.md", body: "once" }],
     skippedNonMarkdownCount: 0,
   };
+  const exportFolderName = /^Hanoki-export-\d{4}-\d{2}-\d{2}T\d{6}(-\d+)?$/;
 
-  it("writes into an empty destination in place", async () => {
+  it("always writes into a fresh subfolder, even when the destination is empty", async () => {
     const dest = await makeTempDir();
     const root = await writeNotesFolderExportPlan(dest, plan);
-    expect(root).toBe(dest);
-    expect(await readFile(join(dest, "Drafts", "Scene.md"), "utf8")).toBe("once");
+    expect(root).not.toBe(dest);
+    expect(basename(root)).toMatch(exportFolderName);
+    expect(await readFile(join(root, "Drafts", "Scene.md"), "utf8")).toBe("once");
+    await expect(readFile(join(dest, "Drafts", "Scene.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
-  it("nests into a fresh subfolder when the destination is not empty", async () => {
+  it("does not write into the picked directory's existing contents", async () => {
     const dest = await makeTempDir();
     await writeFile(join(dest, "keep.txt"), "untouched");
     const root = await writeNotesFolderExportPlan(dest, plan);
 
     expect(root).not.toBe(dest);
-    expect(basename(root)).toMatch(/^Hanoki Notes Export \d{4}-\d{2}-\d{2}$/);
+    expect(basename(root)).toMatch(exportFolderName);
     expect(await readFile(join(dest, "keep.txt"), "utf8")).toBe("untouched");
     expect(await readFile(join(root, "Drafts", "Scene.md"), "utf8")).toBe("once");
     await expect(readFile(join(dest, "Drafts", "Scene.md"), "utf8")).rejects.toMatchObject({
@@ -426,13 +431,15 @@ describe("writeNotesFolderExportPlan destination safety", () => {
     expect(await readFile(join(root, "Drafts", "Scene.md"), "utf8")).toBe("once");
   });
 
-  it("suffixes the nested folder when today's export name is already taken", async () => {
+  it("uses a unique nested folder when the timestamp name is already taken", async () => {
     const dest = await makeTempDir();
     await writeFile(join(dest, "keep.txt"), "untouched");
     const first = await writeNotesFolderExportPlan(dest, plan);
     const second = await writeNotesFolderExportPlan(dest, plan);
 
     expect(first).not.toBe(second);
+    expect(basename(first)).toMatch(exportFolderName);
+    expect(basename(second)).toMatch(exportFolderName);
     expect(await readdir(dest)).toEqual(
       expect.arrayContaining([basename(first), basename(second), "keep.txt"]),
     );
