@@ -74,7 +74,7 @@ export async function writeNotesFolderExportPlan(
     try {
       await writeFile(fullPath, Buffer.from(file.body, "utf8"), { flag: "wx" });
     } catch (error) {
-      if (isErrorCode(error, "EEXIST")) {
+      if (error instanceof Error && isNodeErrorCode(error, "EEXIST")) {
         throw new Error(`Refusing to overwrite existing file "${fullPath}".`);
       }
       throw error;
@@ -125,7 +125,7 @@ async function pathExists(fullPath: string): Promise<boolean> {
     await stat(fullPath);
     return true;
   } catch (error) {
-    if (isErrorCode(error, "ENOENT")) return false;
+    if (error instanceof Error && isNodeErrorCode(error, "ENOENT")) return false;
     throw error;
   }
 }
@@ -141,7 +141,7 @@ async function createEmptyExportSubfolder(parent: string): Promise<string> {
       await mkdir(fullPath);
       return fullPath;
     } catch (error) {
-      if (isErrorCode(error, "EEXIST")) continue;
+      if (error instanceof Error && isNodeErrorCode(error, "EEXIST")) continue;
       throw new Error(
         `Could not create a safe empty export folder under "${parent}"${
           error instanceof Error ? `: ${error.message}` : "."
@@ -162,8 +162,8 @@ function localIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function isErrorCode(error: unknown, code: "EEXIST" | "ENOENT"): boolean {
-  return error instanceof Error && "code" in error && error.code === code;
+function isNodeErrorCode(error: Error, code: "EEXIST" | "ENOENT"): boolean {
+  return "code" in error && error.code === code;
 }
 
 export async function collectMarkdownFiles(
