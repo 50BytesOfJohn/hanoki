@@ -6,6 +6,7 @@ import {
   type ChatExportFormat,
   type ChatExportResult,
 } from "@shared/chat/chat-export";
+import { safeFileName } from "@shared/files/safe-file-name";
 import type { AppServices } from "../services";
 import { renderChatAsHtml, serializeChatAsJson, serializeChatAsMarkdown } from "./serialize";
 
@@ -24,7 +25,7 @@ export async function exportChatToFile({
   const formatDefinition = getChatExportFormat(format);
   const options: SaveDialogOptions = {
     title: "Export chat",
-    defaultPath: `${safeFileName(chat.title)}.${formatDefinition.extension}`,
+    defaultPath: `${safeFileName(chat.title, "Chat")}.${formatDefinition.extension}`,
     buttonLabel: "Export",
     filters: [
       {
@@ -58,16 +59,6 @@ export async function exportChatToFile({
   }
 
   return { status: "saved", filePath: result.filePath };
-}
-
-function safeFileName(title: string): string {
-  return (
-    title
-      .replace(/[<>:"/\\|?*\p{Cc}]/gu, "-")
-      .replace(/[. ]+$/g, "")
-      .trim()
-      .slice(0, 120) || "Chat"
-  );
 }
 
 async function renderPdf(html: string): Promise<Buffer> {

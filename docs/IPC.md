@@ -20,7 +20,7 @@ Consistent IPC structure for this repo. Keep it small and direct. Follow YAGNI.
   - Trusted renderer URL checks.
 - `src/main-process/ipc/modules/*.ts`
   - Domain handlers only.
-  - Current split: `workspaces`, `settings`, `context-menu`, `chat-tree`, `folders`, `chats`, `messages`, `models`, `providers`.
+  - Current split: `workspaces`, `settings`, `context-menu`, `chat-tree`, `folders`, `chats`, `markdown`, `messages`, `models`, `providers`.
 - `src/main-process/ipc/index.ts`
   - Single entrypoint for IPC registration.
 
