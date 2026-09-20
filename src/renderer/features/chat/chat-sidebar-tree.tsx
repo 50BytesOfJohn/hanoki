@@ -470,14 +470,14 @@ function ChatSidebarTreeInner({
         | undefined
         | ((old: string | null | undefined) => string | null | undefined),
     ) => {
-      setRenamingItemRaw((prev) => (typeof updater === "function" ? updater(prev) : updater));
+      setRenamingItemRaw((prev) => (updater instanceof Function ? updater(prev) : updater));
     },
     [],
   );
 
   const setRenamingValue = React.useCallback(
     (updater: string | undefined | ((old: string | undefined) => string | undefined)) => {
-      setRenamingValueRaw((prev) => (typeof updater === "function" ? updater(prev) : updater));
+      setRenamingValueRaw((prev) => (updater instanceof Function ? updater(prev) : updater));
     },
     [],
   );
@@ -1105,12 +1105,12 @@ interface ActivitySection {
 function groupChatsByActivity(chats: ChatInfo[]): ActivitySection[] {
   const dayMs = 24 * 60 * 60 * 1000;
   const startOfToday = new Date().setHours(0, 0, 0, 0);
-  const buckets = [
-    { label: "Today", from: startOfToday },
-    { label: "Last 7 days", from: startOfToday - 6 * dayMs },
-    { label: "Last 30 days", from: startOfToday - 29 * dayMs },
-    { label: "Older", from: Number.NEGATIVE_INFINITY },
-  ].map((bucket) => ({ ...bucket, chats: [] as ChatInfo[] }));
+  const buckets: { label: string; from: number; chats: ChatInfo[] }[] = [
+    { label: "Today", from: startOfToday, chats: [] },
+    { label: "Last 7 days", from: startOfToday - 6 * dayMs, chats: [] },
+    { label: "Last 30 days", from: startOfToday - 29 * dayMs, chats: [] },
+    { label: "Older", from: Number.NEGATIVE_INFINITY, chats: [] },
+  ];
 
   for (const chat of chats) {
     const bucket = buckets.find((candidate) => chat.updatedAt >= candidate.from);
@@ -1464,6 +1464,8 @@ function ChatTreeView({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+type TreeItemRowStyle = React.CSSProperties & { "--tree-level": number };
+
 function ChatTreeItemRow({
   className,
   level = 0,
@@ -1472,6 +1474,22 @@ function ChatTreeItemRow({
 }: React.ComponentProps<"div"> & {
   level?: number;
 }) {
+  const rowStyle: TreeItemRowStyle = {
+    ...style,
+    "--tree-level": level,
+    paddingInlineStart: `calc(var(--tree-indent) * ${level} + 0.5rem)`,
+  };
+  if (level > 0) {
+    // One hairline per ancestor level, each centred on that ancestor's icon
+    // slot. Rows are flush (no gap), so the hairlines read as continuous rails.
+    rowStyle.backgroundImage =
+      "repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px var(--tree-indent))";
+    // 0.5rem row padding + half of the 20px icon slot.
+    rowStyle.backgroundPosition = "1.125rem 0";
+    rowStyle.backgroundSize = `calc(var(--tree-indent) * ${level}) 100%`;
+    rowStyle.backgroundRepeat = "no-repeat";
+  }
+
   return (
     <div
       className={cn(
@@ -1483,23 +1501,7 @@ function ChatTreeItemRow({
         className,
       )}
       role="treeitem"
-      style={
-        {
-          ...style,
-          "--tree-level": level,
-          paddingInlineStart: `calc(var(--tree-indent) * ${level} + 0.5rem)`,
-          // One hairline per ancestor level, each centred on that ancestor's icon
-          // slot. Rows are flush (no gap), so the hairlines read as continuous rails.
-          ...(level > 0 && {
-            backgroundImage:
-              "repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px var(--tree-indent))",
-            // 0.5rem row padding + half of the 20px icon slot.
-            backgroundPosition: "1.125rem 0",
-            backgroundSize: `calc(var(--tree-indent) * ${level}) 100%`,
-            backgroundRepeat: "no-repeat",
-          }),
-        } as React.CSSProperties
-      }
+      style={rowStyle}
       {...props}
     />
   );
