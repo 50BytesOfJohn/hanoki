@@ -2,12 +2,14 @@ import * as React from "react";
 import { getToolName, isToolUIPart, type DynamicToolUIPart, type ToolUIPart } from "ai";
 import {
   AlertCircleIcon,
+  ChatAdd01Icon,
   ComputerTerminal01Icon,
   Database02Icon,
   DatabaseSearchIcon,
   Edit02Icon,
   File01Icon,
   FileEditIcon,
+  FileScriptIcon,
   FolderAddIcon,
   FolderTransferIcon,
   GlobalSearchIcon,
@@ -370,6 +372,32 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Creating Hanoki folder failed",
     Details: GenericToolDetails,
   },
+  hanokiCreateChat: {
+    icon: ChatAdd01Icon,
+    pendingLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Creating chat “${title}”…` : "Creating a Hanoki chat…";
+    },
+    doneLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Created chat “${title}”` : "Created a Hanoki chat";
+    },
+    errorLabel: "Creating Hanoki chat failed",
+    Details: GenericToolDetails,
+  },
+  hanokiCreateMarkdown: {
+    icon: FileScriptIcon,
+    pendingLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Creating note “${title}”…` : "Creating a Hanoki note…";
+    },
+    doneLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Created note “${title}”` : "Created a Hanoki note";
+    },
+    errorLabel: "Creating Hanoki note failed",
+    Details: GenericToolDetails,
+  },
   hanokiMoveItems: {
     icon: FolderTransferIcon,
     pendingLabel: (input) => {
@@ -469,6 +497,31 @@ function describeApprovalRequest(
     };
   }
 
+  if (toolName === "hanokiMoveItems") {
+    const count = getArrayLength(input, "items");
+    return {
+      title: count === 1 ? "Move this Hanoki item?" : "Move these Hanoki items?",
+      body:
+        count > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {count === 1 ? "1 item will be moved." : `${count} items will be moved.`}
+          </p>
+        ) : null,
+    };
+  }
+
+  if (toolName === "hanokiRenameItem") {
+    const name = getStringField(input, "newName");
+    return {
+      title: "Rename this Hanoki item?",
+      body: name ? (
+        <p className="truncate rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
+          {name}
+        </p>
+      ) : null,
+    };
+  }
+
   return {
     title: `Allow ${toolName}?`,
     body: (
@@ -493,6 +546,7 @@ function ToolApprovalCard({
   const updateChatSettings = useUpdateChatSettings();
   const [hasResponded, setHasResponded] = React.useState(false);
   const { title, body } = describeApprovalRequest(toolName, input);
+  const canAllowForThisChat = toolName.startsWith("terminal");
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
@@ -515,22 +569,24 @@ function ToolApprovalCard({
         >
           Don&apos;t allow
         </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={hasResponded}
-          onClick={() => {
-            // Persist first: the approval below immediately resumes the
-            // generation, and the server reads this flag on that request.
-            updateChatSettings.mutate(
-              { id: chatId, input: { terminalAutoApprove: true } },
-              { onSettled: () => respond(true) },
-            );
-            setHasResponded(true);
-          }}
-        >
-          Allow for this chat
-        </Button>
+        {canAllowForThisChat ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={hasResponded}
+            onClick={() => {
+              // Persist first: the approval below immediately resumes the
+              // generation, and the server reads this flag on that request.
+              updateChatSettings.mutate(
+                { id: chatId, input: { terminalAutoApprove: true } },
+                { onSettled: () => respond(true) },
+              );
+              setHasResponded(true);
+            }}
+          >
+            Allow for this chat
+          </Button>
+        ) : null}
         <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
           Allow once
         </Button>
@@ -551,6 +607,8 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
     if (
       part.state !== "output-available" ||
       (toolName !== "hanokiCreateFolder" &&
+        toolName !== "hanokiCreateChat" &&
+        toolName !== "hanokiCreateMarkdown" &&
         toolName !== "hanokiMoveItems" &&
         toolName !== "hanokiRenameItem")
     ) {
@@ -561,6 +619,7 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
       queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.chats.all }),
       queryClient.invalidateQueries({ queryKey: queryKeys.folders.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
     ]);
   }, [part.state, part.toolCallId, toolName]);
 

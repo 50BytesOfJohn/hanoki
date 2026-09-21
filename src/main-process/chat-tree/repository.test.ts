@@ -6,16 +6,18 @@ import { sql } from "drizzle-orm";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
 import { upsertMessage } from "../messages/repository";
-import { createHanokiTools } from "../server/assistant/hanoki-tools";
+import { createHanokiTools, HANOKI_TOOL_NAMES } from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
   createChat,
   createFolder,
   createMarkdown,
+  createTerminal,
   getChatById,
   getChatTreeChildren,
   getFolderById,
+  getItemById,
   moveChatTreeItems,
   searchWorkspaceChats,
   updateChatSettings,
@@ -264,6 +266,11 @@ describe("Hanoki tool nullable inputs", () => {
       { name: "Created at root", parentFolderId: "" },
       options,
     );
+    await tools.hanokiCreateChat.execute!({ title: "Created chat at root", folderId: "" }, options);
+    await tools.hanokiCreateMarkdown.execute!(
+      { title: "Created note at root", folderId: "", body: "" },
+      options,
+    );
     await tools.hanokiMoveItems.execute!(
       { items: [{ kind: "chat", id: chat.id }], destinationFolderId: "" },
       options,
@@ -275,6 +282,217 @@ describe("Hanoki tool nullable inputs", () => {
         (folder) => folder.name === "Created at root",
       ),
     ).toBe(true);
+    expect(
+      getChatTreeChildren("tool-input-workspace", null).items.some(
+        (item) => item.type === "chat" && item.title === "Created chat at root",
+      ),
+    ).toBe(true);
+    expect(
+      getChatTreeChildren("tool-input-workspace", null).items.some(
+        (item) => item.type === "markdown" && item.title === "Created note at root",
+      ),
+    ).toBe(true);
+  });
+});
+
+const toolExecuteOptions = {
+  toolCallId: "test",
+  messages: [],
+  // SAFETY: Tool execute() types context as never; tests do not use it.
+  context: undefined as never,
+};
+
+function unwrapToolResult<T>(value: T): Exclude<T, AsyncIterable<unknown>> {
+  if (typeof value === "object" && value !== null && Symbol.asyncIterator in value) {
+    throw new Error("Expected a Hanoki tool result object.");
+  }
+  // SAFETY: Hanoki tools execute as one-shot objects; they never stream.
+  return value as Exclude<T, AsyncIterable<unknown>>;
+}
+
+describe("Hanoki create and browse kinds", () => {
+  it("registers the slice-1 tools on the agent tool map", () => {
+    expect(Object.keys(createHanokiTools("unused-workspace"))).toEqual([...HANOKI_TOOL_NAMES]);
+  });
+
+  it("creates chats and markdown notes, including an optional note body", async () => {
+    createWorkspace({ id: "create-tools-workspace", name: "Create tools" });
+    const folder = createFolder({
+      workspaceId: "create-tools-workspace",
+      name: "Notes",
+      parentId: null,
+    });
+    const tools = createHanokiTools("create-tools-workspace");
+
+    const chat = unwrapToolResult(
+      await tools.hanokiCreateChat.execute!(
+        { title: "  Planning  ", folderId: folder.id },
+        toolExecuteOptions,
+      ),
+    );
+    const emptyNote = unwrapToolResult(
+      await tools.hanokiCreateMarkdown.execute!(
+        { title: "Empty", folderId: null },
+        toolExecuteOptions,
+      ),
+    );
+    const filledNote = unwrapToolResult(
+      await tools.hanokiCreateMarkdown.execute!(
+        { title: "Filled", folderId: folder.id, body: "# Hello" },
+        toolExecuteOptions,
+      ),
+    );
+
+    expect(chat).toEqual(
+      expect.objectContaining({
+        kind: "chat",
+        name: "Planning",
+        parentFolderId: folder.id,
+        path: "Notes/Planning",
+      }),
+    );
+    expect(getChatById(chat.id)?.title).toBe("Planning");
+    expect(getItemById(emptyNote.id)).toEqual(
+      expect.objectContaining({ type: "markdown", folderId: null, data: { markdown: "" } }),
+    );
+    expect(getItemById(filledNote.id)).toEqual(
+      expect.objectContaining({
+        type: "markdown",
+        folderId: folder.id,
+        data: { markdown: "# Hello" },
+      }),
+    );
+  });
+
+  it("browses, renames, and moves markdown and terminal items with chats", async () => {
+    createWorkspace({ id: "browse-kinds-workspace", name: "Browse kinds" });
+    createFolder({
+      workspaceId: "browse-kinds-workspace",
+      name: "Inbox",
+      parentId: null,
+    });
+    const destination = createFolder({
+      workspaceId: "browse-kinds-workspace",
+      name: "Archive",
+      parentId: null,
+    });
+    const chat = createChat({
+      workspaceId: "browse-kinds-workspace",
+      title: "Chat",
+      folderId: null,
+    });
+    const note = createMarkdown({
+      workspaceId: "browse-kinds-workspace",
+      title: "Note",
+      folderId: null,
+    });
+    const terminal = createTerminal({
+      workspaceId: "browse-kinds-workspace",
+      title: "Shell",
+      folderId: null,
+      data: {
+        workingDirectory: "/tmp",
+        shell: "/bin/sh",
+        columns: 80,
+        rows: 24,
+        scrollback: "",
+        scrollbackVersion: 0,
+      },
+    });
+    const tools = createHanokiTools("browse-kinds-workspace");
+
+    const allRoot = unwrapToolResult(
+      await tools.hanokiBrowseItems.execute!(
+        { parentFolderId: null, kind: "all", limit: 20 },
+        toolExecuteOptions,
+      ),
+    );
+    expect(allRoot.items.map((item) => ({ kind: item.kind, name: item.name }))).toEqual(
+      expect.arrayContaining([
+        { kind: "folder", name: "Inbox" },
+        { kind: "folder", name: "Archive" },
+        { kind: "chat", name: "Chat" },
+        { kind: "markdown", name: "Note" },
+        { kind: "terminal", name: "Shell" },
+      ]),
+    );
+
+    const notesOnly = unwrapToolResult(
+      await tools.hanokiBrowseItems.execute!(
+        { parentFolderId: null, kind: "markdown", limit: 20 },
+        toolExecuteOptions,
+      ),
+    );
+    expect(notesOnly.items).toEqual([expect.objectContaining({ kind: "markdown", id: note.id })]);
+
+    const terminalsOnly = unwrapToolResult(
+      await tools.hanokiBrowseItems.execute!(
+        { parentFolderId: null, kind: "terminal", limit: 20 },
+        toolExecuteOptions,
+      ),
+    );
+    expect(terminalsOnly.items).toEqual([
+      expect.objectContaining({ kind: "terminal", id: terminal.id }),
+    ]);
+
+    const renamedNote = unwrapToolResult(
+      await tools.hanokiRenameItem.execute!(
+        { kind: "markdown", id: note.id, newName: "Renamed note" },
+        toolExecuteOptions,
+      ),
+    );
+    expect(renamedNote.after).toEqual(
+      expect.objectContaining({ kind: "markdown", id: note.id, name: "Renamed note" }),
+    );
+
+    const renamedTerminal = unwrapToolResult(
+      await tools.hanokiRenameItem.execute!(
+        { kind: "terminal", id: terminal.id, newName: "Renamed shell" },
+        toolExecuteOptions,
+      ),
+    );
+    expect(renamedTerminal.after).toEqual(
+      expect.objectContaining({ kind: "terminal", id: terminal.id, name: "Renamed shell" }),
+    );
+
+    const moved = unwrapToolResult(
+      await tools.hanokiMoveItems.execute!(
+        {
+          items: [
+            { kind: "chat", id: chat.id },
+            { kind: "markdown", id: note.id },
+            { kind: "terminal", id: terminal.id },
+          ],
+          destinationFolderId: destination.id,
+        },
+        toolExecuteOptions,
+      ),
+    );
+    expect(moved.moved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "chat", id: chat.id, parentFolderId: destination.id }),
+        expect.objectContaining({ kind: "markdown", id: note.id, parentFolderId: destination.id }),
+        expect.objectContaining({
+          kind: "terminal",
+          id: terminal.id,
+          parentFolderId: destination.id,
+        }),
+      ]),
+    );
+
+    const archived = unwrapToolResult(
+      await tools.hanokiBrowseItems.execute!(
+        { parentFolderId: destination.id, kind: "all", limit: 20 },
+        toolExecuteOptions,
+      ),
+    );
+    expect(archived.items.map((item) => item.kind).sort()).toEqual([
+      "chat",
+      "markdown",
+      "terminal",
+    ]);
+    expect(getItemById(note.id)?.folderId).toBe(destination.id);
+    expect(getItemById(terminal.id)?.folderId).toBe(destination.id);
   });
 });
 

@@ -2,31 +2,40 @@ import { jsonSchema, tool, type JSONSchema7 } from "ai";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderName } from "@shared/folder/folder-name";
+import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import { getMessageDisplayText } from "@shared/tiptap/document";
 import {
+  createChat,
   createFolder,
+  createMarkdown,
   getChatById,
   getChatCurrentBranchId,
   getChatTree,
   getChatTreeChildren,
   getFolderById,
+  getItemById,
   moveChatTreeItems,
   searchWorkspaceChats,
   updateChatTitle,
   updateFolderName,
+  updateItemTitle,
+  updateMarkdownContent,
   type ChatTreeFolderNode,
 } from "../../chat-tree/repository";
 import { listAllMessagesByChatId, listMessagesByChatId } from "../../messages/repository";
 
-type ItemKind = "chat" | "folder";
+type ItemKind = "chat" | "folder" | "markdown" | "terminal";
 type ItemRef = { kind: ItemKind; id: string };
+type BrowseKind = "all" | ItemKind;
+
+const itemKindEnum = ["chat", "folder", "markdown", "terminal"] as const;
 
 const itemRefSchema: JSONSchema7 = {
   type: "object",
   properties: {
     kind: {
       type: "string",
-      enum: ["chat", "folder"],
+      enum: [...itemKindEnum],
       description: "The kind of Hanoki item.",
     },
     id: {
@@ -68,6 +77,12 @@ function getFolderPaths(workspaceId: string): Map<string, string> {
   return paths;
 }
 
+function itemKindLabel(kind: Exclude<ItemKind, "folder">): string {
+  if (kind === "chat") return "Chat";
+  if (kind === "markdown") return "Markdown note";
+  return "Terminal";
+}
+
 function summarizeItem(workspaceId: string, item: ItemRef, folderPaths: Map<string, string>) {
   if (item.kind === "folder") {
     const folder = getFolderById(item.id);
@@ -84,19 +99,35 @@ function summarizeItem(workspaceId: string, item: ItemRef, folderPaths: Map<stri
     };
   }
 
-  const chat = getChatById(item.id);
-  if (!chat || chat.workspaceId !== workspaceId) {
-    throw new Error(`Chat "${item.id}" does not exist in this workspace.`);
+  const row = getItemById(item.id);
+  if (!row || row.workspaceId !== workspaceId) {
+    throw new Error(`${itemKindLabel(item.kind)} "${item.id}" does not exist in this workspace.`);
   }
-  const folderPath = chat.folderId ? folderPaths.get(chat.folderId) : undefined;
+  if (row.type !== item.kind) {
+    throw new Error(`Item "${item.id}" is not a ${item.kind}.`);
+  }
+  const folderPath = row.folderId ? folderPaths.get(row.folderId) : undefined;
   return {
     kind: item.kind,
-    id: chat.id,
-    name: chat.title,
-    parentFolderId: chat.folderId,
-    path: folderPath ? `${folderPath}/${chat.title}` : chat.title,
-    updatedAt: chat.updatedAt,
+    id: row.id,
+    name: row.title,
+    parentFolderId: row.folderId,
+    path: folderPath ? `${folderPath}/${row.title}` : row.title,
+    updatedAt: row.updatedAt,
   };
+}
+
+function toMoveRef(item: ItemRef) {
+  return { kind: item.kind === "folder" ? ("folder" as const) : ("item" as const), id: item.id };
+}
+
+function toToolItem(workspaceId: string, item: { kind: "item" | "folder"; id: string }): ItemRef {
+  if (item.kind === "folder") return { kind: "folder", id: item.id };
+  const row = getItemById(item.id);
+  if (!row || row.workspaceId !== workspaceId) {
+    throw new Error(`Item "${item.id}" does not exist in this workspace.`);
+  }
+  return { kind: row.type, id: row.id };
 }
 
 function getSnippet(text: string, query: string): string | null {
@@ -109,17 +140,26 @@ function getSnippet(text: string, query: string): string | null {
 }
 
 function getStoredMessageText(message: { parts: unknown[] }): string {
+  // SAFETY: persisted chat parts are Hanoki UI message parts.
   return getMessageDisplayText({ parts: message.parts as HanokiUiMessage["parts"] });
+}
+
+function parseItemTitle(kind: Exclude<ItemKind, "folder">, newName: string): string {
+  const parsed = parseChatTitle(newName);
+  if (!parsed.ok) {
+    throw new Error(parsed.error.replace("Chat", itemKindLabel(kind)));
+  }
+  return parsed.value;
 }
 
 export function createHanokiTools(workspaceId: string) {
   return {
     hanokiBrowseItems: tool({
       description:
-        "Browse chats and folders in the current Hanoki workspace. Use this to inspect the root or the direct children of a known folder and to obtain exact IDs for other Hanoki tools. This does not search message content or modify anything.",
+        "Browse chats, markdown notes, terminals, and folders in the current Hanoki workspace. Use this to inspect the root or the direct children of a known folder and to obtain exact IDs for other Hanoki tools. This does not search message content or modify anything.",
       inputSchema: jsonSchema<{
         parentFolderId: string | null;
-        kind: "all" | ItemKind;
+        kind: BrowseKind;
         limit: number;
         cursor?: string | null;
       }>({
@@ -131,7 +171,7 @@ export function createHanokiTools(workspaceId: string) {
           },
           kind: {
             type: "string",
-            enum: ["all", "chat", "folder"],
+            enum: ["all", ...itemKindEnum],
             description: "Which item kinds to return.",
           },
           limit: {
@@ -154,10 +194,10 @@ export function createHanokiTools(workspaceId: string) {
         const offset = parseCursor(cursor);
         const slice = getChatTreeChildren(workspaceId, normalizedParentFolderId);
         const folderPaths = getFolderPaths(workspaceId);
+        const includeFolders = kind === "all" || kind === "folder";
         const items = [
-          ...(kind === "chat"
-            ? []
-            : slice.folders.map((folder) => ({
+          ...(includeFolders
+            ? slice.folders.map((folder) => ({
                 kind: "folder" as const,
                 id: folder.id,
                 name: folder.name,
@@ -166,24 +206,15 @@ export function createHanokiTools(workspaceId: string) {
                 updatedAt: folder.updatedAt,
                 childFolderCount: folder.childFolderCount,
                 childItemCount: folder.childItemCount,
-              }))),
+              }))
+            : []),
           ...(kind === "folder"
             ? []
             : slice.items
-                .filter((item) => item.type === "chat")
-                .map((chat) => ({
-                  kind: "chat" as const,
-                  id: chat.id,
-                  name: chat.title,
-                  parentFolderId: chat.folderId,
-                  path: normalizedParentFolderId
-                    ? `${folderPaths.get(normalizedParentFolderId) ?? ""}/${chat.title}`.replace(
-                        /^\//,
-                        "",
-                      )
-                    : chat.title,
-                  updatedAt: chat.updatedAt,
-                }))),
+                .filter((item) => kind === "all" || item.type === kind)
+                .map((item) =>
+                  summarizeItem(workspaceId, { kind: item.type, id: item.id }, folderPaths),
+                )),
         ];
         const page = items.slice(offset, offset + limit);
         return {
@@ -346,9 +377,95 @@ export function createHanokiTools(workspaceId: string) {
       },
     }),
 
+    hanokiCreateChat: tool({
+      description:
+        "Create one chat in the current Hanoki workspace. Use this when the user explicitly asks to create a chat. Pass an exact folder ID returned by a Hanoki tool, or null to create it at the workspace root. The title is trimmed and validated before saving.",
+      strict: true,
+      inputSchema: jsonSchema<{ title: string; folderId: string | null }>({
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            description: "Title for the new chat.",
+          },
+          folderId: {
+            type: ["string", "null"],
+            description: "Exact parent folder ID, or null for the workspace root.",
+          },
+        },
+        required: ["title", "folderId"],
+        additionalProperties: false,
+      }),
+      execute: ({ title, folderId }) => {
+        const parsed = parseChatTitle(title);
+        if (!parsed.ok) throw new Error(parsed.error);
+        const chat = createChat({
+          workspaceId,
+          title: parsed.value,
+          folderId: normalizeNullableString(folderId),
+        });
+        return summarizeItem(
+          workspaceId,
+          { kind: "chat", id: chat.id },
+          getFolderPaths(workspaceId),
+        );
+      },
+    }),
+
+    hanokiCreateMarkdown: tool({
+      description:
+        "Create one markdown note in the current Hanoki workspace. Use this when the user explicitly asks to create a note. Pass an exact folder ID returned by a Hanoki tool, or null to create it at the workspace root. Optional body is saved immediately; omit it or pass null to create an empty note.",
+      strict: true,
+      inputSchema: jsonSchema<{ title: string; folderId: string | null; body?: string | null }>({
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            description: "Title for the new markdown note.",
+          },
+          folderId: {
+            type: ["string", "null"],
+            description: "Exact parent folder ID, or null for the workspace root.",
+          },
+          body: {
+            type: ["string", "null"],
+            default: null,
+            description: "Optional markdown body. Omit or pass null to create an empty note.",
+          },
+        },
+        required: ["title", "folderId"],
+        additionalProperties: false,
+      }),
+      execute: ({ title, folderId, body = null }) => {
+        const parsed = parseChatTitle(title);
+        if (!parsed.ok) throw new Error(parsed.error.replace("Chat", "Markdown item"));
+        const markdown = createMarkdown({
+          workspaceId,
+          title: parsed.value,
+          folderId: normalizeNullableString(folderId),
+        });
+        const normalizedBody = normalizeNullableString(body);
+        if (normalizedBody !== null) {
+          if (normalizedBody.length > MAX_MARKDOWN_LENGTH) {
+            throw new Error("Markdown content must be a string no larger than 5 MiB.");
+          }
+          updateMarkdownContent(markdown.id, normalizedBody);
+        }
+        return summarizeItem(
+          workspaceId,
+          { kind: "markdown", id: markdown.id },
+          getFolderPaths(workspaceId),
+        );
+      },
+    }),
+
     hanokiMoveItems: tool({
       description:
-        "Move one or more chats or folders to one destination in the current Hanoki workspace. Use this only when the user explicitly asks to apply a reorganization, not when they only ask for suggestions. Pass exact IDs returned by Hanoki tools; null moves the items to the workspace root, and selected descendants remain inside a selected parent folder.",
+        "Move one or more chats, markdown notes, terminals, or folders to one destination in the current Hanoki workspace. Use this only when the user explicitly asks to apply a reorganization, not when they only ask for suggestions. Pass exact IDs returned by Hanoki tools; null moves the items to the workspace root, and selected descendants remain inside a selected parent folder.",
       strict: true,
       inputSchema: jsonSchema<{ items: ItemRef[]; destinationFolderId: string | null }>({
         type: "object",
@@ -358,7 +475,7 @@ export function createHanokiTools(workspaceId: string) {
             minItems: 1,
             maxItems: 50,
             items: itemRefSchema,
-            description: "One to fifty exact chats or folders to move.",
+            description: "One to fifty exact chats, notes, terminals, or folders to move.",
           },
           destinationFolderId: {
             type: ["string", "null"],
@@ -372,27 +489,20 @@ export function createHanokiTools(workspaceId: string) {
         const normalizedDestinationFolderId = normalizeNullableString(destinationFolderId);
         const result = moveChatTreeItems(
           workspaceId,
-          items.map((item) => ({
-            kind: item.kind === "chat" ? ("item" as const) : ("folder" as const),
-            id: item.id,
-          })),
+          items.map(toMoveRef),
           normalizedDestinationFolderId,
         );
         const folderPaths = getFolderPaths(workspaceId);
-        const toToolItem = (item: { kind: "item" | "folder"; id: string }): ItemRef => ({
-          kind: item.kind === "item" ? "chat" : "folder",
-          id: item.id,
-        });
         return {
           destinationFolderId: normalizedDestinationFolderId,
           moved: result.movedItems.map((item) =>
-            summarizeItem(workspaceId, toToolItem(item), folderPaths),
+            summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
           ),
           unchanged: result.unchangedItems.map((item) =>
-            summarizeItem(workspaceId, toToolItem(item), folderPaths),
+            summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
           ),
           skipped: result.skippedItems.map(({ reason, ...item }) => ({
-            ...summarizeItem(workspaceId, toToolItem(item), folderPaths),
+            ...summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
             reason,
           })),
         };
@@ -401,14 +511,14 @@ export function createHanokiTools(workspaceId: string) {
 
     hanokiRenameItem: tool({
       description:
-        "Rename one chat or folder in the current Hanoki workspace. Use this only when the user explicitly asks to apply a rename, not when they only ask for title suggestions. Pass an exact ID returned by a Hanoki tool; the name is trimmed and validated before saving.",
+        "Rename one chat, markdown note, terminal, or folder in the current Hanoki workspace. Use this only when the user explicitly asks to apply a rename, not when they only ask for title suggestions. Pass an exact ID returned by a Hanoki tool; the name is trimmed and validated before saving.",
       strict: true,
       inputSchema: jsonSchema<{ kind: ItemKind; id: string; newName: string }>({
         type: "object",
         properties: {
           kind: {
             type: "string",
-            enum: ["chat", "folder"],
+            enum: [...itemKindEnum],
             description: "The kind of item to rename.",
           },
           id: {
@@ -420,7 +530,7 @@ export function createHanokiTools(workspaceId: string) {
             type: "string",
             minLength: 1,
             maxLength: 256,
-            description: "The new chat title or folder name.",
+            description: "The new chat title, note title, terminal title, or folder name.",
           },
         },
         required: ["kind", "id", "newName"],
@@ -429,10 +539,15 @@ export function createHanokiTools(workspaceId: string) {
       execute: ({ kind, id, newName }) => {
         const beforePaths = getFolderPaths(workspaceId);
         const before = summarizeItem(workspaceId, { kind, id }, beforePaths);
-        const parsed = kind === "chat" ? parseChatTitle(newName) : parseFolderName(newName);
-        if (!parsed.ok) throw new Error(parsed.error);
-        if (kind === "chat") updateChatTitle(id, parsed.value);
-        else updateFolderName(id, parsed.value);
+        if (kind === "folder") {
+          const parsed = parseFolderName(newName);
+          if (!parsed.ok) throw new Error(parsed.error);
+          updateFolderName(id, parsed.value);
+        } else if (kind === "chat") {
+          updateChatTitle(id, parseItemTitle(kind, newName));
+        } else {
+          updateItemTitle(id, parseItemTitle(kind, newName));
+        }
         return {
           before,
           after: summarizeItem(workspaceId, { kind, id }, getFolderPaths(workspaceId)),
@@ -447,6 +562,11 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiSearchChats",
   "hanokiGetChatContent",
   "hanokiCreateFolder",
+  "hanokiCreateChat",
+  "hanokiCreateMarkdown",
   "hanokiMoveItems",
   "hanokiRenameItem",
 ] as const;
+
+/** Move/rename pause for Allow once. No dedicated auto-approve setting this slice. */
+export const HANOKI_MUTATING_TOOL_NAMES = ["hanokiMoveItems", "hanokiRenameItem"] as const;
