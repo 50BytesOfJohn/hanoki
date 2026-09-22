@@ -34,6 +34,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/queries/keys";
+import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
 import { formatHanokiMoveApproval, formatHanokiRenameApproval } from "./tool-approval-summary";
@@ -659,9 +660,11 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
 }) {
   const toolName = part.type === "dynamic-tool" ? part.toolName : getToolName(part);
   const config = getToolConfig(toolName);
+  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
 
   React.useEffect(() => {
     if (
+      !workspaceId ||
       part.state !== "output-available" ||
       (toolName !== "hanokiCreateFolder" &&
         toolName !== "hanokiCreateChat" &&
@@ -672,13 +675,8 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
       return;
     }
 
-    void Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.chats.all }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.folders.all }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
-    ]);
-  }, [part.state, part.toolCallId, toolName]);
+    notifyChatTreeChanged(workspaceId);
+  }, [part.state, part.toolCallId, toolName, workspaceId]);
 
   if (part.state === "input-streaming" || part.state === "input-available") {
     return (

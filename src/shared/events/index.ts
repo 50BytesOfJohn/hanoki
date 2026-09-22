@@ -37,6 +37,12 @@ export interface ItemTitleUpdatedEvent {
   title: string;
 }
 
+/** Emitted when the chat tree changes outside the renderer, e.g. Hanoki assistant tools. */
+export interface ChatTreeChangedEvent {
+  type: "chat-tree:changed";
+  workspaceId: string;
+}
+
 /**
  * Auto-update lifecycle, mirrored from Electron's `autoUpdater` in the main process.
  *
@@ -70,6 +76,7 @@ export type SystemEvent =
   | ProvidersStartupModelSyncCompletedEvent
   | GlobalChatSettingsUpdatedEvent
   | ItemTitleUpdatedEvent
+  | ChatTreeChangedEvent
   | UpdateStateChangedEvent;
 
 export interface AiServerStateSnapshot {

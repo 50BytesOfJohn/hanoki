@@ -45,6 +45,7 @@ export const useSystemStore = create<SystemStoreState>((set) => ({
       case "providers:model-sync:completed":
       case "providers:start-model-sync:completed":
       case "item:title-updated":
+      case "chat-tree:changed":
         break;
     }
   },

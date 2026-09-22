@@ -185,10 +185,17 @@ function parseItemTitle(kind: Exclude<ItemKind, "folder">, newName: string): str
 export function createHanokiTools({
   workspaceId,
   chatId,
+  onTreeChanged,
 }: {
   workspaceId: string;
   chatId: string;
+  onTreeChanged?: () => void;
 }) {
+  const treeChanged = <T>(result: T): T => {
+    onTreeChanged?.();
+    return result;
+  };
+
   return {
     hanokiBrowseItems: tool({
       description:
@@ -451,10 +458,12 @@ export function createHanokiTools({
           name: parsed.value,
           parentId: normalizeNullableString(parentFolderId),
         });
-        return summarizeItem(
-          workspaceId,
-          { kind: "folder", id: folder.id },
-          getFolderPaths(workspaceId),
+        return treeChanged(
+          summarizeItem(
+            workspaceId,
+            { kind: "folder", id: folder.id },
+            getFolderPaths(workspaceId),
+          ),
         );
       },
     }),
@@ -488,10 +497,8 @@ export function createHanokiTools({
           title: parsed.value,
           folderId: normalizeNullableString(folderId),
         });
-        return summarizeItem(
-          workspaceId,
-          { kind: "chat", id: chat.id },
-          getFolderPaths(workspaceId),
+        return treeChanged(
+          summarizeItem(workspaceId, { kind: "chat", id: chat.id }, getFolderPaths(workspaceId)),
         );
       },
     }),
@@ -535,10 +542,12 @@ export function createHanokiTools({
           folderId: normalizeNullableString(folderId),
         });
         if (normalizedBody !== null) updateMarkdownContent(markdown.id, normalizedBody);
-        return summarizeItem(
-          workspaceId,
-          { kind: "markdown", id: markdown.id },
-          getFolderPaths(workspaceId),
+        return treeChanged(
+          summarizeItem(
+            workspaceId,
+            { kind: "markdown", id: markdown.id },
+            getFolderPaths(workspaceId),
+          ),
         );
       },
     }),
@@ -577,7 +586,7 @@ export function createHanokiTools({
           normalizedDestinationFolderId,
         );
         const folderPaths = getFolderPaths(workspaceId);
-        return {
+        return treeChanged({
           destinationFolderId: normalizedDestinationFolderId,
           moved: result.movedItems.map((item) =>
             summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
@@ -589,7 +598,7 @@ export function createHanokiTools({
             ...summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
             reason,
           })),
-        };
+        });
       },
     }),
 
@@ -632,10 +641,10 @@ export function createHanokiTools({
         } else {
           updateItemTitle(id, parseItemTitle(kind, newName));
         }
-        return {
+        return treeChanged({
           before,
           after: summarizeItem(workspaceId, { kind, id }, getFolderPaths(workspaceId)),
-        };
+        });
       },
     }),
   };

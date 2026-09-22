@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
@@ -502,9 +502,11 @@ describe("Hanoki create and browse kinds", () => {
       name: "Notes",
       parentId: null,
     });
+    const onTreeChanged = vi.fn();
     const tools = createHanokiTools({
       workspaceId: "create-tools-workspace",
       chatId: "unused-chat",
+      onTreeChanged,
     });
 
     const chat = unwrapToolResult(
@@ -545,13 +547,16 @@ describe("Hanoki create and browse kinds", () => {
         data: { markdown: "# Hello" },
       }),
     );
+    expect(onTreeChanged).toHaveBeenCalledTimes(3);
   });
 
   it("rejects an oversized markdown body without creating a note", async () => {
     createWorkspace({ id: "oversized-markdown-workspace", name: "Oversized" });
+    const onTreeChanged = vi.fn();
     const tools = createHanokiTools({
       workspaceId: "oversized-markdown-workspace",
       chatId: "unused-chat",
+      onTreeChanged,
     });
 
     await expect(async () => {
@@ -566,6 +571,7 @@ describe("Hanoki create and browse kinds", () => {
     }).rejects.toThrow("Markdown content must be a string no larger than 5 MiB.");
 
     expect(getChatTreeChildren("oversized-markdown-workspace", null).items).toEqual([]);
+    expect(onTreeChanged).not.toHaveBeenCalled();
   });
 
   it("rejects a move when the claimed kind does not match the item", async () => {

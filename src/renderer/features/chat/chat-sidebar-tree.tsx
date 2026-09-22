@@ -128,7 +128,7 @@ import {
 import { useChatTreeSort } from "./use-chat-tree-sort";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
-import { subscribeToItemTitleUpdates } from "../items/item-title-events";
+import { subscribeToChatTreeChanges } from "../items/item-title-events";
 import { useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane } from "../workspace/store/layout-tree";
 
@@ -636,8 +636,8 @@ function ChatSidebarTreeInner({
 
   React.useEffect(
     () =>
-      subscribeToItemTitleUpdates((event) => {
-        if (event.workspaceId !== workspaceId) {
+      subscribeToChatTreeChanges((changedWorkspaceId) => {
+        if (changedWorkspaceId !== workspaceId) {
           return;
         }
 
