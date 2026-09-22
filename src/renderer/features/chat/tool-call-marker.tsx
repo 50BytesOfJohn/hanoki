@@ -33,6 +33,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/queries/keys";
+import { useWorkspaceStore } from "@/features/workspace/store";
+import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import { formatHanokiMoveApproval, formatHanokiRenameApproval } from "./tool-approval-summary";
 
 export { isToolUIPart };
 
@@ -446,6 +449,7 @@ function getToolConfig(toolName: string): ToolMarkerConfig {
 function describeApprovalRequest(
   toolName: string,
   input: unknown,
+  names: { destinationFolderName: string | null; currentItemName: string | null },
 ): { title: string; body: React.ReactNode } {
   if (toolName === "terminalRun") {
     const command = getStringField(input, "command");
@@ -498,25 +502,27 @@ function describeApprovalRequest(
   }
 
   if (toolName === "hanokiMoveItems") {
-    const count = getArrayLength(input, "items");
+    const move = formatHanokiMoveApproval(input, names.destinationFolderName);
     return {
-      title: count === 1 ? "Move this Hanoki item?" : "Move these Hanoki items?",
-      body:
-        count > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {count === 1 ? "1 item will be moved." : `${count} items will be moved.`}
+      title: move.title,
+      body: (
+        <div className="flex flex-col gap-1.5">
+          <p className="rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
+            {move.summary}
           </p>
-        ) : null,
+          <p className="px-0.5 text-xs text-muted-foreground">to {move.destination}</p>
+        </div>
+      ),
     };
   }
 
   if (toolName === "hanokiRenameItem") {
-    const name = getStringField(input, "newName");
+    const rename = formatHanokiRenameApproval(input, names.currentItemName);
     return {
-      title: "Rename this Hanoki item?",
-      body: name ? (
+      title: rename.title,
+      body: rename.after ? (
         <p className="truncate rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
-          {name}
+          {rename.before ? `${rename.before} → ${rename.after}` : rename.after}
         </p>
       ) : null,
     };
@@ -529,6 +535,33 @@ function describeApprovalRequest(
         {JSON.stringify(input, null, 2)}
       </pre>
     ),
+  };
+}
+
+function collectTreeNames(snapshot: ChatTreeSnapshot | undefined) {
+  const folders = new Map<string, string>();
+  const items = new Map<string, string>();
+  const visit = (folderNodes: ChatTreeFolderNode[], nodeItems: ItemInfo[]) => {
+    for (const item of nodeItems) items.set(item.id, item.title);
+    for (const folder of folderNodes) {
+      folders.set(folder.id, folder.name);
+      visit(folder.folders, folder.items);
+    }
+  };
+  if (snapshot) visit(snapshot.rootFolders, snapshot.rootItems);
+  return { folders, items };
+}
+
+function approvalNamesFromInput(
+  input: unknown,
+  snapshot: ChatTreeSnapshot | undefined,
+): { destinationFolderName: string | null; currentItemName: string | null } {
+  const { folders, items } = collectTreeNames(snapshot);
+  const destinationFolderId = getStringField(input, "destinationFolderId");
+  const itemId = getStringField(input, "id");
+  return {
+    destinationFolderName: destinationFolderId ? (folders.get(destinationFolderId) ?? null) : null,
+    currentItemName: itemId ? (items.get(itemId) ?? folders.get(itemId) ?? null) : null,
   };
 }
 
@@ -545,8 +578,17 @@ function ToolApprovalCard({
   const respondToToolApproval = useChatRespondToToolApproval();
   const updateChatSettings = useUpdateChatSettings();
   const [hasResponded, setHasResponded] = React.useState(false);
-  const { title, body } = describeApprovalRequest(toolName, input);
+  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const snapshot = queryClient.getQueryData<ChatTreeSnapshot>(
+    queryKeys.chatTree.snapshot(workspaceId ?? ""),
+  );
+  const { title, body } = describeApprovalRequest(
+    toolName,
+    input,
+    approvalNamesFromInput(input, snapshot),
+  );
   const canAllowForThisChat = toolName.startsWith("terminal");
+  const icon = getToolConfig(toolName).icon;
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
@@ -556,7 +598,7 @@ function ToolApprovalCard({
   return (
     <div className="my-2 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center gap-2">
-        <HugeiconsIcon icon={ComputerTerminal01Icon} className="size-4 text-muted-foreground" />
+        <HugeiconsIcon icon={icon} className="size-4 text-muted-foreground" />
         <p className="text-[13px] font-medium text-foreground">{title}</p>
       </div>
       {body}
