@@ -10,7 +10,7 @@ import {
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
-import type { ItemTitleUpdatedEvent } from "@shared/events";
+import type { ChatTreeChangedEvent, ItemTitleUpdatedEvent } from "@shared/events";
 import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import {
@@ -30,7 +30,11 @@ import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
 import { generateSumiItemTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
-import { createHanokiTools, HANOKI_TOOL_NAMES } from "../assistant/hanoki-tools";
+import {
+  createHanokiTools,
+  HANOKI_MUTATING_TOOL_NAMES,
+  HANOKI_TOOL_NAMES,
+} from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
 import {
   isHanokiToolEnabledForRequest,
@@ -54,6 +58,7 @@ const CONTINUATION_PROMPT =
 
 interface CreateChatRouteOptions {
   onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
+  onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -223,7 +228,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     const tools = {
       ...webTools,
-      ...createHanokiTools(chat.workspaceId),
+      ...createHanokiTools({
+        workspaceId: chat.workspaceId,
+        chatId: chat.id,
+        onTreeChanged: () => options?.onChatTreeChanged?.({ workspaceId: chat.workspaceId }),
+      }),
       ...createTerminalTools({
         chatId: chat.id,
         configuredCwd: terminalSettings.workingDirectory,
@@ -234,9 +243,17 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
     if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
 
-    const toolApproval = needsTerminalApproval
-      ? Object.fromEntries(TERMINAL_TOOL_NAMES.map((name) => [name, "user-approval" as const]))
-      : undefined;
+    const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
+    if (needsTerminalApproval) {
+      for (const name of TERMINAL_TOOL_NAMES) {
+        toolApproval[name] = "user-approval";
+      }
+    }
+    if (isHanokiEnabledForRequest) {
+      for (const name of HANOKI_MUTATING_TOOL_NAMES) {
+        toolApproval[name] = "user-approval";
+      }
+    }
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
@@ -267,7 +284,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ),
       tools,
       activeTools,
-      ...(toolApproval ? { toolApproval } : {}),
+      ...(Object.keys(toolApproval).length > 0 ? { toolApproval } : {}),
       stopWhen: isStepCount(100),
       onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
         currentCallId = startedCallId;

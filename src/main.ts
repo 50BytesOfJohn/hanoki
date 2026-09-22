@@ -67,6 +67,9 @@ if (!app.requestSingleInstanceLock()) {
         onItemTitleUpdated: (event) => {
           broadcastSystemEvent({ type: "item:title-updated", ...event });
         },
+        onChatTreeChanged: (event) => {
+          broadcastSystemEvent({ type: "chat-tree:changed", ...event });
+        },
       });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
       broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });
