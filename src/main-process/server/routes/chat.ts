@@ -227,7 +227,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     const tools = {
       ...webTools,
-      ...createHanokiTools(chat.workspaceId),
+      ...createHanokiTools({ workspaceId: chat.workspaceId, chatId: chat.id }),
       ...createTerminalTools({
         chatId: chat.id,
         configuredCwd: terminalSettings.workingDirectory,

@@ -10,6 +10,7 @@ import {
   File01Icon,
   FileEditIcon,
   FileScriptIcon,
+  Folder01Icon,
   FolderAddIcon,
   FolderTransferIcon,
   GlobalSearchIcon,
@@ -360,6 +361,13 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     pendingLabel: () => "Reading a Hanoki chat…",
     doneLabel: () => "Read a Hanoki chat",
     errorLabel: "Reading Hanoki chat failed",
+    Details: GenericToolDetails,
+  },
+  hanokiGetCurrentFolder: {
+    icon: Folder01Icon,
+    pendingLabel: () => "Reading current Hanoki folder…",
+    doneLabel: () => "Read current Hanoki folder",
+    errorLabel: "Reading current Hanoki folder failed",
     Details: GenericToolDetails,
   },
   hanokiCreateFolder: {

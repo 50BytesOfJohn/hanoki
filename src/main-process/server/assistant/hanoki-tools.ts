@@ -77,6 +77,29 @@ function getFolderPaths(workspaceId: string): Map<string, string> {
   return paths;
 }
 
+function getFolderPathSegments(
+  workspaceId: string,
+  folderId: string | null,
+): { id: string; name: string }[] {
+  if (folderId === null) return [];
+  const segments: { id: string; name: string }[] = [];
+  const seen = new Set<string>();
+  let currentId: string | null = folderId;
+  while (currentId !== null) {
+    if (seen.has(currentId)) {
+      throw new Error(`Folder "${folderId}" does not exist in this workspace.`);
+    }
+    seen.add(currentId);
+    const folder = getFolderById(currentId);
+    if (!folder || folder.workspaceId !== workspaceId) {
+      throw new Error(`Folder "${currentId}" does not exist in this workspace.`);
+    }
+    segments.push({ id: folder.id, name: folder.name });
+    currentId = folder.parentId;
+  }
+  return segments.reverse();
+}
+
 function itemKindLabel(kind: Exclude<ItemKind, "folder">): string {
   if (kind === "chat") return "Chat";
   if (kind === "markdown") return "Markdown note";
@@ -152,7 +175,13 @@ function parseItemTitle(kind: Exclude<ItemKind, "folder">, newName: string): str
   return parsed.value;
 }
 
-export function createHanokiTools(workspaceId: string) {
+export function createHanokiTools({
+  workspaceId,
+  chatId,
+}: {
+  workspaceId: string;
+  chatId: string;
+}) {
   return {
     hanokiBrowseItems: tool({
       description:
@@ -336,6 +365,31 @@ export function createHanokiTools(workspaceId: string) {
             createdAt: message.createdAt,
           })),
           nextBeforeMessageId: start > 0 ? (page[0]?.id ?? null) : null,
+        };
+      },
+    }),
+
+    hanokiGetCurrentFolder: tool({
+      description:
+        "Get the folder of the chat hosting this turn in the current Hanoki workspace. Use this when the user wants to create or place something in the same folder as this chat. Returns the folder ID and path; null folderId means the workspace root. This does not use the UI focused tab.",
+      inputSchema: jsonSchema<Record<string, never>>({
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      }),
+      execute: () => {
+        const chat = getChatById(chatId);
+        if (!chat || chat.workspaceId !== workspaceId) {
+          throw new Error(`Chat "${chatId}" does not exist in this workspace.`);
+        }
+        const folderId = chat.folderId;
+        const path = getFolderPathSegments(workspaceId, folderId);
+        return {
+          workspaceId,
+          chatId,
+          folderId,
+          path,
+          pathString: folderId === null ? "" : (getFolderPaths(workspaceId).get(folderId) ?? ""),
         };
       },
     }),
@@ -563,6 +617,7 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiBrowseItems",
   "hanokiSearchChats",
   "hanokiGetChatContent",
+  "hanokiGetCurrentFolder",
   "hanokiCreateFolder",
   "hanokiCreateChat",
   "hanokiCreateMarkdown",

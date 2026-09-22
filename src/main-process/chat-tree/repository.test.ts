@@ -253,7 +253,7 @@ describe("Hanoki tool nullable inputs", () => {
       parts: [{ type: "text", text: "Search me" }],
       metadata: { parentId: null },
     });
-    const tools = createHanokiTools("tool-input-workspace");
+    const tools = createHanokiTools({ workspaceId: "tool-input-workspace", chatId: chat.id });
     const options = { toolCallId: "test", messages: [], context: undefined as never };
 
     await tools.hanokiBrowseItems.execute!({ parentFolderId: "", kind: "all", limit: 10 }, options);
@@ -313,7 +313,62 @@ function unwrapToolResult<T>(value: T): Exclude<T, AsyncIterable<unknown>> {
 
 describe("Hanoki create and browse kinds", () => {
   it("registers the slice-1 tools on the agent tool map", () => {
-    expect(Object.keys(createHanokiTools("unused-workspace"))).toEqual([...HANOKI_TOOL_NAMES]);
+    expect(
+      Object.keys(createHanokiTools({ workspaceId: "unused-workspace", chatId: "unused-chat" })),
+    ).toEqual([...HANOKI_TOOL_NAMES]);
+  });
+
+  it("returns the workspace root when the hosting chat is at root", async () => {
+    createWorkspace({ id: "current-folder-root", name: "Root" });
+    const chat = createChat({
+      workspaceId: "current-folder-root",
+      title: "Host",
+      folderId: null,
+    });
+    const tools = createHanokiTools({ workspaceId: "current-folder-root", chatId: chat.id });
+
+    expect(
+      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
+    ).toEqual({
+      workspaceId: "current-folder-root",
+      chatId: chat.id,
+      folderId: null,
+      path: [],
+      pathString: "",
+    });
+  });
+
+  it("returns the nested folder path of the hosting chat", async () => {
+    createWorkspace({ id: "current-folder-nested", name: "Nested" });
+    const notes = createFolder({
+      workspaceId: "current-folder-nested",
+      name: "Notes",
+      parentId: null,
+    });
+    const planning = createFolder({
+      workspaceId: "current-folder-nested",
+      name: "Planning",
+      parentId: notes.id,
+    });
+    const chat = createChat({
+      workspaceId: "current-folder-nested",
+      title: "Host",
+      folderId: planning.id,
+    });
+    const tools = createHanokiTools({ workspaceId: "current-folder-nested", chatId: chat.id });
+
+    expect(
+      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
+    ).toEqual({
+      workspaceId: "current-folder-nested",
+      chatId: chat.id,
+      folderId: planning.id,
+      path: [
+        { id: notes.id, name: "Notes" },
+        { id: planning.id, name: "Planning" },
+      ],
+      pathString: "Notes/Planning",
+    });
   });
 
   it("creates chats and markdown notes, including an optional note body", async () => {
@@ -323,7 +378,10 @@ describe("Hanoki create and browse kinds", () => {
       name: "Notes",
       parentId: null,
     });
-    const tools = createHanokiTools("create-tools-workspace");
+    const tools = createHanokiTools({
+      workspaceId: "create-tools-workspace",
+      chatId: "unused-chat",
+    });
 
     const chat = unwrapToolResult(
       await tools.hanokiCreateChat.execute!(
@@ -367,7 +425,10 @@ describe("Hanoki create and browse kinds", () => {
 
   it("rejects an oversized markdown body without creating a note", async () => {
     createWorkspace({ id: "oversized-markdown-workspace", name: "Oversized" });
-    const tools = createHanokiTools("oversized-markdown-workspace");
+    const tools = createHanokiTools({
+      workspaceId: "oversized-markdown-workspace",
+      chatId: "unused-chat",
+    });
 
     await expect(async () => {
       await tools.hanokiCreateMarkdown.execute!(
@@ -395,7 +456,7 @@ describe("Hanoki create and browse kinds", () => {
       title: "Chat",
       folderId: null,
     });
-    const tools = createHanokiTools("move-kind-workspace");
+    const tools = createHanokiTools({ workspaceId: "move-kind-workspace", chatId: chat.id });
 
     await expect(async () => {
       await tools.hanokiMoveItems.execute!(
@@ -445,7 +506,10 @@ describe("Hanoki create and browse kinds", () => {
         scrollbackVersion: 0,
       },
     });
-    const tools = createHanokiTools("browse-kinds-workspace");
+    const tools = createHanokiTools({
+      workspaceId: "browse-kinds-workspace",
+      chatId: "unused-chat",
+    });
 
     const allRoot = unwrapToolResult(
       await tools.hanokiBrowseItems.execute!(
