@@ -39,7 +39,7 @@
     "@rolldown/plugin-babel": "^0.2.4",
     "@tailwindcss/typography": "^0.5.20",
     "@tanstack/devtools-vite": "latest",
-    "@tanstack/router-cli": "^1.167.36",
+    "@tanstack/router-cli": "^1.167.38",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.5.1",
@@ -47,10 +47,10 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "jsdom": "^30.0.1",
+    "jsdom": "^30.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",
-    "wrangler": "^4.131.2"
+    "wrangler": "^4.135.0"
   }
 }
