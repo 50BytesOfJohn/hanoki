@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
+import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
 import { upsertMessage } from "../messages/repository";
@@ -362,6 +363,51 @@ describe("Hanoki create and browse kinds", () => {
         data: { markdown: "# Hello" },
       }),
     );
+  });
+
+  it("rejects an oversized markdown body without creating a note", async () => {
+    createWorkspace({ id: "oversized-markdown-workspace", name: "Oversized" });
+    const tools = createHanokiTools("oversized-markdown-workspace");
+
+    await expect(async () => {
+      await tools.hanokiCreateMarkdown.execute!(
+        {
+          title: "Too big",
+          folderId: null,
+          body: "x".repeat(MAX_MARKDOWN_LENGTH + 1),
+        },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow("Markdown content must be a string no larger than 5 MiB.");
+
+    expect(getChatTreeChildren("oversized-markdown-workspace", null).items).toEqual([]);
+  });
+
+  it("rejects a move when the claimed kind does not match the item", async () => {
+    createWorkspace({ id: "move-kind-workspace", name: "Move kind" });
+    const destination = createFolder({
+      workspaceId: "move-kind-workspace",
+      name: "Archive",
+      parentId: null,
+    });
+    const chat = createChat({
+      workspaceId: "move-kind-workspace",
+      title: "Chat",
+      folderId: null,
+    });
+    const tools = createHanokiTools("move-kind-workspace");
+
+    await expect(async () => {
+      await tools.hanokiMoveItems.execute!(
+        {
+          items: [{ kind: "markdown", id: chat.id }],
+          destinationFolderId: destination.id,
+        },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow(`Item "${chat.id}" is not a markdown.`);
+
+    expect(getChatById(chat.id)?.folderId).toBeNull();
   });
 
   it("browses, renames, and moves markdown and terminal items with chats", async () => {

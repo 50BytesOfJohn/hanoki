@@ -443,18 +443,16 @@ export function createHanokiTools(workspaceId: string) {
       execute: ({ title, folderId, body = null }) => {
         const parsed = parseChatTitle(title);
         if (!parsed.ok) throw new Error(parsed.error.replace("Chat", "Markdown item"));
+        const normalizedBody = normalizeNullableString(body);
+        if (normalizedBody !== null && normalizedBody.length > MAX_MARKDOWN_LENGTH) {
+          throw new Error("Markdown content must be a string no larger than 5 MiB.");
+        }
         const markdown = createMarkdown({
           workspaceId,
           title: parsed.value,
           folderId: normalizeNullableString(folderId),
         });
-        const normalizedBody = normalizeNullableString(body);
-        if (normalizedBody !== null) {
-          if (normalizedBody.length > MAX_MARKDOWN_LENGTH) {
-            throw new Error("Markdown content must be a string no larger than 5 MiB.");
-          }
-          updateMarkdownContent(markdown.id, normalizedBody);
-        }
+        if (normalizedBody !== null) updateMarkdownContent(markdown.id, normalizedBody);
         return summarizeItem(
           workspaceId,
           { kind: "markdown", id: markdown.id },
@@ -487,9 +485,13 @@ export function createHanokiTools(workspaceId: string) {
       }),
       execute: ({ items, destinationFolderId }) => {
         const normalizedDestinationFolderId = normalizeNullableString(destinationFolderId);
+        const beforePaths = getFolderPaths(workspaceId);
         const result = moveChatTreeItems(
           workspaceId,
-          items.map(toMoveRef),
+          items.map((item) => {
+            summarizeItem(workspaceId, item, beforePaths);
+            return toMoveRef(item);
+          }),
           normalizedDestinationFolderId,
         );
         const folderPaths = getFolderPaths(workspaceId);
