@@ -328,7 +328,7 @@ describe("Hanoki create and browse kinds", () => {
     const tools = createHanokiTools({ workspaceId: "current-folder-root", chatId: chat.id });
 
     expect(
-      unwrapToolResult(await tools.hanokiGetCallingChatLocation.execute!({}, toolExecuteOptions)),
+      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
     ).toEqual({
       workspaceId: "current-folder-root",
       chatId: chat.id,
@@ -358,7 +358,7 @@ describe("Hanoki create and browse kinds", () => {
     const tools = createHanokiTools({ workspaceId: "current-folder-nested", chatId: chat.id });
 
     expect(
-      unwrapToolResult(await tools.hanokiGetCallingChatLocation.execute!({}, toolExecuteOptions)),
+      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
     ).toEqual({
       workspaceId: "current-folder-nested",
       chatId: chat.id,
@@ -369,6 +369,54 @@ describe("Hanoki create and browse kinds", () => {
       ],
       pathString: "Notes/Planning",
     });
+  });
+
+  it("fails when the calling chat is missing or in another workspace", async () => {
+    createWorkspace({ id: "location-a", name: "A" });
+    createWorkspace({ id: "location-b", name: "B" });
+    const chatB = createChat({
+      workspaceId: "location-b",
+      title: "B",
+      folderId: null,
+    });
+    const missing = createHanokiTools({ workspaceId: "location-a", chatId: "no-such-chat" });
+    const wrongWorkspace = createHanokiTools({ workspaceId: "location-a", chatId: chatB.id });
+
+    await expect(async () => {
+      await missing.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions);
+    }).rejects.toThrow('Chat "no-such-chat" does not exist in this workspace.');
+    await expect(async () => {
+      await wrongWorkspace.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions);
+    }).rejects.toThrow(`Chat "${chatB.id}" does not exist in this workspace.`);
+  });
+
+  it("caps this chat's folder breadcrumb at 32 folders", async () => {
+    createWorkspace({ id: "deep-folder-workspace", name: "Deep" });
+    let parentId: string | null = null;
+    let deepestId = "";
+    for (let index = 0; index < 33; index += 1) {
+      const folder = createFolder({
+        workspaceId: "deep-folder-workspace",
+        name: `L${index}`,
+        parentId,
+      });
+      parentId = folder.id;
+      deepestId = folder.id;
+    }
+    const chat = createChat({
+      workspaceId: "deep-folder-workspace",
+      title: "Host",
+      folderId: deepestId,
+    });
+    const tools = createHanokiTools({ workspaceId: "deep-folder-workspace", chatId: chat.id });
+    const location = unwrapToolResult(
+      await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions),
+    );
+
+    expect(location.folderId).toBe(deepestId);
+    expect(location.path).toHaveLength(32);
+    expect(location.path[0]).toEqual(expect.objectContaining({ name: "L1" }));
+    expect(location.path[31]).toEqual(expect.objectContaining({ name: "L32" }));
   });
 
   it("returns the folder location of an explicit chat, note, or terminal", async () => {

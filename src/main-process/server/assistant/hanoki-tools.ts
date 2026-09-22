@@ -77,6 +77,8 @@ function getFolderPaths(workspaceId: string): Map<string, string> {
   return paths;
 }
 
+const MAX_FOLDER_PATH_DEPTH = 32; // ponytail: breadcrumb cap; walk further only if agents need the full chain
+
 function getFolderPathSegments(
   workspaceId: string,
   folderId: string | null,
@@ -85,15 +87,11 @@ function getFolderPathSegments(
   const segments: { id: string; name: string }[] = [];
   const seen = new Set<string>();
   let currentId: string | null = folderId;
-  while (currentId !== null) {
-    if (seen.has(currentId)) {
-      throw new Error(`Folder "${folderId}" does not exist in this workspace.`);
-    }
+  while (currentId !== null && segments.length < MAX_FOLDER_PATH_DEPTH) {
+    if (seen.has(currentId)) break;
     seen.add(currentId);
     const folder = getFolderById(currentId);
-    if (!folder || folder.workspaceId !== workspaceId) {
-      throw new Error(`Folder "${currentId}" does not exist in this workspace.`);
-    }
+    if (!folder || folder.workspaceId !== workspaceId) break;
     segments.push({ id: folder.id, name: folder.name });
     currentId = folder.parentId;
   }
@@ -105,7 +103,7 @@ function getFolderLocation(workspaceId: string, folderId: string | null) {
   return {
     folderId,
     path,
-    pathString: folderId === null ? "" : (getFolderPaths(workspaceId).get(folderId) ?? ""),
+    pathString: path.map((segment) => segment.name).join("/"),
   };
 }
 
@@ -378,9 +376,9 @@ export function createHanokiTools({
       },
     }),
 
-    hanokiGetCallingChatLocation: tool({
+    hanokiGetCurrentFolder: tool({
       description:
-        "Get the folder location of the chat hosting this turn in the current Hanoki workspace. Use this when the user wants to create or place something in the same folder as this chat. Returns the folder ID and path; null folderId means the workspace root. This does not use the UI focused tab.",
+        "Get this chat's folder — the parent folder of the chat hosting this turn. Use this when the user wants to create or place something in the same folder as this chat. Returns the folder ID and path; null folderId means the workspace root. This does not use the focused UI tab.",
       inputSchema: jsonSchema<Record<string, never>>({
         type: "object",
         properties: {},
@@ -397,7 +395,7 @@ export function createHanokiTools({
 
     hanokiGetItemLocation: tool({
       description:
-        "Get the folder location of a chat, markdown note, or terminal in the current Hanoki workspace. Pass an exact item ID returned by a Hanoki tool. Returns the folder ID and path; null folderId means the workspace root.",
+        "Get the folder of a chat, markdown note, or terminal by exact item ID. Returns the folder ID and path; null folderId means the workspace root.",
       inputSchema: jsonSchema<{ itemId: string }>({
         type: "object",
         properties: {
@@ -647,7 +645,7 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiBrowseItems",
   "hanokiSearchChats",
   "hanokiGetChatContent",
-  "hanokiGetCallingChatLocation",
+  "hanokiGetCurrentFolder",
   "hanokiGetItemLocation",
   "hanokiCreateFolder",
   "hanokiCreateChat",
