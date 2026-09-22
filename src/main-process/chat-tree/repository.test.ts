@@ -328,7 +328,7 @@ describe("Hanoki create and browse kinds", () => {
     const tools = createHanokiTools({ workspaceId: "current-folder-root", chatId: chat.id });
 
     expect(
-      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
+      unwrapToolResult(await tools.hanokiGetCallingChatLocation.execute!({}, toolExecuteOptions)),
     ).toEqual({
       workspaceId: "current-folder-root",
       chatId: chat.id,
@@ -358,7 +358,7 @@ describe("Hanoki create and browse kinds", () => {
     const tools = createHanokiTools({ workspaceId: "current-folder-nested", chatId: chat.id });
 
     expect(
-      unwrapToolResult(await tools.hanokiGetCurrentFolder.execute!({}, toolExecuteOptions)),
+      unwrapToolResult(await tools.hanokiGetCallingChatLocation.execute!({}, toolExecuteOptions)),
     ).toEqual({
       workspaceId: "current-folder-nested",
       chatId: chat.id,
@@ -368,6 +368,82 @@ describe("Hanoki create and browse kinds", () => {
         { id: planning.id, name: "Planning" },
       ],
       pathString: "Notes/Planning",
+    });
+  });
+
+  it("returns the folder location of an explicit chat, note, or terminal", async () => {
+    createWorkspace({ id: "item-location-workspace", name: "Item location" });
+    const notes = createFolder({
+      workspaceId: "item-location-workspace",
+      name: "Notes",
+      parentId: null,
+    });
+    const host = createChat({
+      workspaceId: "item-location-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const chat = createChat({
+      workspaceId: "item-location-workspace",
+      title: "Nested chat",
+      folderId: notes.id,
+    });
+    const note = createMarkdown({
+      workspaceId: "item-location-workspace",
+      title: "Note",
+      folderId: notes.id,
+    });
+    const terminal = createTerminal({
+      workspaceId: "item-location-workspace",
+      title: "Term",
+      folderId: null,
+      data: {
+        workingDirectory: "/tmp",
+        shell: "/bin/sh",
+        columns: 80,
+        rows: 24,
+        scrollback: "",
+        scrollbackVersion: 0,
+      },
+    });
+    const tools = createHanokiTools({ workspaceId: "item-location-workspace", chatId: host.id });
+    const notesPath = [{ id: notes.id, name: "Notes" }];
+
+    expect(
+      unwrapToolResult(
+        await tools.hanokiGetItemLocation.execute!({ itemId: chat.id }, toolExecuteOptions),
+      ),
+    ).toEqual({
+      workspaceId: "item-location-workspace",
+      itemId: chat.id,
+      kind: "chat",
+      folderId: notes.id,
+      path: notesPath,
+      pathString: "Notes",
+    });
+    expect(
+      unwrapToolResult(
+        await tools.hanokiGetItemLocation.execute!({ itemId: note.id }, toolExecuteOptions),
+      ),
+    ).toEqual({
+      workspaceId: "item-location-workspace",
+      itemId: note.id,
+      kind: "markdown",
+      folderId: notes.id,
+      path: notesPath,
+      pathString: "Notes",
+    });
+    expect(
+      unwrapToolResult(
+        await tools.hanokiGetItemLocation.execute!({ itemId: terminal.id }, toolExecuteOptions),
+      ),
+    ).toEqual({
+      workspaceId: "item-location-workspace",
+      itemId: terminal.id,
+      kind: "terminal",
+      folderId: null,
+      path: [],
+      pathString: "",
     });
   });
 

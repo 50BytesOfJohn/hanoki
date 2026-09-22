@@ -100,6 +100,15 @@ function getFolderPathSegments(
   return segments.reverse();
 }
 
+function getFolderLocation(workspaceId: string, folderId: string | null) {
+  const path = getFolderPathSegments(workspaceId, folderId);
+  return {
+    folderId,
+    path,
+    pathString: folderId === null ? "" : (getFolderPaths(workspaceId).get(folderId) ?? ""),
+  };
+}
+
 function itemKindLabel(kind: Exclude<ItemKind, "folder">): string {
   if (kind === "chat") return "Chat";
   if (kind === "markdown") return "Markdown note";
@@ -369,9 +378,9 @@ export function createHanokiTools({
       },
     }),
 
-    hanokiGetCurrentFolder: tool({
+    hanokiGetCallingChatLocation: tool({
       description:
-        "Get the folder of the chat hosting this turn in the current Hanoki workspace. Use this when the user wants to create or place something in the same folder as this chat. Returns the folder ID and path; null folderId means the workspace root. This does not use the UI focused tab.",
+        "Get the folder location of the chat hosting this turn in the current Hanoki workspace. Use this when the user wants to create or place something in the same folder as this chat. Returns the folder ID and path; null folderId means the workspace root. This does not use the UI focused tab.",
       inputSchema: jsonSchema<Record<string, never>>({
         type: "object",
         properties: {},
@@ -382,14 +391,35 @@ export function createHanokiTools({
         if (!chat || chat.workspaceId !== workspaceId) {
           throw new Error(`Chat "${chatId}" does not exist in this workspace.`);
         }
-        const folderId = chat.folderId;
-        const path = getFolderPathSegments(workspaceId, folderId);
+        return { workspaceId, chatId, ...getFolderLocation(workspaceId, chat.folderId) };
+      },
+    }),
+
+    hanokiGetItemLocation: tool({
+      description:
+        "Get the folder location of a chat, markdown note, or terminal in the current Hanoki workspace. Pass an exact item ID returned by a Hanoki tool. Returns the folder ID and path; null folderId means the workspace root.",
+      inputSchema: jsonSchema<{ itemId: string }>({
+        type: "object",
+        properties: {
+          itemId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact chat, note, or terminal ID returned by a Hanoki tool.",
+          },
+        },
+        required: ["itemId"],
+        additionalProperties: false,
+      }),
+      execute: ({ itemId }) => {
+        const row = getItemById(itemId);
+        if (!row || row.workspaceId !== workspaceId) {
+          throw new Error(`Item "${itemId}" does not exist in this workspace.`);
+        }
         return {
           workspaceId,
-          chatId,
-          folderId,
-          path,
-          pathString: folderId === null ? "" : (getFolderPaths(workspaceId).get(folderId) ?? ""),
+          itemId: row.id,
+          kind: row.type,
+          ...getFolderLocation(workspaceId, row.folderId),
         };
       },
     }),
@@ -617,7 +647,8 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiBrowseItems",
   "hanokiSearchChats",
   "hanokiGetChatContent",
-  "hanokiGetCurrentFolder",
+  "hanokiGetCallingChatLocation",
+  "hanokiGetItemLocation",
   "hanokiCreateFolder",
   "hanokiCreateChat",
   "hanokiCreateMarkdown",

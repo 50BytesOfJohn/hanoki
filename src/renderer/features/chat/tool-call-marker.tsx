@@ -363,11 +363,18 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Reading Hanoki chat failed",
     Details: GenericToolDetails,
   },
-  hanokiGetCurrentFolder: {
+  hanokiGetCallingChatLocation: {
     icon: Folder01Icon,
-    pendingLabel: () => "Reading current Hanoki folder…",
-    doneLabel: () => "Read current Hanoki folder",
-    errorLabel: "Reading current Hanoki folder failed",
+    pendingLabel: () => "Reading this chat’s Hanoki folder…",
+    doneLabel: () => "Read this chat’s Hanoki folder",
+    errorLabel: "Reading this chat’s Hanoki folder failed",
+    Details: GenericToolDetails,
+  },
+  hanokiGetItemLocation: {
+    icon: Folder01Icon,
+    pendingLabel: () => "Reading a Hanoki item location…",
+    doneLabel: () => "Read a Hanoki item location",
+    errorLabel: "Reading Hanoki item location failed",
     Details: GenericToolDetails,
   },
   hanokiCreateFolder: {
