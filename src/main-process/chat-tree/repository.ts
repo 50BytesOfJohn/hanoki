@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
+import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -1085,14 +1086,23 @@ export function moveChatTreeItems(
   });
 }
 
-export function updateItemTitle(id: string, title: string): ItemRow {
+export function updateItemTitle(id: string, title: string): ItemRow;
+export function updateItemTitle(id: string, title: string, expectedTitle: string): ItemRow | null;
+export function updateItemTitle(id: string, title: string, expectedTitle?: string): ItemRow | null {
   requireItemById(id);
-  getAppDatabase()
+  const result = getAppDatabase()
     .update(items)
     .set({ title, updatedAt: Date.now() })
-    .where(eq(items.id, id))
+    .where(
+      expectedTitle === undefined
+        ? eq(items.id, id)
+        : and(eq(items.id, id), eq(items.title, expectedTitle)),
+    )
     .run();
-  return requireItemById(id);
+  if (expectedTitle !== undefined && result.changes === 0) return null;
+  const updated = requireItemById(id);
+  broadcastItemTitleUpdated(updated);
+  return updated;
 }
 
 export function moveItem(id: string, folderId: string | null): ItemRow {

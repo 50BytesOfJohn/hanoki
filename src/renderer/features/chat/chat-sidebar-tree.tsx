@@ -159,6 +159,12 @@ type ChatTreeContextMenuAction =
   | "rename"
   | "delete";
 
+function afterContextMenuClose(run: () => void) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run);
+  });
+}
+
 function ChatTreeItemContextMenu({
   children,
   itemKind,
@@ -457,6 +463,7 @@ function ChatSidebarTreeInner({
 
   const { sortOrder, folderPlacement } = useChatTreeSort(workspaceId);
   const sortRef = React.useRef({ sortOrder, folderPlacement });
+  const pendingReloadRef = React.useRef(false);
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -641,11 +648,26 @@ function ChatSidebarTreeInner({
           return;
         }
 
+        if (tree.isRenamingItem()) {
+          pendingReloadRef.current = true;
+          return;
+        }
+
         invalidateTree();
         tree.rebuildTree();
       }),
     [invalidateTree, tree, workspaceId],
   );
+
+  React.useEffect(() => {
+    if (renamingItem || !pendingReloadRef.current) {
+      return;
+    }
+
+    pendingReloadRef.current = false;
+    invalidateTree();
+    tree.rebuildTree();
+  }, [invalidateTree, renamingItem, tree]);
 
   // Children are ordered as they load, so a sort change has to reload the loaded levels.
   React.useEffect(() => {
@@ -929,7 +951,9 @@ function ChatSidebarTreeInner({
                       invalidateTree();
                     });
                   } else if (action === "rename") {
-                    item.startRenaming();
+                    afterContextMenuClose(() => {
+                      item.startRenaming();
+                    });
                   } else if (action === "delete") {
                     openDeleteDialog(
                       selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
@@ -1141,6 +1165,8 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   const [renamingChat, setRenamingChat] = React.useState<{ id: string; value: string } | null>(
     null,
   );
+  const renameSettledRef = React.useRef(false);
+  const renameReadyRef = React.useRef(false);
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -1171,10 +1197,11 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   }, [currentChatStatus, invalidateSnapshot]);
 
   const commitRename = React.useCallback(() => {
-    if (!renamingChat) {
+    if (!renamingChat || renameSettledRef.current) {
       return;
     }
 
+    renameSettledRef.current = true;
     const trimmed = renamingChat.value.trim();
     setRenamingChat(null);
     if (trimmed.length === 0) {
@@ -1209,7 +1236,11 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
       } else if (action === "clone") {
         void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
       } else if (action === "rename") {
-        setRenamingChat({ id: chat.id, value: chat.title });
+        renameSettledRef.current = false;
+        renameReadyRef.current = false;
+        afterContextMenuClose(() => {
+          setRenamingChat({ id: chat.id, value: chat.title });
+        });
       } else if (action === "delete") {
         setPendingDeleteItems([{ kind: "item", id: chat.id }]);
       }
@@ -1287,12 +1318,23 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                             onChange={(event) => {
                               setRenamingChat({ id: chat.id, value: event.target.value });
                             }}
-                            onBlur={commitRename}
+                            onFocus={() => {
+                              requestAnimationFrame(() => {
+                                renameReadyRef.current = true;
+                              });
+                            }}
+                            onBlur={() => {
+                              if (!renameReadyRef.current) {
+                                return;
+                              }
+                              commitRename();
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
                                 commitRename();
                               }
                               if (event.key === "Escape") {
+                                renameSettledRef.current = true;
                                 setRenamingChat(null);
                               }
                             }}

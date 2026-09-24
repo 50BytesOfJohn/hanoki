@@ -64,9 +64,6 @@ if (!app.requestSingleInstanceLock()) {
       broadcastSystemEvent({ type: "ai-server:starting" });
       const { createAiServer } = await import("./main-process/server");
       aiServer = await createAiServer({
-        onItemTitleUpdated: (event) => {
-          broadcastSystemEvent({ type: "item:title-updated", ...event });
-        },
         onChatTreeChanged: (event) => {
           broadcastSystemEvent({ type: "chat-tree:changed", ...event });
         },

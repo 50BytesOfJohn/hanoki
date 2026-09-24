@@ -46,7 +46,9 @@ export function useFlushMarkdownContent() {
   return useMutation({
     mutationFn: ({ id }: { id: string }) => markdownApi.flushContent(id),
     onSuccess: (item) => {
-      queryClient.setQueryData<MarkdownInfo>(queryKeys.items.byId(item.id), item);
+      queryClient.setQueryData<MarkdownInfo>(queryKeys.items.byId(item.id), (current) =>
+        current ? { ...item, title: current.title } : item,
+      );
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
     },
   });

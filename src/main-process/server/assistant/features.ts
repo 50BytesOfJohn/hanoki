@@ -23,10 +23,14 @@ export function isSumiFeatureId(value: unknown): value is SumiFeatureId {
   return typeof value === "string" && value in SUMI_FEATURES;
 }
 
-export const SUMI_ITEM_TITLE_INSTRUCTIONS = `You name chats and Markdown documents.
+export const SUMI_CHAT_TITLE_INSTRUCTIONS = `You name a chat for a sidebar list.
+Use the same language as the user's messages.
+3 to 7 words. Sentence case: capitalize the first word and proper nouns only.
+Specific and scannable in a list. No wit, emoji, quotation marks, or trailing punctuation.
+Return JSON only: {"title":"..."}`;
 
-Generate a concise, specific title that captures the main topic or task.
-Use the same language as the content.
-Prefer 3 to 7 words.
-Do not use quotation marks, markdown, labels, emojis, or ending punctuation.
-Return only the title.`;
+export const SUMI_MARKDOWN_TITLE_INSTRUCTIONS = `You name a markdown note as a short outline label.
+Use the same language as the note.
+2 to 5 words. A noun phrase, like a binder tab or filename.
+No wit, emoji, quotation marks, or trailing punctuation.
+Return JSON only: {"title":"..."}`;

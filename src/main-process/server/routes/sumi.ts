@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { smoothStream, streamText } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
-import type { ItemTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
@@ -16,11 +15,7 @@ interface ResolvedSumiModel {
   providerModelId: string;
 }
 
-interface CreateSumiRouteOptions {
-  onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
-}
-
-export function createSumiRoute(options?: CreateSumiRouteOptions) {
+export function createSumiRoute() {
   const app = new Hono();
 
   app.post("/api/sumi", async (c) => {
@@ -86,18 +81,17 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
     ) {
       return c.text("sourcePrompt must be a non-empty string.", 400);
     }
+    if (input.mode !== undefined && input.mode !== "auto" && input.mode !== "explicit") {
+      return c.text("mode must be auto or explicit.", 400);
+    }
 
     try {
       const event = await generateSumiItemTitle({
         itemId: parsedItemId.value,
         sourcePrompt: typeof input.sourcePrompt === "string" ? input.sourcePrompt : null,
+        mode: input.mode === "auto" ? "auto" : "explicit",
       });
-      options?.onItemTitleUpdated?.({
-        itemId: event.itemId,
-        itemType: event.itemType,
-        workspaceId: event.workspaceId,
-        title: event.title,
-      });
+      if (!event) return c.body(null, 204);
       return c.json(event);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sumi could not generate a title.";

@@ -22,6 +22,7 @@ import {
   Chatting01Icon,
   Edit02Icon,
   Menu01Icon,
+  PencilEdit01Icon,
   PinIcon,
   SlidersHorizontalIcon,
   SourceCodeIcon,
@@ -34,13 +35,17 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
+import { markdownApi } from "@/api/markdown";
+import { useRenameChatTreeItem } from "@/mutations/chat-tree";
 import { ChatSidebarProvider } from "@/features/chat/chat-sidebar";
 import { ChatSidebarTree } from "@/features/chat/chat-sidebar-tree";
 import {
@@ -65,6 +70,7 @@ import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 import type {
+  ItemInfo,
   ItemLayoutNode,
   ItemPaneState,
   ChatPaneView,
@@ -80,6 +86,7 @@ import { ActiveChatView } from "./chat-page";
 import { ChatGraphPage } from "./modules/graph/chat-graph-page";
 import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-page";
 import { ChatSettingsPage } from "./chat-settings-page";
+import { isReplaceableItemTitle } from "@shared/markdown/title-source";
 import { generateSumiItemTitle } from "../items/sumi-item-title-generation";
 
 export type NativeChatDrag =
@@ -417,26 +424,45 @@ function ItemPanelHeader({
   onClose: () => void;
 }) {
   const { data: item } = useQuery(getItemQueryOptions(pane.itemId));
+  const [renamingItemId, setRenamingItemId] = React.useState<string | null>(null);
+  const renaming = renamingItemId === pane.itemId;
 
   return (
     <header className="flex h-9 shrink-0 items-center gap-1 border-b border-separator px-2">
       <div
-        ref={dragHandleRef}
+        ref={renaming ? undefined : dragHandleRef}
         data-window-no-drag
-        tabIndex={0}
-        aria-label={`Move ${item?.title ?? "item"} pane`}
-        className="flex min-w-0 flex-1 cursor-grab items-center gap-0.5 outline-hidden active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60"
-        {...dragHandleProps}
+        tabIndex={renaming ? undefined : 0}
+        aria-label={renaming ? undefined : `Move ${item?.title ?? "item"} pane`}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-0.5 outline-hidden",
+          !renaming &&
+            "cursor-grab active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60",
+        )}
+        {...(renaming ? {} : dragHandleProps)}
       >
-        {pane.itemType !== "terminal" ? <ItemTitleMenu itemId={pane.itemId} /> : null}
-        <span
-          className={cn(
-            "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
-            isFocused ? "text-foreground/90" : "text-muted-foreground/60",
-          )}
-        >
-          {item?.title ?? ""}
-        </span>
+        {pane.itemType !== "terminal" ? (
+          <ItemTitleMenu itemId={pane.itemId} onRename={() => setRenamingItemId(pane.itemId)} />
+        ) : null}
+        {renaming && item && item.type !== "terminal" ? (
+          <ItemTitleRenameInput item={item} onDone={() => setRenamingItemId(null)} />
+        ) : (
+          <span
+            className={cn(
+              "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
+              isFocused ? "text-foreground/90" : "text-muted-foreground/60",
+            )}
+            onDoubleClick={
+              pane.itemType === "terminal"
+                ? undefined
+                : () => {
+                    setRenamingItemId(pane.itemId);
+                  }
+            }
+          >
+            {item?.title ?? ""}
+          </span>
+        )}
         {isFocused ? <span className="sr-only">Focused pane</span> : null}
       </div>
 
@@ -459,7 +485,7 @@ function ItemPanelHeader({
   );
 }
 
-function ItemTitleMenu({ itemId }: { itemId: string }) {
+function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => void }) {
   const port = useSystemStore(selectAiServerPort);
   const { data: item } = useQuery(getItemQueryOptions(itemId));
   const { data: sumiSettings } = useQuery(sumiSettingsQueryOptions);
@@ -467,12 +493,15 @@ function ItemTitleMenu({ itemId }: { itemId: string }) {
   const titleGeneration = sumiSettings?.titleGeneration;
   const canGenerateTitle = Boolean(titleGeneration?.enabled && titleGeneration.model && port);
   const isGeneratingTitle = Boolean(item && generatingItemId === item.id);
-  if (!item || !canGenerateTitle) return null;
+  if (!item) return null;
 
   function generateTitle() {
-    if (!port || isGeneratingTitle) return;
+    if (!port || !item || isGeneratingTitle) return;
     setGeneratingItemId(itemId);
-    void generateSumiItemTitle({ apiUrl: `http://127.0.0.1:${port}/api/sumi`, itemId })
+    void (async () => {
+      if (item.type === "markdown") await markdownApi.flushContent(item.id);
+      await generateSumiItemTitle({ apiUrl: `http://127.0.0.1:${port}/api/sumi`, itemId });
+    })()
       .catch((error) => {
         toastManager.add({
           type: "error",
@@ -491,8 +520,7 @@ function ItemTitleMenu({ itemId }: { itemId: string }) {
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Item actions"
-            disabled={isGeneratingTitle}
+            aria-label="Title actions"
             className="text-muted-foreground"
             onPointerDown={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
@@ -505,12 +533,52 @@ function ItemTitleMenu({ itemId }: { itemId: string }) {
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start">
-        <DropdownMenuItem onClick={generateTitle}>
-          <HugeiconsIcon icon={AiBeautifyIcon} />
-          Regenerate title
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onRename}>
+            <HugeiconsIcon icon={PencilEdit01Icon} />
+            Rename
+          </DropdownMenuItem>
+          {canGenerateTitle ? (
+            <DropdownMenuItem disabled={isGeneratingTitle} onClick={generateTitle}>
+              <HugeiconsIcon icon={AiBeautifyIcon} />
+              {isReplaceableItemTitle(item.title) ? "Generate title" : "Regenerate title"}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function ItemTitleRenameInput({ item, onDone }: { item: ItemInfo; onDone: () => void }) {
+  const renameItem = useRenameChatTreeItem();
+  const [value, setValue] = React.useState(item.title);
+  const committedRef = React.useRef(false);
+
+  function finish(save: boolean) {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onDone();
+    const next = value.trim();
+    if (!save || !next || next === item.title) return;
+    renameItem.mutate({ itemId: `item:${item.id}`, name: next });
+  }
+
+  return (
+    <Input
+      autoFocus
+      aria-label="Item title"
+      className="h-7 min-w-0 flex-1 px-2 text-[13px]"
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onPointerDown={(event) => event.stopPropagation()}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") finish(true);
+        if (event.key === "Escape") finish(false);
+      }}
+    />
   );
 }
 
