@@ -38,26 +38,56 @@ export function parseChatTitle(input: unknown): ParseChatTitleResult {
   };
 }
 
-const GENERATED_TITLE_LABEL = /^(?:title|chat title|document title|heading)\s*:\s*/i;
+export const GENERATED_TITLE_MAX_LENGTH = 60;
 
-export function normalizeGeneratedTitle(input: string): string {
-  const firstLine = input
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  const normalized = (firstLine ?? "")
-    .replace(/^#{1,6}\s+/, "")
-    .replace(GENERATED_TITLE_LABEL, "")
-    .replace(/^[`'"“”‘’]+|[`'"“”‘’]+$/g, "")
-    .replace(/[.!?。！？]+$/u, "")
+const TRAILING_PUNCTUATION = /[.!?…,;:。！？]+$/u;
+const FILENAME_UNSAFE = /[<>:"/\\|?*]/g;
+
+export function sanitizeGeneratedTitle(
+  input: string,
+  kind: "chat" | "note" = "chat",
+): string | null {
+  let value = input.replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu, "");
+  if (kind === "note") {
+    value = stripControls(value).replace(FILENAME_UNSAFE, "");
+  }
+  value = value
+    .replace(/[`'"“”‘’]/g, "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, CHAT_TITLE_MAX_LENGTH);
-  const parsedTitle = parseChatTitle(normalized);
+    .replace(TRAILING_PUNCTUATION, "")
+    .trim()
+    .slice(0, GENERATED_TITLE_MAX_LENGTH)
+    .trim();
+  const parsedTitle = parseChatTitle(value);
+  return parsedTitle.ok ? parsedTitle.value : null;
+}
 
-  if (!parsedTitle.ok) {
-    throw new Error("Sumi returned an invalid item title.");
+export function titleFromModelText(input: string, kind: "chat" | "note"): string | null {
+  const trimmed = input.trim();
+  const jsonTitle = readJsonTitle(trimmed);
+  const raw = jsonTitle ?? (trimmed.includes("{") ? null : trimmed);
+  if (!raw) return null;
+  return sanitizeGeneratedTitle(raw, kind);
+}
+
+function stripControls(value: string): string {
+  let out = "";
+  for (const char of value) {
+    if (char.charCodeAt(0) >= 32) out += char;
   }
+  return out;
+}
 
-  return parsedTitle.value;
+function readJsonTitle(text: string): string | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1)) as { title?: unknown };
+    return typeof parsed.title === "string" ? parsed.title : null;
+  } catch {
+    return null;
+  }
 }

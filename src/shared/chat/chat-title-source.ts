@@ -1,35 +1,54 @@
-import { ITEM_TITLE_SOURCE_MAX_LENGTH } from "@shared/markdown/title-source";
+const USER_SLICE = 350;
+const LATEST_USER_SLICE = 250;
+const ASSISTANT_SLICE = 200;
+const EARLY_USER_COUNT = 3;
+export const CHAT_TITLE_PACK_MAX_LENGTH = 2_000;
 
-const USER_BUDGET = 1_200;
-const ASSISTANT_BUDGET = 400;
+export interface ChatTitleMessage {
+  role: string;
+  text: string;
+}
 
-export function buildChatTitleSource(
-  messages: readonly { role: string; text: string }[],
-): string | null {
-  const users: string[] = [];
-  const assistants: string[] = [];
+function humanText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/~~~[\s\S]*?~~~/g, " ")
+    .replace(/```[\s\S]*$/g, " ")
+    .replace(/~~~[\s\S]*$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  for (const message of messages) {
-    const text = message.text.trim();
-    if (!text) continue;
-    if (message.role === "user") users.push(text);
-    else if (message.role === "assistant") assistants.push(text);
+export function buildChatTitleSource(messages: readonly ChatTitleMessage[]): string | null {
+  const users = messages
+    .filter((message) => message.role === "user")
+    .map((message) => humanText(message.text))
+    .filter(Boolean);
+  const assistant = messages
+    .filter((message) => message.role === "assistant")
+    .map((message) => humanText(message.text))
+    .find(Boolean);
+
+  if (users.length === 0 && !assistant) return null;
+
+  const lines = users
+    .slice(0, EARLY_USER_COUNT)
+    .map((text) => `User: ${text.slice(0, USER_SLICE)}`);
+  const latest = users.length > EARLY_USER_COUNT ? users[users.length - 1] : undefined;
+  if (latest) {
+    lines.push(`Latest user: ${latest.slice(0, LATEST_USER_SLICE)}`);
+  }
+  if (assistant) {
+    lines.push(`Assistant: ${assistant.slice(0, ASSISTANT_SLICE)}`);
   }
 
-  const lines: string[] = [];
-  let userLength = 0;
-  for (const text of users) {
-    if (userLength >= USER_BUDGET) break;
-    const line = `User: ${text}`.slice(0, USER_BUDGET - userLength);
-    lines.push(line);
-    userLength += line.length;
-  }
+  const packed = lines.join("\n").slice(0, CHAT_TITLE_PACK_MAX_LENGTH);
+  return packed.length > 0 ? packed : null;
+}
 
-  const assistant = assistants[0];
-  if (assistant && lines.length < 4) {
-    lines.push(`Assistant: ${assistant}`.slice(0, ASSISTANT_BUDGET));
-  }
-
-  if (lines.length === 0) return null;
-  return lines.join("\n").slice(0, ITEM_TITLE_SOURCE_MAX_LENGTH);
+export function firstUserTitleLine(messages: readonly ChatTitleMessage[]): string | null {
+  const first = messages.find((message) => message.role === "user");
+  if (!first) return null;
+  const line = humanText(first.text);
+  return line.length > 0 ? line : null;
 }

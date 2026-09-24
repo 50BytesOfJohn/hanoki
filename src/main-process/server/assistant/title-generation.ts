@@ -1,6 +1,10 @@
 import { generateText } from "ai";
-import { buildChatTitleSource } from "@shared/chat/chat-title-source";
-import { normalizeGeneratedTitle } from "@shared/chat/chat-title";
+import {
+  buildChatTitleSource,
+  firstUserTitleLine,
+  type ChatTitleMessage,
+} from "@shared/chat/chat-title-source";
+import { sanitizeGeneratedTitle, titleFromModelText } from "@shared/chat/chat-title";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import type { ItemTitleUpdatedEvent } from "@shared/events";
@@ -10,7 +14,7 @@ import {
   isReplaceableItemTitle,
   shouldCommitGeneratedTitle,
 } from "@shared/markdown/title-source";
-import { getChatTreeChildren, getItemById, updateItemTitle } from "../../chat-tree/repository";
+import { getItemById, updateItemTitle } from "../../chat-tree/repository";
 import { listMessagesByChatId, type MessageRow } from "../../messages/repository";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
@@ -84,16 +88,19 @@ async function generateItemTitle(
     return null;
   }
 
-  const source = sourcePrompt
-    ? `User: ${sourcePrompt}`
-    : item.type === "chat"
-      ? buildChatTitleSource(
-          listMessagesByChatId(item.id).map((message) => ({
+  const chatMessages: ChatTitleMessage[] | null =
+    item.type === "chat"
+      ? sourcePrompt
+        ? [{ role: "user", text: sourcePrompt }]
+        : listMessagesByChatId(item.id).map((message) => ({
             role: message.role,
             text: extractMessageText(message),
-          })),
-        )
-      : buildMarkdownItemTitleSource(item.workspaceId, item.folderId, item.id, item.data.markdown);
+          }))
+      : null;
+  const source =
+    item.type === "chat"
+      ? buildChatTitleSource(chatMessages ?? [])
+      : buildMarkdownTitleSource(item.data.markdown);
   if (!source) {
     throw new Error("Add content before generating a title.");
   }
@@ -103,15 +110,28 @@ async function generateItemTitle(
     throw new Error("The configured Sumi title model could not be started.");
   }
 
-  const { text } = await generateText({
-    model: languageModel,
-    instructions:
-      item.type === "chat" ? SUMI_CHAT_TITLE_INSTRUCTIONS : SUMI_MARKDOWN_TITLE_INSTRUCTIONS,
-    prompt: source,
-    temperature: 0.4,
-    maxOutputTokens: 48,
-  });
-  const title = normalizeGeneratedTitle(text);
+  const kind = item.type === "chat" ? "chat" : "note";
+  let title: string | null = null;
+  try {
+    const { text } = await generateText({
+      model: languageModel,
+      instructions:
+        item.type === "chat" ? SUMI_CHAT_TITLE_INSTRUCTIONS : SUMI_MARKDOWN_TITLE_INSTRUCTIONS,
+      prompt: source,
+      temperature: 0.4,
+      maxOutputTokens: 80,
+    });
+    title = titleFromModelText(text, kind);
+  } catch {
+    title = null;
+  }
+  if (!title && chatMessages) {
+    const line = firstUserTitleLine(chatMessages);
+    title = line ? sanitizeGeneratedTitle(line, "chat") : null;
+  }
+  if (!title) {
+    throw new Error("Sumi returned an invalid item title.");
+  }
   const current = getItemById(item.id);
   if (!current || !shouldCommitGeneratedTitle(mode, titleAtStart, current.title)) {
     return null;
@@ -127,25 +147,6 @@ async function generateItemTitle(
     workspaceId: updatedItem.workspaceId,
     title: updatedItem.title,
   };
-}
-
-function buildMarkdownItemTitleSource(
-  workspaceId: string,
-  folderId: string | null,
-  itemId: string,
-  markdown: string,
-): string | null {
-  const source = buildMarkdownTitleSource(markdown);
-  if (!source) return null;
-
-  const siblings = getChatTreeChildren(workspaceId, folderId)
-    .items.filter((sibling) => sibling.id !== itemId && sibling.type !== "terminal")
-    .map((sibling) => sibling.title.trim())
-    .filter(Boolean)
-    .slice(0, 8);
-  if (siblings.length === 0) return source;
-
-  return `Sibling titles:\n${siblings.map((title) => `- ${title}`).join("\n")}\n\n${source}`;
 }
 
 function extractMessageText(message: MessageRow): string {
