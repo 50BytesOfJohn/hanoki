@@ -37,3 +37,27 @@ export function parseChatTitle(input: unknown): ParseChatTitleResult {
     value: parsed,
   };
 }
+
+const GENERATED_TITLE_LABEL = /^(?:title|chat title|document title|heading)\s*:\s*/i;
+
+export function normalizeGeneratedTitle(input: string): string {
+  const firstLine = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const normalized = (firstLine ?? "")
+    .replace(/^#{1,6}\s+/, "")
+    .replace(GENERATED_TITLE_LABEL, "")
+    .replace(/^[`'"“”‘’]+|[`'"“”‘’]+$/g, "")
+    .replace(/[.!?。！？]+$/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CHAT_TITLE_MAX_LENGTH);
+  const parsedTitle = parseChatTitle(normalized);
+
+  if (!parsedTitle.ok) {
+    throw new Error("Sumi returned an invalid item title.");
+  }
+
+  return parsedTitle.value;
+}

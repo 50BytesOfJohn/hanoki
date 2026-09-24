@@ -1,12 +1,20 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { ChatTreeItemRef } from "@shared/ipc";
+import type { ChatTreeItemRef, ItemInfo } from "@shared/ipc";
 
 import { chatTreeApi } from "../api/chat-tree";
 import { itemsApi } from "../api/items";
 import { foldersApi } from "../api/folders";
+import { toastManager } from "../components/ui/toast";
+import { applyItemTitleUpdate } from "../features/items/item-title-events";
 import { queryKeys } from "../queries/keys";
 import { useWorkspaceStore } from "../features/workspace/store";
+
+function isItemInfo(value: unknown): value is ItemInfo {
+  if (!value || typeof value !== "object" || !("type" in value)) return false;
+  const type = value.type;
+  return type === "chat" || type === "markdown" || type === "terminal";
+}
 
 export function useSetChatTreeUiState() {
   return useMutation({
@@ -30,13 +38,26 @@ export function useRenameChatTreeItem() {
       }
       return itemsApi.updateTitle(itemId.slice("item:".length), name);
     },
-    onSuccess: (_result, variables) => {
-      if (!variables.itemId.startsWith("item:")) {
+    onSuccess: (result) => {
+      if (isItemInfo(result)) {
+        applyItemTitleUpdate({
+          type: "item:title-updated",
+          itemId: result.id,
+          itemType: result.type,
+          workspaceId: result.workspaceId,
+          title: result.title,
+        });
         return;
       }
 
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.items.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
+    },
+    onError: (error) => {
+      toastManager.add({
+        type: "error",
+        title: "Rename failed",
+        description: error instanceof Error ? error.message : "The name could not be saved.",
+      });
     },
   });
 }

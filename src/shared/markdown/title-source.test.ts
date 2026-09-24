@@ -19,6 +19,13 @@ describe("Markdown title source", () => {
     expect(source).not.toContain("word-501");
   });
 
+  it("puts the first markdown heading ahead of the body", () => {
+    const source = buildMarkdownTitleSource("# The Bridge\n\nKael waits in the rain.");
+
+    expect(source?.startsWith("Heading: The Bridge\n\n")).toBe(true);
+    expect(source).toContain("Kael waits in the rain.");
+  });
+
   it("respects the shared source length limit and rejects empty content", () => {
     expect(buildMarkdownTitleSource("  \n\t ")).toBeNull();
     expect(buildMarkdownTitleSource("x".repeat(ITEM_TITLE_SOURCE_MAX_LENGTH + 100))).toHaveLength(
