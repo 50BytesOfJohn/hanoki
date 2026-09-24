@@ -259,6 +259,27 @@ describe("updateChatSettings", () => {
 
     expect(getChatById(chat.id)?.data.settings.modelId).toBe("selected-model");
   });
+
+  it("keeps an ordered unique attached note list and drops unknown settings keys", () => {
+    createWorkspace({ id: "notes-workspace", name: "Notes" });
+    const chat = createChat({
+      workspaceId: "notes-workspace",
+      title: "Sticky",
+      folderId: null,
+    });
+
+    const saved = updateChatSettings(chat.id, {
+      attachedNoteIds: ["note-b", "note-a", "note-b"],
+      webEnabled: false,
+    });
+    expect(saved.data.settings.attachedNoteIds).toEqual(["note-b", "note-a"]);
+    expect(saved.data.settings.webEnabled).toBe(false);
+
+    expect(updateChatSettings(chat.id, { attachedNoteIds: [] }).data.settings.attachedNoteIds).toBe(
+      undefined,
+    );
+    expect(getChatById(chat.id)?.data.settings.webEnabled).toBe(false);
+  });
 });
 
 describe("Hanoki tool nullable inputs", () => {

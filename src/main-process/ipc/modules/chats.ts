@@ -89,6 +89,7 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     "hanokiEnabled",
     "terminalEnabled",
     "terminalAutoApprove",
+    "attachedNoteIds",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -189,6 +190,17 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     parsedInput.terminalAutoApprove = inputRecord.terminalAutoApprove;
+  }
+
+  if (inputRecord.attachedNoteIds !== undefined) {
+    if (
+      !Array.isArray(inputRecord.attachedNoteIds) ||
+      inputRecord.attachedNoteIds.some((id) => typeof id !== "string")
+    ) {
+      throw AppError.badRequest("attachedNoteIds must be an array of strings.");
+    }
+
+    parsedInput.attachedNoteIds = inputRecord.attachedNoteIds;
   }
 
   return [chatId, parsedInput];

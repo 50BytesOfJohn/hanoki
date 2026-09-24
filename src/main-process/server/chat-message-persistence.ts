@@ -1,3 +1,4 @@
+import type { AttachedNoteRecord } from "@shared/chat/attached-notes";
 import {
   normalizeChatMessageMetadata,
   type ChatMessageMetadata,
@@ -10,6 +11,7 @@ import { getMessageById, type MessageRow, upsertMessage } from "../messages/repo
 export function persistRequestUserMessage(
   chatId: string,
   requestMessages: readonly HanokiUiMessage[],
+  attachedNotes?: readonly AttachedNoteRecord[],
 ): MessageRow | null {
   const userMessage = requestMessages.at(-1);
   if (!userMessage || userMessage.role !== "user") {
@@ -22,16 +24,23 @@ export function persistRequestUserMessage(
     ? existingMessage.parentId
     : (previousRequestMessage?.id ?? normalizeChatMessageMetadata(userMessage.metadata).parentId);
 
+  const metadata: ChatMessageMetadata = {
+    ...existingMessage?.metadata,
+    parentId,
+  };
+  if (attachedNotes && attachedNotes.length > 0) {
+    metadata.attachedNotes = attachedNotes.map((note) => ({ ...note }));
+  } else {
+    delete metadata.attachedNotes;
+  }
+
   return upsertMessage({
     id: userMessage.id,
     chatId,
     parentId,
     role: "user",
     parts: userMessage.parts,
-    metadata: {
-      ...existingMessage?.metadata,
-      parentId,
-    },
+    metadata,
   });
 }
 

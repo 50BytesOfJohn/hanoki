@@ -46,6 +46,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
+import { useWorkspaceStore } from "@/features/workspace/store";
 import { Spinner } from "@/components/ui/spinner";
 import {
   createTiptapDocumentFromText,
@@ -58,6 +59,7 @@ import {
   serializeTiptapToMarkdown,
 } from "@shared/tiptap/extensions";
 import { MessageTiptapEditor } from "./tiptap-editor";
+import { AttachedNotesStrip } from "./attached-notes-strip";
 import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 
@@ -782,6 +784,16 @@ const UserMessage = React.memo(function UserMessage({
   const submitEditedMessage = useChatSubmitEditedMessage();
   const messageText = React.useMemo(() => getTiptapMessageDisplayText(message), [message]);
   const { draft, messageDocument, setDraft } = useMessageDraft(message, isEditing);
+  const attachedNotes = message.metadata?.attachedNotes;
+  const openAttachedNote = React.useCallback((itemId: string) => {
+    const { activeTabId, openTab, splitPane, tabs } = useWorkspaceStore.getState();
+    const tab = tabs.find((candidate) => candidate.id === activeTabId);
+    if (!tab) {
+      openTab({ type: "markdown", itemId });
+      return;
+    }
+    splitPane(tab.id, tab.focusedPaneId, itemId, "markdown", "right");
+  }, []);
 
   return (
     <div className="group/message flex flex-col items-end gap-2" data-chat-message-id={message.id}>
@@ -808,6 +820,13 @@ const UserMessage = React.memo(function UserMessage({
           )}
         </div>
       </MessageContextMenu>
+
+      {attachedNotes && attachedNotes.length > 0 ? (
+        <AttachedNotesStrip
+          notes={attachedNotes.map((note) => ({ ...note, excerpt: "" }))}
+          onOpen={openAttachedNote}
+        />
+      ) : null}
 
       <UserMessageTools
         chatId={chatId}

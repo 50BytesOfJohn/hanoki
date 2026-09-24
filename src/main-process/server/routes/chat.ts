@@ -6,6 +6,7 @@ import {
   smoothStream,
   ToolLoopAgent,
   type LanguageModelUsage,
+  type ModelMessage,
 } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
@@ -58,6 +59,14 @@ import {
 } from "../chat-message-persistence";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
 import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
+import {
+  formatAttachedNotesBlock,
+  packAttachedNotes,
+  toAttachedNoteRecords,
+  type AttachedNoteInput,
+  type PackedAttachedNote,
+} from "@shared/chat/attached-notes";
+import { getItemById } from "../../chat-tree/repository";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -66,6 +75,7 @@ interface CreateChatRouteOptions {
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
+  flushMarkdownContent?: (id: string) => void;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -174,8 +184,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       lastRequestMessage?.role === "user" &&
       !listAllMessagesByChatId(chat.id).some((message) => message.role === "user");
 
+    const packedNotes = expandStickyNotes(chat, options?.flushMarkdownContent);
+    const attachedNotesBlock = formatAttachedNotesBlock(packedNotes);
+
     if (mode !== "continue-message" && lastRequestMessage?.role === "user") {
-      persistRequestUserMessage(chat.id, messages);
+      persistRequestUserMessage(chat.id, messages, toAttachedNoteRecords(packedNotes));
 
       const titleGeneration = readSumiSettings().titleGeneration;
       if (shouldAutoGenerateTitle && titleGeneration.enabled && titleGeneration.autoGenerate) {
@@ -362,18 +375,21 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       abortSignal: c.req.raw.signal,
       experimental_transform: smoothStream({ chunking: "line" }),
       messages: stripReplayedReasoning(
-        await convertToModelMessages<HanokiUiMessage>(modelInputMessages, {
-          convertDataPart: (part) => {
-            if (part.type !== "data-tiptap") {
-              return undefined;
-            }
-            const parsed = parseTiptapDocument(part.data);
-            if (!parsed.ok) {
-              throw new Error(parsed.error);
-            }
-            return { type: "text", text: parsed.value.modelText };
-          },
-        }),
+        prependAttachedNotes(
+          attachedNotesBlock,
+          await convertToModelMessages<HanokiUiMessage>(modelInputMessages, {
+            convertDataPart: (part) => {
+              if (part.type !== "data-tiptap") {
+                return undefined;
+              }
+              const parsed = parseTiptapDocument(part.data);
+              if (!parsed.ok) {
+                throw new Error(parsed.error);
+              }
+              return { type: "text", text: parsed.value.modelText };
+            },
+          }),
+        ),
       ),
     });
 
@@ -502,6 +518,38 @@ function extractUiMessageText(message: HanokiUiMessage): string | null {
   const text = getTiptapMessageDisplayText(message).trim();
 
   return text || null;
+}
+
+function expandStickyNotes(
+  chat: NonNullable<ReturnType<typeof getChatById>>,
+  flushMarkdownContent?: (id: string) => void,
+): PackedAttachedNote[] {
+  const inputs: AttachedNoteInput[] = (chat.data.settings.attachedNoteIds ?? []).map((itemId) => {
+    try {
+      flushMarkdownContent?.(itemId);
+    } catch {
+      // Missing or non-markdown ids fail below; flush must not abort the send.
+    }
+
+    const item = getItemById(itemId);
+    if (!item) {
+      return { itemId, title: "Missing note", body: null, error: "missing" as const };
+    }
+    if (item.workspaceId !== chat.workspaceId) {
+      return { itemId, title: item.title, body: null, error: "wrong-workspace" as const };
+    }
+    if (item.type !== "markdown") {
+      return { itemId, title: item.title, body: null, error: "wrong-type" as const };
+    }
+    return { itemId, title: item.title, body: item.data.markdown };
+  });
+
+  return packAttachedNotes(inputs);
+}
+
+function prependAttachedNotes(block: string, messages: ModelMessage[]): ModelMessage[] {
+  if (!block) return messages;
+  return [{ role: "system", content: block }, ...messages];
 }
 
 function findLatestUserMessage(messages: HanokiUiMessage[]): HanokiUiMessage | undefined {
