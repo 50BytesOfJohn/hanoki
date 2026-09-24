@@ -28,11 +28,13 @@ import {
   type ChatTreeFolderNode,
 } from "../../chat-tree/repository";
 import { createUuidV7 } from "../../db/uuidv7";
+import { getModelById, listEnabledModels } from "../../models/repository";
 import {
   listAllMessagesByChatId,
   listMessagesByChatId,
   upsertMessage,
 } from "../../messages/repository";
+import { isChatGenerationBusy, reserveChatKick } from "../chat-generation-gate";
 
 type ItemKind = "chat" | "folder" | "markdown" | "terminal";
 type ItemRef = { kind: ItemKind; id: string };
@@ -184,6 +186,21 @@ function getStoredMessageText(message: { parts: unknown[] }): string {
   return getMessageDisplayText({ parts: message.parts as HanokiUiMessage["parts"] });
 }
 
+function isActiveEnabledModel(modelId: string | null | undefined): modelId is string {
+  if (!modelId) return false;
+  const model = getModelById(modelId);
+  return Boolean(model && model.isEnabled && model.lifecycleStatus === "active");
+}
+
+function resolveKickModelId(
+  explicitModelId: string | null,
+  settingsModelId: string | null,
+): string {
+  if (isActiveEnabledModel(explicitModelId)) return explicitModelId;
+  if (isActiveEnabledModel(settingsModelId)) return settingsModelId;
+  throw new Error("No enabled model is available to start a reply in this chat.");
+}
+
 function parseItemTitle(kind: Exclude<ItemKind, "folder">, newName: string): string {
   const parsed = parseChatTitle(newName);
   if (!parsed.ok) {
@@ -197,11 +214,13 @@ export function createHanokiTools({
   chatId,
   onTreeChanged,
   onMessagesChanged,
+  onGenerationRequested,
 }: {
   workspaceId: string;
   chatId: string;
   onTreeChanged?: () => void;
   onMessagesChanged?: (chatId: string) => void;
+  onGenerationRequested?: (chatId: string, modelId: string) => void;
 }) {
   const treeChanged = <T>(result: T): T => {
     onTreeChanged?.();
@@ -470,13 +489,16 @@ export function createHanokiTools({
           name: parsed.value,
           parentId: normalizeNullableString(parentFolderId),
         });
-        return treeChanged(
-          summarizeItem(
+        return treeChanged({
+          ...summarizeItem(
             workspaceId,
             { kind: "folder", id: folder.id },
             getFolderPaths(workspaceId),
           ),
-        );
+          ancestorFolderIds: getFolderPathSegments(workspaceId, folder.parentId).map(
+            (segment) => segment.id,
+          ),
+        });
       },
     }),
 
@@ -515,11 +537,34 @@ export function createHanokiTools({
       },
     }),
 
+    hanokiListModels: tool({
+      description:
+        "List models that are enabled and active. Use a returned id as modelId when starting a reply with hanokiSendMessage. This does not change settings.",
+      inputSchema: jsonSchema<Record<string, never>>({
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      }),
+      execute: () => ({
+        models: listEnabledModels().map((model) => ({
+          id: model.id,
+          providerId: model.providerId,
+          providerModelId: model.providerModelId,
+          displayName: model.displayName,
+        })),
+      }),
+    }),
+
     hanokiSendMessage: tool({
       description:
-        "Append one user message as a draft in a chat in the current Hanoki workspace. Use this when the user explicitly asks to send or leave a message in a specific chat. Pass the exact chat ID from a Hanoki browse, search, or create result. This only saves the message. It does not start a reply or run the agent in that chat.",
+        "Append one user message to an explicit chat in the current Hanoki workspace. Pass the exact chat ID from a Hanoki browse, search, or create result. kick defaults to false and only saves a draft. Set kick to true to ask the app to start one reply in that other chat after the draft is saved. kick cannot target this chat, a chat that is already generating, or more than one chat. Optional modelId must be an enabled active model from hanokiListModels; otherwise the target chat's saved model is used.",
       strict: true,
-      inputSchema: jsonSchema<{ chatId: string; text: string }>({
+      inputSchema: jsonSchema<{
+        chatId: string;
+        text: string;
+        kick?: boolean;
+        modelId?: string | null;
+      }>({
         type: "object",
         properties: {
           chatId: {
@@ -532,11 +577,23 @@ export function createHanokiTools({
             minLength: 1,
             description: "The user message text to save.",
           },
+          kick: {
+            type: "boolean",
+            default: false,
+            description:
+              "When true, start one reply in that chat after saving. Defaults to false (draft only).",
+          },
+          modelId: {
+            type: ["string", "null"],
+            default: null,
+            description:
+              "Optional enabled active model id from hanokiListModels. Used only when kick is true.",
+          },
         },
         required: ["chatId", "text"],
         additionalProperties: false,
       }),
-      execute: ({ chatId: targetChatId, text }) => {
+      execute: ({ chatId: targetChatId, text, kick = false, modelId = null }) => {
         const normalizedChatId = targetChatId.trim();
         if (!normalizedChatId) {
           throw new Error("Chat ID is required.");
@@ -548,6 +605,20 @@ export function createHanokiTools({
         const target = getChatById(normalizedChatId);
         if (!target || target.workspaceId !== workspaceId) {
           throw new Error(`Chat "${normalizedChatId}" does not exist in this workspace.`);
+        }
+        const shouldKick = kick === true;
+        let kickModelId: string | null = null;
+        if (shouldKick) {
+          if (normalizedChatId === chatId) {
+            throw new Error("Cannot start a reply in the chat that is running this turn.");
+          }
+          if (isChatGenerationBusy(normalizedChatId)) {
+            throw new Error(`Chat "${normalizedChatId}" is already generating a reply.`);
+          }
+          kickModelId = resolveKickModelId(
+            normalizeNullableString(modelId),
+            target.data.settings.modelId ?? null,
+          );
         }
         const parentId =
           listMessagesByChatId(normalizedChatId, getChatCurrentBranchId(normalizedChatId)).at(-1)
@@ -562,12 +633,18 @@ export function createHanokiTools({
         });
         setChatCurrentBranch(normalizedChatId, saved.id);
         onMessagesChanged?.(normalizedChatId);
+        if (shouldKick && kickModelId) {
+          reserveChatKick(normalizedChatId);
+          onGenerationRequested?.(normalizedChatId, kickModelId);
+        }
         return {
           chatId: normalizedChatId,
+          title: target.title,
           messageId: saved.id,
           role: "user" as const,
           content: trimmedText,
-          startedGeneration: false,
+          startedGeneration: shouldKick,
+          modelId: kickModelId,
         };
       },
     }),
@@ -727,6 +804,7 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiGetItemLocation",
   "hanokiCreateFolder",
   "hanokiCreateChat",
+  "hanokiListModels",
   "hanokiSendMessage",
   "hanokiCreateMarkdown",
   "hanokiMoveItems",

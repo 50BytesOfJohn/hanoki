@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
 import {
   listAllMessagesByChatId,
   listMessagesByChatId,
@@ -95,6 +96,24 @@ beforeAll(() => {
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
+      created_at integer not null,
+      updated_at integer not null
+    )
+  `),
+  );
+  db.run(
+    sql.raw(`
+    create table models (
+      id text primary key,
+      provider_id text not null,
+      provider_model_id text not null,
+      canonical_model_id text not null,
+      display_name text,
+      is_enabled integer not null default 1,
+      data text not null default '{}',
+      metadata text not null default '{}',
+      extensions text not null default '{}',
+      lifecycle_status text not null default 'active',
       created_at integer not null,
       updated_at integer not null
     )
@@ -311,6 +330,18 @@ const toolExecuteOptions = {
   // SAFETY: Tool execute() types context as never; tests do not use it.
   context: undefined as never,
 };
+
+function insertModel(id: string, isEnabled: boolean, lifecycleStatus: string) {
+  getAppDatabase().run(
+    sql`insert into models (
+      id, provider_id, provider_model_id, canonical_model_id, display_name,
+      is_enabled, lifecycle_status, created_at, updated_at
+    ) values (
+      ${id}, 'provider', ${id}, ${id}, ${id},
+      ${isEnabled ? 1 : 0}, ${lifecycleStatus}, ${Date.now()}, ${Date.now()}
+    )`,
+  );
+}
 
 function unwrapToolResult<T>(value: T): Exclude<T, AsyncIterable<unknown>> {
   if (typeof value === "object" && value !== null && Symbol.asyncIterator in value) {
@@ -581,11 +612,13 @@ describe("Hanoki create and browse kinds", () => {
     });
     const onTreeChanged = vi.fn();
     const onMessagesChanged = vi.fn();
+    const onGenerationRequested = vi.fn();
     const tools = createHanokiTools({
       workspaceId: "send-draft-workspace",
       chatId: "host-chat",
       onTreeChanged,
       onMessagesChanged,
+      onGenerationRequested,
     });
 
     await expect(async () => {
@@ -604,11 +637,14 @@ describe("Hanoki create and browse kinds", () => {
 
     expect(result).toEqual({
       chatId: chat.id,
+      title: "Target",
       messageId: expect.any(String),
       role: "user",
       content: "Draft hello",
       startedGeneration: false,
+      modelId: null,
     });
+    expect(onGenerationRequested).not.toHaveBeenCalled();
     expect(HANOKI_MUTATING_TOOL_NAMES).not.toContain("hanokiSendMessage");
     expect(onTreeChanged).not.toHaveBeenCalled();
     expect(onMessagesChanged).toHaveBeenCalledTimes(1);
@@ -625,6 +661,81 @@ describe("Hanoki create and browse kinds", () => {
     expect(listAllMessagesByChatId(chat.id).some((message) => message.role === "assistant")).toBe(
       false,
     );
+  });
+
+  it("starts one cross-chat reply with an enabled model and rejects self, busy, and missing models", async () => {
+    createWorkspace({ id: "send-kick-workspace", name: "Send kick" });
+    insertModel("kick-active", true, "active");
+    insertModel("kick-disabled", false, "active");
+    insertModel("kick-removed", true, "removed");
+    const host = createChat({
+      workspaceId: "send-kick-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const target = createChat({
+      workspaceId: "send-kick-workspace",
+      title: "Other",
+      folderId: null,
+    });
+    updateChatSettings(target.id, { modelId: "kick-active" });
+    const onGenerationRequested = vi.fn();
+    const tools = createHanokiTools({
+      workspaceId: "send-kick-workspace",
+      chatId: host.id,
+      onGenerationRequested,
+    });
+
+    await expect(async () => {
+      await tools.hanokiSendMessage.execute!(
+        { chatId: host.id, text: "Self", kick: true },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow("Cannot start a reply in the chat that is running this turn.");
+
+    const noModel = createChat({
+      workspaceId: "send-kick-workspace",
+      title: "No model",
+      folderId: null,
+    });
+    await expect(async () => {
+      await tools.hanokiSendMessage.execute!(
+        { chatId: noModel.id, text: "Go", kick: true, modelId: "kick-disabled" },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow("No enabled model is available to start a reply in this chat.");
+    expect(listAllMessagesByChatId(noModel.id)).toEqual([]);
+
+    beginChatGeneration(target.id);
+    await expect(async () => {
+      await tools.hanokiSendMessage.execute!(
+        { chatId: target.id, text: "Busy", kick: true },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow(`Chat "${target.id}" is already generating a reply.`);
+    endChatGeneration(target.id);
+    expect(listAllMessagesByChatId(target.id)).toEqual([]);
+
+    const result = unwrapToolResult(
+      await tools.hanokiSendMessage.execute!(
+        { chatId: target.id, text: "Please reply", kick: true, modelId: "kick-removed" },
+        toolExecuteOptions,
+      ),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        chatId: target.id,
+        startedGeneration: true,
+        modelId: "kick-active",
+        role: "user",
+      }),
+    );
+    expect(onGenerationRequested).toHaveBeenCalledTimes(1);
+    expect(onGenerationRequested).toHaveBeenCalledWith(target.id, "kick-active");
+    expect(listAllMessagesByChatId(target.id).map((message) => message.role)).toEqual(["user"]);
+
+    const listed = unwrapToolResult(await tools.hanokiListModels.execute!({}, toolExecuteOptions));
+    expect(listed.models.map((model) => model.id)).toEqual(["kick-active"]);
   });
 
   it("rejects an oversized markdown body without creating a note", async () => {

@@ -1,6 +1,7 @@
 import { messagesApi } from "@/api/messages";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
+import { useSystemStore } from "@/stores/system-store";
 import { useChatStore } from "@/stores/chat-store";
 
 function isChatBusy(chatId: string) {
@@ -23,5 +24,21 @@ export function notifyChatMessagesChanged(chatId: string): void {
     const chat = useChatStore.getState().chatEntries.get(chatId);
     if (!chat || isChatBusy(chatId)) return;
     chat.messages = messages;
+  });
+}
+
+/** Starts one reply for a draft saved in another chat. Does not open a pane. */
+export function startRequestedChatGeneration(chatId: string, modelId: string): void {
+  const port = useSystemStore.getState().aiServer.port;
+  if (!port) return;
+
+  const chat = useChatStore.getState().getOrCreateChat(chatId, `http://127.0.0.1:${port}/api/chat`);
+  if (chat.status === "streaming" || chat.status === "submitted") return;
+
+  void messagesApi.listMessages(chatId).then((messages) => {
+    const current = useChatStore.getState().chatEntries.get(chatId);
+    if (!current || current.status === "streaming" || current.status === "submitted") return;
+    current.messages = messages;
+    void current.sendMessage(undefined, { body: { modelId } });
   });
 }

@@ -11,6 +11,7 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
 import type {
+  ChatGenerationRequestedEvent,
   ChatMessagesChangedEvent,
   ChatTreeChangedEvent,
   ItemTitleUpdatedEvent,
@@ -56,6 +57,7 @@ import {
   persistRequestUserMessage,
 } from "../chat-message-persistence";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
+import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -64,6 +66,7 @@ interface CreateChatRouteOptions {
   onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
+  onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -239,6 +242,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         onTreeChanged: () => options?.onChatTreeChanged?.({ workspaceId: chat.workspaceId }),
         onMessagesChanged: (targetChatId) =>
           options?.onChatMessagesChanged?.({ chatId: targetChatId }),
+        onGenerationRequested: (targetChatId, modelId) =>
+          options?.onChatGenerationRequested?.({ chatId: targetChatId, modelId }),
       }),
       ...createTerminalTools({
         chatId: chat.id,
@@ -261,6 +266,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         toolApproval[name] = "user-approval";
       }
     }
+    const sendMessageApproval = (input: { kick?: boolean }) =>
+      input.kick === true ? ("user-approval" as const) : undefined;
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
@@ -291,9 +298,17 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ),
       tools,
       activeTools,
-      ...(Object.keys(toolApproval).length > 0 ? { toolApproval } : {}),
+      ...(Object.keys(toolApproval).length > 0 || isHanokiEnabledForRequest
+        ? {
+            toolApproval: {
+              ...toolApproval,
+              ...(isHanokiEnabledForRequest ? { hanokiSendMessage: sendMessageApproval } : {}),
+            },
+          }
+        : {}),
       stopWhen: isStepCount(100),
       onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
+        beginChatGeneration(chat.id);
         currentCallId = startedCallId;
         console.info("[ai] Request started.", {
           callId: currentCallId,
@@ -417,6 +432,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         return undefined;
       },
       onEnd: ({ isAborted, responseMessage }) => {
+        endChatGeneration(chat.id);
         if (isAborted) {
           capturedResponseMetadata = buildResponseMetadata(
             completedStepUsage,

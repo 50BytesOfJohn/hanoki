@@ -16,11 +16,18 @@ import {
   FolderTransferIcon,
   GlobalSearchIcon,
   Globe02Icon,
+  MoreHorizontalIcon,
   ShieldBanIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/menu";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
@@ -36,6 +43,7 @@ import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { queryKeys } from "@/queries/keys";
 import { notifyChatTreeChanged } from "@/features/items/item-title-events";
+import { requestSidebarFolderReveal } from "@/features/chat/sidebar-reveal";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
 import { formatHanokiMoveApproval, formatHanokiRenameApproval } from "./tool-approval-summary";
@@ -47,7 +55,7 @@ type ToolIcon = React.ComponentProps<typeof HugeiconsIcon>["icon"];
 interface ToolMarkerConfig {
   icon: ToolIcon;
   pendingLabel: (input: unknown) => string;
-  doneLabel: (input: unknown) => string;
+  doneLabel: (input: unknown, output?: unknown) => string;
   errorLabel: string;
   Details: React.ComponentType<{ input: unknown; output: unknown }>;
 }
@@ -59,6 +67,13 @@ function getStringField(input: unknown, field: string): string | null {
 
   const value = (input as Record<string, unknown>)[field];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getStringArray(input: unknown, field: string): string[] {
+  if (typeof input !== "object" || input === null) return [];
+  const value = (input as Record<string, unknown>)[field];
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 }
 
 function getArrayLength(input: unknown, field: string): number {
@@ -408,7 +423,10 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
   hanokiSendMessage: {
     icon: MessageAdd01Icon,
     pendingLabel: () => "Saving a draft message…",
-    doneLabel: () => "Saved a draft message",
+    doneLabel: (_input, output) => {
+      const title = getStringField(output, "title");
+      return title ? `Saved a draft in “${title}”` : "Saved a draft";
+    },
     errorLabel: "Saving draft message failed",
     Details: GenericToolDetails,
   },
@@ -540,6 +558,18 @@ function describeApprovalRequest(
     };
   }
 
+  if (toolName === "hanokiSendMessage") {
+    const text = getStringField(input, "text");
+    return {
+      title: "Start a reply in another chat?",
+      body: text ? (
+        <p className="rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
+          {text}
+        </p>
+      ) : null,
+    };
+  }
+
   if (toolName === "hanokiRenameItem") {
     const rename = formatHanokiRenameApproval(input, names.currentItemName);
     return {
@@ -661,6 +691,138 @@ function ToolApprovalCard({
   );
 }
 
+type OpenableItemType = "chat" | "markdown";
+
+function openHanokiItem(
+  itemId: string,
+  itemType: OpenableItemType,
+  mode: "focus" | "split" | "tab",
+) {
+  const { activeTabId, openItemInFocusedPane, openTab, splitPane, tabs } =
+    useWorkspaceStore.getState();
+  if (mode === "focus") {
+    openItemInFocusedPane(itemId, itemType);
+    return;
+  }
+  if (mode === "tab") {
+    openTab({ type: itemType, itemId }, { activate: true });
+    return;
+  }
+  const tab = tabs.find((candidate) => candidate.id === activeTabId);
+  if (!tab) {
+    openTab({ type: itemType, itemId }, { activate: true });
+    return;
+  }
+  splitPane(tab.id, tab.focusedPaneId, itemId, itemType, "right");
+}
+
+function doneMarkerTarget(toolName: string, output: unknown) {
+  if (toolName === "hanokiCreateFolder") {
+    const folderId = getStringField(output, "id");
+    if (!folderId) return null;
+    return {
+      kind: "folder" as const,
+      folderId,
+      ancestorFolderIds: getStringArray(output, "ancestorFolderIds"),
+    };
+  }
+
+  const itemType: OpenableItemType | null =
+    toolName === "hanokiCreateChat" || toolName === "hanokiSendMessage"
+      ? "chat"
+      : toolName === "hanokiCreateMarkdown"
+        ? "markdown"
+        : null;
+  if (!itemType) return null;
+  const itemId =
+    toolName === "hanokiSendMessage"
+      ? getStringField(output, "chatId")
+      : getStringField(output, "id");
+  if (!itemId) return null;
+  return { kind: "item" as const, itemId, itemType };
+}
+
+const markerActionClass = "h-6 px-1.5 text-muted-foreground";
+
+function DoneMarkerActions({
+  target,
+}: {
+  target: NonNullable<ReturnType<typeof doneMarkerTarget>>;
+}) {
+  if (target.kind === "folder") {
+    return (
+      <div className="mt-0.5">
+        <Button
+          size="xs"
+          variant="ghost"
+          className={markerActionClass}
+          onClick={() => {
+            useWorkspaceStore.getState().setSidebarViewMode("tree");
+            requestSidebarFolderReveal({
+              folderId: target.folderId,
+              ancestorFolderIds: target.ancestorFolderIds,
+            });
+          }}
+        >
+          Show in sidebar
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="@container/tool-marker mt-0.5 flex w-full items-center gap-0.5">
+      <Button
+        size="xs"
+        variant="ghost"
+        className={markerActionClass}
+        onClick={() => openHanokiItem(target.itemId, target.itemType, "focus")}
+      >
+        Open
+      </Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        className={cn(markerActionClass, "hidden @min-[240px]/tool-marker:inline-flex")}
+        onClick={() => openHanokiItem(target.itemId, target.itemType, "split")}
+      >
+        Open in split
+      </Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        className={cn(markerActionClass, "hidden @min-[240px]/tool-marker:inline-flex")}
+        onClick={() => openHanokiItem(target.itemId, target.itemType, "tab")}
+      >
+        New tab
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="@min-[240px]/tool-marker:hidden"
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className="text-muted-foreground"
+              aria-label="More open actions"
+            />
+          }
+        >
+          <HugeiconsIcon icon={MoreHorizontalIcon} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuItem onClick={() => openHanokiItem(target.itemId, target.itemType, "split")}>
+            Open in split
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => openHanokiItem(target.itemId, target.itemType, "tab")}>
+            New tab
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 export const ToolCallMarker = React.memo(function ToolCallMarker({
   part,
 }: {
@@ -741,37 +903,41 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
   }
 
   const isError = part.state === "output-error";
-  const label = isError ? config.errorLabel : config.doneLabel(part.input);
+  const label = isError ? config.errorLabel : config.doneLabel(part.input, part.output);
+  const target = part.state === "output-available" ? doneMarkerTarget(toolName, part.output) : null;
 
   return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Marker
-            render={<button type="button" />}
-            className={cn(
-              "my-2 w-fit text-xs transition-colors hover:text-foreground",
-              isError && "text-destructive hover:text-destructive",
-            )}
-          />
-        }
-      >
-        <MarkerIcon>
-          <HugeiconsIcon icon={isError ? AlertCircleIcon : config.icon} />
-        </MarkerIcon>
-        <MarkerContent>{label}</MarkerContent>
-      </PopoverTrigger>
+    <div className="@container/tool-marker w-full">
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Marker
+              render={<button type="button" />}
+              className={cn(
+                "my-2 w-fit text-xs transition-colors hover:text-foreground",
+                isError && "text-destructive hover:text-destructive",
+              )}
+            />
+          }
+        >
+          <MarkerIcon>
+            <HugeiconsIcon icon={isError ? AlertCircleIcon : config.icon} />
+          </MarkerIcon>
+          <MarkerContent>{label}</MarkerContent>
+        </PopoverTrigger>
 
-      <PopoverContent align="start" className="w-96">
-        <PopoverHeader>
-          <PopoverTitle className="text-sm">{label}</PopoverTitle>
-        </PopoverHeader>
-        {isError ? (
-          <p className="text-xs text-destructive">{part.errorText || "An error occurred."}</p>
-        ) : (
-          <config.Details input={part.input} output={part.output} />
-        )}
-      </PopoverContent>
-    </Popover>
+        <PopoverContent align="start" className="w-96">
+          <PopoverHeader>
+            <PopoverTitle className="text-sm">{label}</PopoverTitle>
+          </PopoverHeader>
+          {isError ? (
+            <p className="text-xs text-destructive">{part.errorText || "An error occurred."}</p>
+          ) : (
+            <config.Details input={part.input} output={part.output} />
+          )}
+        </PopoverContent>
+      </Popover>
+      {target ? <DoneMarkerActions target={target} /> : null}
+    </div>
   );
 });

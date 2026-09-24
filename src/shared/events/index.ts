@@ -49,6 +49,13 @@ export interface ChatMessagesChangedEvent {
   chatId: string;
 }
 
+/** Asks the renderer to start one reply in a chat. The tool does not run an agent. */
+export interface ChatGenerationRequestedEvent {
+  type: "chat:generation-requested";
+  chatId: string;
+  modelId: string;
+}
+
 /**
  * Auto-update lifecycle, mirrored from Electron's `autoUpdater` in the main process.
  *
@@ -84,6 +91,7 @@ export type SystemEvent =
   | ItemTitleUpdatedEvent
   | ChatTreeChangedEvent
   | ChatMessagesChangedEvent
+  | ChatGenerationRequestedEvent
   | UpdateStateChangedEvent;
 
 export interface AiServerStateSnapshot {
