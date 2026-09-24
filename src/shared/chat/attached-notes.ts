@@ -117,7 +117,7 @@ export function formatAttachedNotesBlock(notes: readonly PackedAttachedNote[]): 
         ? `\n[truncated: using first ${note.injectedChars} of ${note.fullChars} characters]`
         : "";
     sections.push(
-      `<attached-note id="${escapeAttr(note.itemId)}" title="${escapeAttr(note.title)}">\nAttached note: ${note.title} (${note.itemId})${truncated}\n${note.excerpt}\n</attached-note>`,
+      `<attached-note id="${escapeAttr(note.itemId)}" title="${escapeAttr(note.title)}">\nAttached note: ${note.title} (${note.itemId})${truncated}\n${neutralizeFence(note.excerpt)}\n</attached-note>`,
     );
   }
   if (sections.length === 0) return "";
@@ -142,4 +142,8 @@ export function fuzzyTitleMatch(title: string, query: string): boolean {
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function neutralizeFence(body: string): string {
+  return body.replace(/<\/?attached-note\b/gi, (match) => match.replace("<", "&lt;"));
 }

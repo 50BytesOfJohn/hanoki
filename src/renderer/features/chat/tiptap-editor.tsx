@@ -32,15 +32,23 @@ interface SuggestionListHandle {
   onKeyDown: (props: SuggestionKeyDownProps) => boolean;
 }
 
-const notesRef: { current: NoteCandidate[] } = { current: [] };
-const attachNoteRef: { current: (itemId: string) => void } = { current: () => {} };
+interface ComposerNotesSource {
+  notes: readonly NoteCandidate[];
+  attachNote: (itemId: string) => void;
+}
 
-export function bindComposerNotes(
-  notes: readonly NoteCandidate[],
-  attachNote: (itemId: string) => void,
-) {
-  notesRef.current = [...notes];
-  attachNoteRef.current = attachNote;
+const ComposerNotesContext = React.createContext<ComposerNotesSource>({
+  notes: [],
+  attachNote: () => {},
+});
+
+export function ComposerNotesProvider({
+  notes,
+  attachNote,
+  children,
+}: ComposerNotesSource & { children: React.ReactNode }) {
+  const value = React.useMemo(() => ({ notes, attachNote }), [notes, attachNote]);
+  return <ComposerNotesContext.Provider value={value}>{children}</ComposerNotesContext.Provider>;
 }
 
 function isNoteSuggestion(
@@ -58,118 +66,134 @@ function isToolSuggestion(
 function getComposerToolLabel(toolId: unknown): string {
   return isChatToolId(toolId) ? CHAT_TOOL_LABELS[toolId] : "";
 }
-const toolSuggestionPluginKey = new PluginKey("hanoki-tool-mention");
+function createToolSuggestion(
+  pluginKey: PluginKey,
+  notesRef: React.RefObject<readonly NoteCandidate[]>,
+  attachRef: React.RefObject<(itemId: string) => void>,
+): Omit<SuggestionOptions<ComposerSuggestion, MentionNodeAttrs>, "editor"> {
+  const ComposerMentionList = React.forwardRef<
+    SuggestionListHandle,
+    SuggestionProps<ComposerSuggestion, ComposerSuggestion>
+  >(function ComposerMentionList({ command, items, query }, ref) {
+    const [selectedIndex, setSelectedIndex] = React.useState(0);
 
-const ComposerMentionList = React.forwardRef<
-  SuggestionListHandle,
-  SuggestionProps<ComposerSuggestion, ComposerSuggestion>
->(function ComposerMentionList({ command, items, query }, ref) {
-  const [selectedIndex, setSelectedIndex] = React.useState(0);
+    React.useEffect(() => setSelectedIndex(0), [items]);
 
-  React.useEffect(() => setSelectedIndex(0), [items]);
+    const selectItem = React.useCallback(
+      (index: number) => {
+        const item = items[index];
+        if (item) command(item);
+      },
+      [command, items],
+    );
 
-  const selectItem = React.useCallback(
-    (index: number) => {
-      const item = items[index];
-      if (item) command(item);
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        onKeyDown: ({ event }) => {
+          if (items.length === 0) return false;
+          if (event.key === "ArrowUp") {
+            setSelectedIndex((current) => (current + items.length - 1) % items.length);
+            return true;
+          }
+          if (event.key === "ArrowDown") {
+            setSelectedIndex((current) => (current + 1) % items.length);
+            return true;
+          }
+          if (event.key === "Enter") {
+            selectItem(selectedIndex);
+            return true;
+          }
+          return false;
+        },
+      }),
+      [items.length, selectItem, selectedIndex],
+    );
+
+    return (
+      <ComposerSuggestionList
+        items={items}
+        query={query}
+        notesOnly={false}
+        selectedIndex={selectedIndex}
+        onSelect={(item) => command(item)}
+      />
+    );
+  });
+
+  return {
+    char: "@",
+    pluginKey,
+    placement: "top-start",
+    offset: { mainAxis: 8 },
+    items: ({ query }) => filterComposerSuggestions(notesRef.current ?? [], query, false),
+    command: ({ editor, range, props }) => {
+      if (isNoteSuggestion(props)) {
+        editor.chain().focus().deleteRange(range).run();
+        attachRef.current?.(props.id);
+        return;
+      }
+      if (!isToolSuggestion(props) || !props.id) return;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(range, [
+          { type: "mention", attrs: { id: props.id, label: props.label ?? props.id } },
+          { type: "text", text: " " },
+        ])
+        .run();
     },
-    [command, items],
+    render: () => {
+      let component: ReactRenderer<
+        SuggestionListHandle,
+        SuggestionProps<ComposerSuggestion, ComposerSuggestion>
+      > | null = null;
+      let unmount: (() => void) | null = null;
+
+      return {
+        onStart(props) {
+          component = new ReactRenderer(ComposerMentionList, {
+            editor: props.editor,
+            props,
+          });
+          unmount = props.mount(component.element);
+        },
+        onUpdate(props) {
+          component?.updateProps(props);
+        },
+        onKeyDown(props) {
+          if (props.event.key === "Escape") return false;
+          return component?.ref?.onKeyDown(props) ?? false;
+        },
+        onExit() {
+          unmount?.();
+          component?.destroy();
+          unmount = null;
+          component = null;
+        },
+      };
+    },
+  };
+}
+
+function useMentionSuggestion() {
+  const source = React.useContext(ComposerNotesContext);
+  const notesRef = React.useRef(source.notes);
+  const attachRef = React.useRef(source.attachNote);
+  notesRef.current = source.notes;
+  attachRef.current = source.attachNote;
+  const pluginKey = React.useRef(new PluginKey("hanoki-tool-mention"));
+  const suggestion = React.useMemo(
+    () => createToolSuggestion(pluginKey.current, notesRef, attachRef),
+    [],
   );
+  return { pluginKey: pluginKey.current, suggestion };
+}
 
-  React.useImperativeHandle(
-    ref,
-    () => ({
-      onKeyDown: ({ event }) => {
-        if (items.length === 0) return false;
-        if (event.key === "ArrowUp") {
-          setSelectedIndex((current) => (current + items.length - 1) % items.length);
-          return true;
-        }
-        if (event.key === "ArrowDown") {
-          setSelectedIndex((current) => (current + 1) % items.length);
-          return true;
-        }
-        if (event.key === "Enter") {
-          selectItem(selectedIndex);
-          return true;
-        }
-        return false;
-      },
-    }),
-    [items.length, selectItem, selectedIndex],
-  );
-
-  return (
-    <ComposerSuggestionList
-      items={items}
-      query={query}
-      notesOnly={false}
-      selectedIndex={selectedIndex}
-      onSelect={(item) => command(item)}
-    />
-  );
-});
-
-const toolSuggestion: Omit<SuggestionOptions<ComposerSuggestion, MentionNodeAttrs>, "editor"> = {
-  char: "@",
-  pluginKey: toolSuggestionPluginKey,
-  placement: "top-start",
-  offset: { mainAxis: 8 },
-  items: ({ query }) => filterComposerSuggestions(notesRef.current, query, false),
-  command: ({ editor, range, props }) => {
-    if (isNoteSuggestion(props)) {
-      editor.chain().focus().deleteRange(range).run();
-      attachNoteRef.current(props.id);
-      return;
-    }
-    if (!isToolSuggestion(props) || !props.id) return;
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(range, [
-        { type: "mention", attrs: { id: props.id, label: props.label ?? props.id } },
-        { type: "text", text: " " },
-      ])
-      .run();
-  },
-  render: () => {
-    let component: ReactRenderer<
-      SuggestionListHandle,
-      SuggestionProps<ComposerSuggestion, ComposerSuggestion>
-    > | null = null;
-    let unmount: (() => void) | null = null;
-
-    return {
-      onStart(props) {
-        component = new ReactRenderer(ComposerMentionList, {
-          editor: props.editor,
-          props,
-        });
-        unmount = props.mount(component.element);
-      },
-      onUpdate(props) {
-        component?.updateProps(props);
-      },
-      onKeyDown(props) {
-        if (props.event.key === "Escape") return false;
-        return component?.ref?.onKeyDown(props) ?? false;
-      },
-      onExit() {
-        unmount?.();
-        component?.destroy();
-        unmount = null;
-        component = null;
-      },
-    };
-  },
-};
-
-const composerExtensions = [
-  Document,
-  Paragraph,
-  Text,
-  HardBreak,
-  Mention.configure({
+function mentionExtension(
+  suggestion: Omit<SuggestionOptions<ComposerSuggestion, MentionNodeAttrs>, "editor">,
+) {
+  return Mention.configure({
     HTMLAttributes: {
       class: "tiptap-tool-mention",
     },
@@ -178,9 +202,9 @@ const composerExtensions = [
       const label = getComposerToolLabel(node.attrs.id);
       return ["span", { class: "tiptap-tool-mention", "data-tool-id": node.attrs.id }, `@${label}`];
     },
-    suggestion: toolSuggestion,
-  }),
-];
+    suggestion,
+  });
+}
 
 interface ChatComposerEditorProps {
   document: TiptapDocument;
@@ -201,9 +225,14 @@ export function ChatComposerEditor({
   const onSubmitRef = React.useRef(onSubmit);
   submitBehaviorRef.current = submitBehavior;
   onSubmitRef.current = onSubmit;
+  const { pluginKey, suggestion } = useMentionSuggestion();
+  const extensions = React.useMemo(
+    () => [Document, Paragraph, Text, HardBreak, mentionExtension(suggestion)],
+    [suggestion],
+  );
 
   const editor = useEditor({
-    extensions: composerExtensions,
+    extensions,
     content: document,
     editable: !disabled,
     autofocus: "end",
@@ -220,9 +249,7 @@ export function ChatComposerEditor({
         if (event.isComposing || event.key !== "Enter" || event.shiftKey) {
           return false;
         }
-        const suggestionState = toolSuggestionPluginKey.getState(_view.state) as
-          | { active?: boolean }
-          | undefined;
+        const suggestionState = pluginKey.getState(_view.state) as { active?: boolean } | undefined;
         if (suggestionState?.active) {
           return false;
         }
@@ -282,9 +309,10 @@ interface MessageTiptapEditorProps {
 }
 
 export function MessageTiptapEditor({ className, document, onChange }: MessageTiptapEditorProps) {
+  const { suggestion } = useMentionSuggestion();
   const extensions = React.useMemo(
-    () => createMessageTiptapExtensions({ suggestion: toolSuggestion }),
-    [],
+    () => createMessageTiptapExtensions({ suggestion }),
+    [suggestion],
   );
   const editor = useEditor({
     extensions,

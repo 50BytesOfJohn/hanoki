@@ -27,7 +27,11 @@ type ChatContextState = {
   continuationError: string | null;
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
-  respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
+  respondToToolApproval: (input: {
+    id: string;
+    approved: boolean;
+    reason?: string;
+  }) => Promise<void>;
   stopGeneration: () => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
@@ -146,23 +150,22 @@ function createChatContextStore({
         body: { ...options?.body, modelId: currentModelId },
       });
     },
-    respondToToolApproval: ({ id, approved, reason }) => {
+    respondToToolApproval: async ({ id, approved, reason }) => {
       const { modelId: currentModelId } = get();
       if (!transportRefs.addToolApprovalResponse || !currentModelId) {
         return;
       }
 
       transportRefs.markTabTouched?.();
+      await transportRefs.flushAttached?.();
 
       // `sendAutomaticallyWhen` resumes the generation as soon as the last
       // approval is answered, so the model id has to ride along with it.
-      void transportRefs.flushAttached?.().then(() => {
-        transportRefs.addToolApprovalResponse?.({
-          id,
-          approved,
-          ...(reason ? { reason } : {}),
-          options: { body: { modelId: currentModelId } },
-        });
+      transportRefs.addToolApprovalResponse({
+        id,
+        approved,
+        ...(reason ? { reason } : {}),
+        options: { body: { modelId: currentModelId } },
       });
     },
     regenerateMessage: async (options) => {

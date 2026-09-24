@@ -102,7 +102,7 @@ import {
   type NoteCandidate,
 } from "./attached-note-picker";
 import { AttachedNotesStrip } from "./attached-notes-strip";
-import { bindComposerNotes, ChatComposerEditor } from "./tiptap-editor";
+import { ChatComposerEditor, ComposerNotesProvider } from "./tiptap-editor";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -373,8 +373,6 @@ function ActiveChatContent() {
     },
     [attachedIds, noteCandidates, noteInputs, queryClient, writeAttachedIds],
   );
-  bindComposerNotes(noteCandidates, attachNote);
-
   const stopGeneration = React.useCallback(() => {
     if (!canStop) {
       return;
@@ -458,148 +456,152 @@ function ActiveChatContent() {
   );
 
   return (
-    <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
-        <ChatMessageHotkeys />
+    <ComposerNotesProvider notes={noteCandidates} attachNote={attachNote}>
+      <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
+        <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
+          <ChatMessageHotkeys />
 
-        <div className="flex flex-col min-h-full justify-end">
-          <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
-            <Conversation />
-          </React.Activity>
+          <div className="flex flex-col min-h-full justify-end">
+            <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
+              <Conversation />
+            </React.Activity>
 
-          <div
-            data-chat-composer-shell="true"
-            className={cn(
-              "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
-              promptStickyPosition ? "sticky bottom-3" : null,
-            )}
-          >
-            {lastUserMessageId && !canStop ? (
-              <div className="mb-3 flex justify-center">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!modelId || isInteractionLocked}
-                  onClick={() => {
-                    scrollToBottom();
-                    void regenerateMessage({ messageId: lastUserMessageId });
-                  }}
-                >
-                  Generate
-                </Button>
-              </div>
-            ) : null}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitMessage();
-              }}
+            <div
+              data-chat-composer-shell="true"
+              className={cn(
+                "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
+                promptStickyPosition ? "sticky bottom-3" : null,
+              )}
             >
-              {/* has-disabled overrides: InputGroup dims itself when ANY child is
-                  disabled, and the Send button is disabled whenever the prompt is
-                  empty — which made the sticky composer translucent over messages. */}
-              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-                <AttachedNotesStrip
-                  notes={packedNotes}
-                  onOpen={openAttachedNote}
-                  onRemove={(itemId) => writeAttachedIds(attachedIds.filter((id) => id !== itemId))}
-                />
-                <ChatComposerEditor
-                  document={input}
-                  disabled={isInteractionLocked}
-                  submitBehavior={submitBehavior}
-                  onChange={updateInput}
-                  onSubmit={submitMessage}
-                />
-                <InputGroupAddon
-                  align="block-end"
-                  className="flex w-full items-center gap-1.5 px-2 py-0"
-                >
-                  <AddNoteButton
-                    disabled={isInteractionLocked}
-                    notes={noteCandidates}
-                    onAttach={attachNote}
-                  />
-                  <ChatToolsMenu />
-                  <ModelSelector />
-                  <ReasoningSelector />
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <SumiPromptAction
-                      prompt={inputText}
-                      isDisabled={isInteractionLocked || !inputIsTextOnly}
-                      onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
-                    />
-                    {canStop ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              aria-label="Stop"
-                              size="icon-sm"
-                              type="button"
-                              onClick={stopGeneration}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={Cancel01Icon} />
-                        </TooltipTrigger>
-                        <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type="submit"
-                              aria-label="Send"
-                              size="sm"
-                              disabled={!modelId || !inputText.trim() || isInteractionLocked}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
-                          Send
-                        </TooltipTrigger>
-                        <TooltipContent>Send</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </InputGroupAddon>
-              </InputGroup>
-            </form>
-            <AlertDialog
-              open={pendingNote !== null}
-              onOpenChange={(open) => !open && setPendingNote(null)}
-            >
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Attached notes are over the limit</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Adding “{pendingNote?.title}” would push attached notes past 24,000 characters.
-                    Remove notes or attach it truncated?
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
+              {lastUserMessageId && !canStop ? (
+                <div className="mb-3 flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!modelId || isInteractionLocked}
                     onClick={() => {
-                      if (!pendingNote) return;
-                      writeAttachedIds([...attachedIds, pendingNote.id]);
-                      setPendingNote(null);
+                      scrollToBottom();
+                      void regenerateMessage({ messageId: lastUserMessageId });
                     }}
                   >
-                    Attach truncated
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+                    Generate
+                  </Button>
+                </div>
+              ) : null}
 
-          <div ref={anchorRef} aria-hidden="true" />
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitMessage();
+                }}
+              >
+                {/* has-disabled overrides: InputGroup dims itself when ANY child is
+                  disabled, and the Send button is disabled whenever the prompt is
+                  empty — which made the sticky composer translucent over messages. */}
+                <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                  <AttachedNotesStrip
+                    notes={packedNotes}
+                    onOpen={openAttachedNote}
+                    onRemove={(itemId) =>
+                      writeAttachedIds(attachedIds.filter((id) => id !== itemId))
+                    }
+                  />
+                  <ChatComposerEditor
+                    document={input}
+                    disabled={isInteractionLocked}
+                    submitBehavior={submitBehavior}
+                    onChange={updateInput}
+                    onSubmit={submitMessage}
+                  />
+                  <InputGroupAddon
+                    align="block-end"
+                    className="flex w-full items-center gap-1.5 px-2 py-0"
+                  >
+                    <AddNoteButton
+                      disabled={isInteractionLocked}
+                      notes={noteCandidates}
+                      onAttach={attachNote}
+                    />
+                    <ChatToolsMenu />
+                    <ModelSelector />
+                    <ReasoningSelector />
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <SumiPromptAction
+                        prompt={inputText}
+                        isDisabled={isInteractionLocked || !inputIsTextOnly}
+                        onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
+                      />
+                      {canStop ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                aria-label="Stop"
+                                size="icon-sm"
+                                type="button"
+                                onClick={stopGeneration}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} />
+                          </TooltipTrigger>
+                          <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="submit"
+                                aria-label="Send"
+                                size="sm"
+                                disabled={!modelId || !inputText.trim() || isInteractionLocked}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
+                            Send
+                          </TooltipTrigger>
+                          <TooltipContent>Send</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </InputGroupAddon>
+                </InputGroup>
+              </form>
+              <AlertDialog
+                open={pendingNote !== null}
+                onOpenChange={(open) => !open && setPendingNote(null)}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Attached notes are over the limit</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Adding “{pendingNote?.title}” would push attached notes past 24,000
+                      characters. Remove notes or attach it truncated?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        if (!pendingNote) return;
+                        writeAttachedIds([...attachedIds, pendingNote.id]);
+                        setPendingNote(null);
+                      }}
+                    >
+                      Attach truncated
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+
+            <div ref={anchorRef} aria-hidden="true" />
+          </div>
         </div>
-      </div>
-    </ChatScrollToBottomProvider>
+      </ChatScrollToBottomProvider>
+    </ComposerNotesProvider>
   );
 }
 
