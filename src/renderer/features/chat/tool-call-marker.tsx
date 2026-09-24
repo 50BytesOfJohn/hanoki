@@ -491,7 +491,11 @@ function getToolConfig(toolName: string): ToolMarkerConfig {
 function describeApprovalRequest(
   toolName: string,
   input: unknown,
-  names: { destinationFolderName: string | null; currentItemName: string | null },
+  names: {
+    destinationFolderName: string | null;
+    currentItemName: string | null;
+    targetChatTitle: string | null;
+  },
 ): { title: string; body: React.ReactNode } {
   if (toolName === "terminalRun") {
     const command = getStringField(input, "command");
