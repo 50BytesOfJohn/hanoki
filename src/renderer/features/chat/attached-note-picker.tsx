@@ -133,7 +133,7 @@ export function ComposerSuggestionList({
       <SuggestionSection label="Notes">
         {notes.length === 0 ? (
           <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
-            {emptyQuery ? "Type to search notes…" : "No matching notes"}
+            {emptyQuery ? "Type to search notes…" : "No notes match"}
           </p>
         ) : (
           notes.map((item) => {
@@ -160,7 +160,7 @@ export function ComposerSuggestionList({
       {notesOnly ? null : (
         <SuggestionSection label="Tools">
           {tools.length === 0 ? (
-            <p className="px-2 py-1.5 text-[13px] text-muted-foreground">No matching tools</p>
+            <p className="px-2 py-1.5 text-[13px] text-muted-foreground">No tools match</p>
           ) : (
             tools.map((item) => {
               const itemIndex = index;
