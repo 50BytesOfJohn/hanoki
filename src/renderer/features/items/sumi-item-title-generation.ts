@@ -17,19 +17,24 @@ interface SumiItemTitleRequest {
 
 const pendingGenerations = new Map<string, Promise<ItemTitleUpdatedEvent | null>>();
 
+function pendingTitleKey(itemId: string, mode: "auto" | "explicit"): string {
+  return `${itemId}:${mode}`;
+}
+
 export function generateSumiItemTitle({
   apiUrl,
   itemId,
   sourcePrompt,
   mode = "explicit",
 }: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
-  const pending = pendingGenerations.get(itemId);
+  const key = pendingTitleKey(itemId, mode);
+  const pending = pendingGenerations.get(key);
   if (pending) return pending;
 
   const generation = requestSumiItemTitle({ apiUrl, itemId, sourcePrompt, mode });
-  pendingGenerations.set(itemId, generation);
+  pendingGenerations.set(key, generation);
   const cleanup = () => {
-    if (pendingGenerations.get(itemId) === generation) pendingGenerations.delete(itemId);
+    if (pendingGenerations.get(key) === generation) pendingGenerations.delete(key);
   };
   void generation.then(cleanup, cleanup);
   return generation;

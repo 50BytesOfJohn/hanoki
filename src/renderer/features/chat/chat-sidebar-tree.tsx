@@ -1141,6 +1141,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   const [renamingChat, setRenamingChat] = React.useState<{ id: string; value: string } | null>(
     null,
   );
+  const renameSettledRef = React.useRef(false);
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -1171,10 +1172,11 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   }, [currentChatStatus, invalidateSnapshot]);
 
   const commitRename = React.useCallback(() => {
-    if (!renamingChat) {
+    if (!renamingChat || renameSettledRef.current) {
       return;
     }
 
+    renameSettledRef.current = true;
     const trimmed = renamingChat.value.trim();
     setRenamingChat(null);
     if (trimmed.length === 0) {
@@ -1209,6 +1211,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
       } else if (action === "clone") {
         void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
       } else if (action === "rename") {
+        renameSettledRef.current = false;
         setRenamingChat({ id: chat.id, value: chat.title });
       } else if (action === "delete") {
         setPendingDeleteItems([{ kind: "item", id: chat.id }]);
@@ -1293,6 +1296,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                                 commitRename();
                               }
                               if (event.key === "Escape") {
+                                renameSettledRef.current = true;
                                 setRenamingChat(null);
                               }
                             }}

@@ -32,21 +32,26 @@ interface GenerateSumiItemTitleInput {
 
 const pendingTitleGenerations = new Map<string, Promise<ItemTitleUpdatedEvent | null>>();
 
+function pendingTitleKey(itemId: string, mode: "auto" | "explicit"): string {
+  return `${itemId}:${mode}`;
+}
+
 export function generateSumiItemTitle({
   itemId,
   sourcePrompt,
   mode = "explicit",
 }: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
-  const pending = pendingTitleGenerations.get(itemId);
+  const key = pendingTitleKey(itemId, mode);
+  const pending = pendingTitleGenerations.get(key);
   if (pending) {
     return pending;
   }
 
   const generation = generateItemTitle(itemId, sourcePrompt?.trim() || null, mode);
-  pendingTitleGenerations.set(itemId, generation);
+  pendingTitleGenerations.set(key, generation);
   const cleanup = () => {
-    if (pendingTitleGenerations.get(itemId) === generation) {
-      pendingTitleGenerations.delete(itemId);
+    if (pendingTitleGenerations.get(key) === generation) {
+      pendingTitleGenerations.delete(key);
     }
   };
   void generation.then(cleanup, cleanup);
@@ -112,7 +117,8 @@ async function generateItemTitle(
     return null;
   }
 
-  const updatedItem = updateItemTitle(item.id, title);
+  const updatedItem = updateItemTitle(item.id, title, titleAtStart);
+  if (!updatedItem) return null;
 
   return {
     type: "item:title-updated",

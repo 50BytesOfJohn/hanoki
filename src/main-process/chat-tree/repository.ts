@@ -1086,13 +1086,20 @@ export function moveChatTreeItems(
   });
 }
 
-export function updateItemTitle(id: string, title: string): ItemRow {
+export function updateItemTitle(id: string, title: string): ItemRow;
+export function updateItemTitle(id: string, title: string, expectedTitle: string): ItemRow | null;
+export function updateItemTitle(id: string, title: string, expectedTitle?: string): ItemRow | null {
   requireItemById(id);
-  getAppDatabase()
+  const result = getAppDatabase()
     .update(items)
     .set({ title, updatedAt: Date.now() })
-    .where(eq(items.id, id))
+    .where(
+      expectedTitle === undefined
+        ? eq(items.id, id)
+        : and(eq(items.id, id), eq(items.title, expectedTitle)),
+    )
     .run();
+  if (expectedTitle !== undefined && result.changes === 0) return null;
   const updated = requireItemById(id);
   broadcastItemTitleUpdated(updated);
   return updated;
