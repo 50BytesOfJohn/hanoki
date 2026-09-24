@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
+import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -1092,7 +1093,9 @@ export function updateItemTitle(id: string, title: string): ItemRow {
     .set({ title, updatedAt: Date.now() })
     .where(eq(items.id, id))
     .run();
-  return requireItemById(id);
+  const updated = requireItemById(id);
+  broadcastItemTitleUpdated(updated);
+  return updated;
 }
 
 export function moveItem(id: string, folderId: string | null): ItemRow {

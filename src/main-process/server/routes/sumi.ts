@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { smoothStream, streamText } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
-import type { ItemTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
 import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
@@ -16,11 +15,7 @@ interface ResolvedSumiModel {
   providerModelId: string;
 }
 
-interface CreateSumiRouteOptions {
-  onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
-}
-
-export function createSumiRoute(options?: CreateSumiRouteOptions) {
+export function createSumiRoute() {
   const app = new Hono();
 
   app.post("/api/sumi", async (c) => {
@@ -97,12 +92,6 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
         mode: input.mode === "auto" ? "auto" : "explicit",
       });
       if (!event) return c.body(null, 204);
-      options?.onItemTitleUpdated?.({
-        itemId: event.itemId,
-        itemType: event.itemType,
-        workspaceId: event.workspaceId,
-        title: event.title,
-      });
       return c.json(event);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sumi could not generate a title.";
