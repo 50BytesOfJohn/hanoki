@@ -63,7 +63,7 @@ const toolSuggestionPluginKey = new PluginKey("hanoki-tool-mention");
 const ComposerMentionList = React.forwardRef<
   SuggestionListHandle,
   SuggestionProps<ComposerSuggestion, ComposerSuggestion>
->(function ComposerMentionList({ command, items }, ref) {
+>(function ComposerMentionList({ command, items, query }, ref) {
   const [selectedIndex, setSelectedIndex] = React.useState(0);
 
   React.useEffect(() => setSelectedIndex(0), [items]);
@@ -102,6 +102,7 @@ const ComposerMentionList = React.forwardRef<
   return (
     <ComposerSuggestionList
       items={items}
+      query={query}
       notesOnly={false}
       selectedIndex={selectedIndex}
       onSelect={(item) => command(item)}

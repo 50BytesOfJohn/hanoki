@@ -24,6 +24,7 @@ export interface NoteCandidate {
   id: string;
   title: string;
   folderPath: string | null;
+  updatedAt: number;
 }
 
 export type ComposerSuggestion =
@@ -73,7 +74,12 @@ export function flattenMarkdownNotes(snapshot: ChatTreeSnapshot | undefined): No
   const walk = (folders: ChatTreeFolderNode[], items: ItemInfo[], path: string | null) => {
     for (const item of items) {
       if (item.type === "markdown") {
-        notes.push({ id: item.id, title: item.title, folderPath: path });
+        notes.push({
+          id: item.id,
+          title: item.title,
+          folderPath: path,
+          updatedAt: item.updatedAt,
+        });
       }
     }
     for (const folder of folders) {
@@ -81,7 +87,7 @@ export function flattenMarkdownNotes(snapshot: ChatTreeSnapshot | undefined): No
     }
   };
   walk(snapshot.rootFolders, snapshot.rootItems, null);
-  return notes;
+  return notes.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export function filterComposerSuggestions(
@@ -102,17 +108,22 @@ export function filterComposerSuggestions(
 
 export function ComposerSuggestionList({
   items,
+  query,
   selectedIndex,
   notesOnly,
   onSelect,
 }: {
   items: readonly ComposerSuggestion[];
+  query: string;
   selectedIndex: number;
   notesOnly: boolean;
   onSelect: (item: ComposerSuggestion) => void;
 }) {
   const notes = items.filter((item) => item.kind === "note");
   const tools = items.filter((item) => item.kind === "tool");
+  const emptyQuery = query.trim().length === 0;
+  const showNotes = notesOnly || emptyQuery || notes.length > 0 || tools.length > 0;
+  const showTools = !notesOnly && (emptyQuery || tools.length > 0 || notes.length > 0);
   let index = 0;
 
   return (
@@ -121,49 +132,56 @@ export function ComposerSuggestionList({
       role="listbox"
       aria-label={notesOnly ? "Notes" : "Notes and tools"}
     >
-      {notes.length === 0 && tools.length === 0 ? (
-        <p className="px-2 py-1.5 text-[13px] text-muted-foreground">No notes match</p>
-      ) : null}
-      {notes.length > 0 ? (
+      {showNotes ? (
         <SuggestionSection label="Notes">
-          {notes.map((item) => {
-            const itemIndex = index;
-            index += 1;
-            return (
-              <SuggestionRow
-                key={item.id}
-                selected={itemIndex === selectedIndex}
-                onSelect={() => onSelect(item)}
-              >
-                <HugeiconsIcon icon={FileScriptIcon} className="size-3.5 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-[13px]">{item.title}</span>
-                {item.folderPath ? (
-                  <span className="max-w-[40%] truncate text-xs text-muted-foreground">
-                    {item.folderPath}
-                  </span>
-                ) : null}
-              </SuggestionRow>
-            );
-          })}
+          {notes.length === 0 ? (
+            <p className="px-2 py-1.5 text-[13px] text-muted-foreground">
+              {emptyQuery ? "Type to search notes…" : "No notes match"}
+            </p>
+          ) : (
+            notes.map((item) => {
+              const itemIndex = index;
+              index += 1;
+              return (
+                <SuggestionRow
+                  key={item.id}
+                  selected={itemIndex === selectedIndex}
+                  onSelect={() => onSelect(item)}
+                >
+                  <HugeiconsIcon icon={FileScriptIcon} className="size-3.5 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{item.title}</span>
+                  {item.folderPath ? (
+                    <span className="max-w-[40%] truncate text-xs text-muted-foreground">
+                      {item.folderPath}
+                    </span>
+                  ) : null}
+                </SuggestionRow>
+              );
+            })
+          )}
         </SuggestionSection>
       ) : null}
-      {tools.length > 0 ? (
+      {showTools ? (
         <SuggestionSection label="Tools">
-          {tools.map((item) => {
-            const itemIndex = index;
-            index += 1;
-            return (
-              <SuggestionRow
-                key={item.id}
-                selected={itemIndex === selectedIndex}
-                onSelect={() => onSelect(item)}
-              >
-                <HugeiconsIcon icon={item.icon} className="size-3.5 text-muted-foreground" />
-                <span className="text-[13px] font-medium">{item.label}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{item.description}</span>
-              </SuggestionRow>
-            );
-          })}
+          {tools.length === 0 ? (
+            <p className="px-2 py-1.5 text-[13px] text-muted-foreground">No tools match</p>
+          ) : (
+            tools.map((item) => {
+              const itemIndex = index;
+              index += 1;
+              return (
+                <SuggestionRow
+                  key={item.id}
+                  selected={itemIndex === selectedIndex}
+                  onSelect={() => onSelect(item)}
+                >
+                  <HugeiconsIcon icon={item.icon} className="size-3.5 text-muted-foreground" />
+                  <span className="text-[13px] font-medium">{item.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{item.description}</span>
+                </SuggestionRow>
+              );
+            })
+          )}
         </SuggestionSection>
       ) : null}
     </div>

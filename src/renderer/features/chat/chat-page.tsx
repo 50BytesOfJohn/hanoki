@@ -364,7 +364,9 @@ function ActiveChatContent() {
         ? { itemId, title: candidate.title, body: bodyForNote(itemId, noteCandidates, queryClient) }
         : { itemId, title: "Missing note", body: null, error: "missing" };
       if (addingNoteExceedsTotal(noteInputs, nextInput)) {
-        setPendingNote(candidate ?? { id: itemId, title: nextInput.title, folderPath: null });
+        setPendingNote(
+          candidate ?? { id: itemId, title: nextInput.title, folderPath: null, updatedAt: 0 },
+        );
         return;
       }
       writeAttachedIds([...attachedIds, itemId]);
@@ -725,6 +727,7 @@ function AddNoteButton({
         />
         <ComposerSuggestionList
           items={items}
+          query={query}
           notesOnly
           selectedIndex={selectedIndex}
           onSelect={(item) => {
