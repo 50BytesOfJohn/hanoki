@@ -647,10 +647,12 @@ function ChatSidebarTreeInner({
           return;
         }
 
-        invalidateTree();
-        if (!tree.isRenamingItem()) {
-          tree.rebuildTree();
+        if (tree.isRenamingItem()) {
+          return;
         }
+
+        invalidateTree();
+        tree.rebuildTree();
       }),
     [invalidateTree, tree, workspaceId],
   );
