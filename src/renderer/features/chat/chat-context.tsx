@@ -4,7 +4,10 @@ import { readUIMessageStream } from "ai";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { messagesApi } from "@/api/messages";
+import { flushAttachedNotes } from "@/features/chat/flush-attached-notes";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
@@ -24,7 +27,11 @@ type ChatContextState = {
   continuationError: string | null;
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
-  respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
+  respondToToolApproval: (input: {
+    id: string;
+    approved: boolean;
+    reason?: string;
+  }) => Promise<void>;
   stopGeneration: () => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
@@ -54,6 +61,7 @@ type ChatTransportRefs = {
     | null;
   markTabTouched: (() => void) | null;
   markStopped: (() => void) | null;
+  flushAttached: (() => Promise<void>) | null;
 };
 
 type ChatContextStoreApi = StoreApi<ChatContextState>;
@@ -111,7 +119,7 @@ function createChatContextStore({
       transportRefs.markStopped?.();
       await transportRefs.stopChat?.();
     },
-    sendMessage: (message, options) => {
+    sendMessage: async (message, options) => {
       const {
         editingMessageId,
         continuingMessageId,
@@ -135,30 +143,32 @@ function createChatContextStore({
       }
 
       transportRefs.markTabTouched?.();
+      await transportRefs.flushAttached?.();
 
       return transportRefs.sendMessage(message, {
         ...options,
         body: { ...options?.body, modelId: currentModelId },
       });
     },
-    respondToToolApproval: ({ id, approved, reason }) => {
+    respondToToolApproval: async ({ id, approved, reason }) => {
       const { modelId: currentModelId } = get();
       if (!transportRefs.addToolApprovalResponse || !currentModelId) {
         return;
       }
 
       transportRefs.markTabTouched?.();
+      await transportRefs.flushAttached?.();
 
       // `sendAutomaticallyWhen` resumes the generation as soon as the last
       // approval is answered, so the model id has to ride along with it.
-      void transportRefs.addToolApprovalResponse({
+      transportRefs.addToolApprovalResponse({
         id,
         approved,
         ...(reason ? { reason } : {}),
         options: { body: { modelId: currentModelId } },
       });
     },
-    regenerateMessage: (options) => {
+    regenerateMessage: async (options) => {
       const {
         editingMessageId,
         continuingMessageId,
@@ -182,6 +192,7 @@ function createChatContextStore({
       }
 
       transportRefs.markTabTouched?.();
+      await transportRefs.flushAttached?.();
 
       return transportRefs.regenerate({
         ...options,
@@ -248,6 +259,7 @@ function createChatContextStore({
       transportRefs.stopContinuation = () => {
         continuationAbortController.abort();
       };
+      await transportRefs.flushAttached?.();
 
       try {
         const stream = await continuationTransport.sendMessages({
@@ -487,6 +499,7 @@ function InitializedChatContextProvider({
     setMessages: null,
     markTabTouched: null,
     markStopped: null,
+    flushAttached: null,
   });
   const storeRef = React.useRef<ChatContextStoreApi | null>(null);
 
@@ -499,7 +512,9 @@ function InitializedChatContextProvider({
     });
   }
 
+  const queryClient = useQueryClient();
   const store = storeRef.current;
+  transportRefs.current.flushAttached = () => flushAttachedNotes(queryClient, chatId);
   transportRefs.current.sendMessage = chat.sendMessage;
   transportRefs.current.addToolApprovalResponse = chat.addToolApprovalResponse;
   transportRefs.current.regenerate = chat.regenerate;

@@ -329,6 +329,8 @@ export interface ChatSettings {
   terminalEnabled?: boolean;
   /** Set by "Allow for this chat" on an approval card; skips further prompts. */
   terminalAutoApprove?: boolean;
+  /** Ordered unique workspace markdown item ids attached to this chat. */
+  attachedNoteIds?: string[];
 }
 
 export interface ChatModelConfig {
@@ -348,6 +350,7 @@ export interface ChatSettingsUpdateInput {
   hanokiEnabled?: boolean;
   terminalEnabled?: boolean;
   terminalAutoApprove?: boolean;
+  attachedNoteIds?: string[];
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {

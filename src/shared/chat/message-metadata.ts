@@ -47,6 +47,14 @@ export const chatMessageMetadataSchema = type({
   "updatedAt?": "number",
   "siblings?": "string[]",
   "siblingIndex?": "number",
+  "attachedNotes?": type({
+    itemId: "string",
+    title: "string",
+    status: "'ok'|'truncated'|'error'",
+    "error?": "'missing'|'wrong-type'|'wrong-workspace'",
+    fullChars: "number",
+    injectedChars: "number",
+  }).array(),
 });
 
 export type ChatMessageMetadata = typeof chatMessageMetadataSchema.infer;

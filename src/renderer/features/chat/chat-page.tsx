@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useDebouncedCallback } from "@tanstack/react-pacer";
 import {
@@ -9,9 +9,20 @@ import {
   Cancel01Icon,
   ComputerTerminal01Icon,
   Database02Icon,
+  FileScriptIcon,
   SentIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Combobox,
@@ -24,6 +35,7 @@ import {
   ComboboxValue,
 } from "@/components/ui/combobox";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -50,6 +62,9 @@ import {
   resolveModelId,
 } from "@/features/chat/chat-context";
 import { getChatQueryOptions } from "@/queries/chats";
+import { chatTreeApi } from "@/api/chat-tree";
+import { queryKeys } from "@/queries/keys";
+import { activeWorkspaceQueryOptions } from "@/queries/workspaces";
 import { useIsActiveChatPane, useIsActiveChatTab } from "@/features/chat/chat-pane-context";
 import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context";
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
@@ -61,7 +76,13 @@ import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
-import type { ProviderModelInfo } from "@shared/ipc";
+import type { MarkdownInfo, ProviderModelInfo } from "@shared/ipc";
+import {
+  addingNoteExceedsTotal,
+  dedupeItemIds,
+  packAttachedNotes,
+  type AttachedNoteInput,
+} from "@shared/chat/attached-notes";
 import { REASONING_EFFORT_LABELS, type ReasoningEffort } from "@shared/models/reasoning";
 import {
   createEmptyTiptapDocument,
@@ -74,7 +95,14 @@ import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
 import { SumiPromptAction } from "./sumi-prompt-action";
-import { ChatComposerEditor } from "./tiptap-editor";
+import {
+  ComposerSuggestionList,
+  filterComposerSuggestions,
+  flattenMarkdownNotes,
+  type NoteCandidate,
+} from "./attached-note-picker";
+import { AttachedNotesStrip } from "./attached-notes-strip";
+import { ChatComposerEditor, ComposerNotesProvider } from "./tiptap-editor";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -296,7 +324,55 @@ function ActiveChatContent() {
   const parsedInput = React.useMemo(() => parseTiptapDocument(input), [input]);
   const inputText = parsedInput.ok ? parsedInput.value.displayText : "";
   const inputIsTextOnly = parsedInput.ok && parsedInput.value.isTextOnly;
-
+  const queryClient = useQueryClient();
+  const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const { data: workspace } = useQuery(activeWorkspaceQueryOptions);
+  const { data: noteCandidates = [] } = useQuery({
+    queryKey: queryKeys.chatTree.snapshot(workspace?.id ?? ""),
+    queryFn: () => chatTreeApi.getTree(workspace?.id ?? ""),
+    select: flattenMarkdownNotes,
+    enabled: Boolean(workspace?.id),
+  });
+  const attachedIds = chat?.data.settings.attachedNoteIds ?? [];
+  const [pendingNote, setPendingNote] = React.useState<NoteCandidate | null>(null);
+  const updateChatSettings = useUpdateChatSettings();
+  const openAttachedNote = React.useCallback((itemId: string) => {
+    const { activeTabId, openTab, splitPane, tabs } = useWorkspaceStore.getState();
+    const tab = tabs.find((candidate) => candidate.id === activeTabId);
+    if (!tab) {
+      openTab({ type: "markdown", itemId });
+      return;
+    }
+    splitPane(tab.id, tab.focusedPaneId, itemId, "markdown", "right");
+  }, []);
+  const noteInputs = React.useMemo(
+    () => attachedNoteInputs(attachedIds, noteCandidates, queryClient),
+    [attachedIds, noteCandidates, queryClient],
+  );
+  const packedNotes = React.useMemo(() => packAttachedNotes(noteInputs), [noteInputs]);
+  const writeAttachedIds = React.useCallback(
+    (ids: string[]) => {
+      updateChatSettings.mutate({ id: chatId, input: { attachedNoteIds: dedupeItemIds(ids) } });
+    },
+    [chatId, updateChatSettings],
+  );
+  const attachNote = React.useCallback(
+    (itemId: string) => {
+      if (attachedIds.includes(itemId)) return;
+      const candidate = noteCandidates.find((note) => note.id === itemId);
+      const nextInput: AttachedNoteInput = candidate
+        ? { itemId, title: candidate.title, body: bodyForNote(itemId, noteCandidates, queryClient) }
+        : { itemId, title: "Missing note", body: null, error: "missing" };
+      if (addingNoteExceedsTotal(noteInputs, nextInput)) {
+        setPendingNote(
+          candidate ?? { id: itemId, title: nextInput.title, folderPath: null, updatedAt: 0 },
+        );
+        return;
+      }
+      writeAttachedIds([...attachedIds, itemId]);
+    },
+    [attachedIds, noteCandidates, noteInputs, queryClient, writeAttachedIds],
+  );
   const stopGeneration = React.useCallback(() => {
     if (!canStop) {
       return;
@@ -380,112 +456,291 @@ function ActiveChatContent() {
   );
 
   return (
-    <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
-        <ChatMessageHotkeys />
+    <ComposerNotesProvider notes={noteCandidates} attachNote={attachNote}>
+      <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
+        <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
+          <ChatMessageHotkeys />
 
-        <div className="flex flex-col min-h-full justify-end">
-          <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
-            <Conversation />
-          </React.Activity>
+          <div className="flex flex-col min-h-full justify-end">
+            <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
+              <Conversation />
+            </React.Activity>
 
-          <div
-            data-chat-composer-shell="true"
-            className={cn(
-              "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
-              promptStickyPosition ? "sticky bottom-3" : null,
-            )}
-          >
-            {lastUserMessageId && !canStop ? (
-              <div className="mb-3 flex justify-center">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!modelId || isInteractionLocked}
-                  onClick={() => {
-                    scrollToBottom();
-                    void regenerateMessage({ messageId: lastUserMessageId });
-                  }}
-                >
-                  Generate
-                </Button>
-              </div>
-            ) : null}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitMessage();
-              }}
+            <div
+              data-chat-composer-shell="true"
+              className={cn(
+                "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
+                promptStickyPosition ? "sticky bottom-3" : null,
+              )}
             >
-              {/* has-disabled overrides: InputGroup dims itself when ANY child is
+              {lastUserMessageId && !canStop ? (
+                <div className="mb-3 flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!modelId || isInteractionLocked}
+                    onClick={() => {
+                      scrollToBottom();
+                      void regenerateMessage({ messageId: lastUserMessageId });
+                    }}
+                  >
+                    Generate
+                  </Button>
+                </div>
+              ) : null}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitMessage();
+                }}
+              >
+                {/* has-disabled overrides: InputGroup dims itself when ANY child is
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
-              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-                <ChatComposerEditor
-                  document={input}
-                  disabled={isInteractionLocked}
-                  submitBehavior={submitBehavior}
-                  onChange={updateInput}
-                  onSubmit={submitMessage}
-                />
-                <InputGroupAddon
-                  align="block-end"
-                  className="flex w-full items-center gap-1.5 px-2 py-0"
-                >
-                  <ChatToolsMenu />
-                  <ModelSelector />
-                  <ReasoningSelector />
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <SumiPromptAction
-                      prompt={inputText}
-                      isDisabled={isInteractionLocked || !inputIsTextOnly}
-                      onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
+                <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                  <AttachedNotesStrip
+                    notes={packedNotes}
+                    onOpen={openAttachedNote}
+                    onRemove={(itemId) =>
+                      writeAttachedIds(attachedIds.filter((id) => id !== itemId))
+                    }
+                  />
+                  <ChatComposerEditor
+                    document={input}
+                    disabled={isInteractionLocked}
+                    submitBehavior={submitBehavior}
+                    onChange={updateInput}
+                    onSubmit={submitMessage}
+                  />
+                  <InputGroupAddon
+                    align="block-end"
+                    className="flex w-full items-center gap-1.5 px-2 py-0"
+                  >
+                    <AddNoteButton
+                      disabled={isInteractionLocked}
+                      notes={noteCandidates}
+                      onAttach={attachNote}
                     />
-                    {canStop ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              aria-label="Stop"
-                              size="icon-sm"
-                              type="button"
-                              onClick={stopGeneration}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={Cancel01Icon} />
-                        </TooltipTrigger>
-                        <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type="submit"
-                              aria-label="Send"
-                              size="sm"
-                              disabled={!modelId || !inputText.trim() || isInteractionLocked}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
-                          Send
-                        </TooltipTrigger>
-                        <TooltipContent>Send</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </InputGroupAddon>
-              </InputGroup>
-            </form>
-          </div>
+                    <ChatToolsMenu />
+                    <ModelSelector />
+                    <ReasoningSelector />
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <SumiPromptAction
+                        prompt={inputText}
+                        isDisabled={isInteractionLocked || !inputIsTextOnly}
+                        onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
+                      />
+                      {canStop ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                aria-label="Stop"
+                                size="icon-sm"
+                                type="button"
+                                onClick={stopGeneration}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} />
+                          </TooltipTrigger>
+                          <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type="submit"
+                                aria-label="Send"
+                                size="sm"
+                                disabled={!modelId || !inputText.trim() || isInteractionLocked}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
+                            Send
+                          </TooltipTrigger>
+                          <TooltipContent>Send</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </InputGroupAddon>
+                </InputGroup>
+              </form>
+              <AlertDialog
+                open={pendingNote !== null}
+                onOpenChange={(open) => !open && setPendingNote(null)}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Attached notes are over the limit</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Adding “{pendingNote?.title}” would push attached notes past 24,000
+                      characters. Remove notes or attach it truncated?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        if (!pendingNote) return;
+                        writeAttachedIds([...attachedIds, pendingNote.id]);
+                        setPendingNote(null);
+                      }}
+                    >
+                      Attach truncated
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
 
-          <div ref={anchorRef} aria-hidden="true" />
+            <div ref={anchorRef} aria-hidden="true" />
+          </div>
         </div>
-      </div>
-    </ChatScrollToBottomProvider>
+      </ChatScrollToBottomProvider>
+    </ComposerNotesProvider>
+  );
+}
+
+function attachedNoteInputs(
+  ids: readonly string[],
+  notes: readonly NoteCandidate[],
+  queryClient: ReturnType<typeof useQueryClient>,
+): AttachedNoteInput[] {
+  return ids.map((itemId) => {
+    const title = notes.find((note) => note.id === itemId)?.title ?? "Missing note";
+    const body = bodyForNote(itemId, notes, queryClient);
+    if (body === null && !notes.some((note) => note.id === itemId)) {
+      return { itemId, title, body: null, error: "missing" };
+    }
+    return { itemId, title, body };
+  });
+}
+
+function bodyForNote(
+  itemId: string,
+  notes: readonly NoteCandidate[],
+  queryClient: ReturnType<typeof useQueryClient>,
+): string | null {
+  const cached = queryClient.getQueryData<MarkdownInfo>(queryKeys.items.byId(itemId));
+  if (cached?.type === "markdown") return cached.data.markdown;
+  if (!notes.some((note) => note.id === itemId)) return null;
+  const snapshot = queryClient.getQueriesData<Awaited<ReturnType<typeof chatTreeApi.getTree>>>({
+    queryKey: queryKeys.chatTree.all,
+  });
+  for (const [, tree] of snapshot) {
+    const match = findMarkdownBody(tree, itemId);
+    if (match !== undefined) return match;
+  }
+  return "";
+}
+
+function findMarkdownBody(
+  snapshot: Awaited<ReturnType<typeof chatTreeApi.getTree>> | undefined,
+  itemId: string,
+): string | undefined {
+  if (!snapshot) return undefined;
+  const walk = (
+    folders: typeof snapshot.rootFolders,
+    items: typeof snapshot.rootItems,
+  ): string | undefined => {
+    for (const item of items) {
+      if (item.id === itemId && item.type === "markdown") return item.data.markdown;
+    }
+    for (const folder of folders) {
+      const found = walk(folder.folders, folder.items);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  return walk(snapshot.rootFolders, snapshot.rootItems);
+}
+
+function AddNoteButton({
+  disabled,
+  notes,
+  onAttach,
+}: {
+  disabled: boolean;
+  notes: readonly NoteCandidate[];
+  onAttach: (itemId: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [selectedIndex, setSelectedIndex] = React.useState(0);
+  const items = filterComposerSuggestions(notes, query, true);
+
+  React.useEffect(() => setSelectedIndex(0), [query, open]);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Add note"
+            disabled={disabled}
+          />
+        }
+      >
+        <HugeiconsIcon icon={FileScriptIcon} data-icon="inline-start" />
+        Add note
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-80 gap-1 p-1">
+        <input
+          autoFocus
+          aria-label="Search notes"
+          value={query}
+          placeholder="Search notes…"
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedIndex((current) =>
+                items.length === 0 ? 0 : (current + 1) % items.length,
+              );
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedIndex((current) =>
+                items.length === 0 ? 0 : (current + items.length - 1) % items.length,
+              );
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              const item = items[selectedIndex];
+              if (item?.kind === "note") {
+                onAttach(item.id);
+                setOpen(false);
+                setQuery("");
+              }
+            }
+          }}
+          className="h-7 w-full rounded-md bg-transparent px-2 text-[13px] outline-none placeholder:text-muted-foreground"
+        />
+        <ComposerSuggestionList
+          items={items}
+          query={query}
+          notesOnly
+          selectedIndex={selectedIndex}
+          onSelect={(item) => {
+            if (item.kind !== "note") return;
+            onAttach(item.id);
+            setOpen(false);
+            setQuery("");
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
