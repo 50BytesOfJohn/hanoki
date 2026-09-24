@@ -825,6 +825,7 @@ const UserMessage = React.memo(function UserMessage({
         <AttachedNotesStrip
           notes={attachedNotes.map((note) => ({ ...note, excerpt: "" }))}
           onOpen={openAttachedNote}
+          showEstimate={false}
         />
       ) : null}
 

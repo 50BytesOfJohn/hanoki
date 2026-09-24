@@ -17,10 +17,12 @@ export function AttachedNotesStrip({
   notes,
   onOpen,
   onRemove,
+  showEstimate = true,
 }: {
   notes: readonly PackedAttachedNote[];
   onOpen: (itemId: string) => void;
   onRemove?: (itemId: string) => void;
+  showEstimate?: boolean;
 }) {
   if (notes.length === 0) return null;
 
@@ -40,10 +42,12 @@ export function AttachedNotesStrip({
           <AttachedNoteChip key={note.itemId} note={note} onOpen={onOpen} onRemove={onRemove} />
         ))}
       </div>
-      <p className={cn("text-xs", warn ? "text-warning" : "text-muted-foreground")}>
-        ≈ {estimateTokens(injected).toLocaleString()} tokens · {injected.toLocaleString()} /{" "}
-        {ATTACHED_NOTES_TOTAL_CHAR_LIMIT.toLocaleString()} chars
-      </p>
+      {showEstimate ? (
+        <p className={cn("text-xs", warn ? "text-warning" : "text-muted-foreground")}>
+          ≈ {estimateTokens(injected).toLocaleString()} tokens · {injected.toLocaleString()} /{" "}
+          {ATTACHED_NOTES_TOTAL_CHAR_LIMIT.toLocaleString()} chars
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -66,7 +70,8 @@ function AttachedNoteChip({
           render={
             <button
               type="button"
-              className="max-w-48 truncate text-left"
+              className="max-w-48 truncate text-left disabled:cursor-default"
+              disabled={note.status === "error"}
               onClick={() => onOpen(note.itemId)}
             />
           }
