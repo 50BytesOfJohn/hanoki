@@ -159,6 +159,12 @@ type ChatTreeContextMenuAction =
   | "rename"
   | "delete";
 
+function afterContextMenuClose(run: () => void) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run);
+  });
+}
+
 function ChatTreeItemContextMenu({
   children,
   itemKind,
@@ -642,7 +648,9 @@ function ChatSidebarTreeInner({
         }
 
         invalidateTree();
-        tree.rebuildTree();
+        if (!tree.isRenamingItem()) {
+          tree.rebuildTree();
+        }
       }),
     [invalidateTree, tree, workspaceId],
   );
@@ -929,7 +937,9 @@ function ChatSidebarTreeInner({
                       invalidateTree();
                     });
                   } else if (action === "rename") {
-                    item.startRenaming();
+                    afterContextMenuClose(() => {
+                      item.startRenaming();
+                    });
                   } else if (action === "delete") {
                     openDeleteDialog(
                       selectedItemIdSet.has(item.getId()) && selectedItems.length > 1
@@ -1142,6 +1152,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
     null,
   );
   const renameSettledRef = React.useRef(false);
+  const renameReadyRef = React.useRef(false);
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -1212,7 +1223,10 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         void cloneChatMutation.mutateAsync({ id: chat.id }).then(invalidateSnapshot);
       } else if (action === "rename") {
         renameSettledRef.current = false;
-        setRenamingChat({ id: chat.id, value: chat.title });
+        renameReadyRef.current = false;
+        afterContextMenuClose(() => {
+          setRenamingChat({ id: chat.id, value: chat.title });
+        });
       } else if (action === "delete") {
         setPendingDeleteItems([{ kind: "item", id: chat.id }]);
       }
@@ -1290,7 +1304,17 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                             onChange={(event) => {
                               setRenamingChat({ id: chat.id, value: event.target.value });
                             }}
-                            onBlur={commitRename}
+                            onFocus={() => {
+                              requestAnimationFrame(() => {
+                                renameReadyRef.current = true;
+                              });
+                            }}
+                            onBlur={() => {
+                              if (!renameReadyRef.current) {
+                                return;
+                              }
+                              commitRename();
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
                                 commitRename();
