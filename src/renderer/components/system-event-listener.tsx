@@ -4,6 +4,7 @@ import { queryKeys } from "@/queries/keys";
 import { updatesApi } from "@/api/updates";
 import { toastManager } from "@/components/ui/toast";
 import { applyItemTitleUpdate, notifyChatTreeChanged } from "@/features/items/item-title-events";
+import { notifyChatMessagesChanged } from "@/features/chat/chat-messages-events";
 import { useSystemStore } from "../stores/system-store";
 
 export function SystemEventListener() {
@@ -22,6 +23,11 @@ export function SystemEventListener() {
 
       if (event.type === "chat-tree:changed") {
         notifyChatTreeChanged(event.workspaceId);
+        return;
+      }
+
+      if (event.type === "chat:messages-changed") {
+        notifyChatMessagesChanged(event.chatId);
         return;
       }
 

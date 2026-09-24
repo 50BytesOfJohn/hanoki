@@ -3,6 +3,7 @@ import { getToolName, isToolUIPart, type DynamicToolUIPart, type ToolUIPart } fr
 import {
   AlertCircleIcon,
   ChatAdd01Icon,
+  MessageAdd01Icon,
   ComputerTerminal01Icon,
   Database02Icon,
   DatabaseSearchIcon,
@@ -402,6 +403,13 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
       return title ? `Created chat “${title}”` : "Created a Hanoki chat";
     },
     errorLabel: "Creating Hanoki chat failed",
+    Details: GenericToolDetails,
+  },
+  hanokiSendMessage: {
+    icon: MessageAdd01Icon,
+    pendingLabel: () => "Saving a draft message…",
+    doneLabel: () => "Saved a draft message",
+    errorLabel: "Saving draft message failed",
     Details: GenericToolDetails,
   },
   hanokiCreateMarkdown: {

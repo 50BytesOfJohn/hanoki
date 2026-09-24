@@ -6,8 +6,16 @@ import { sql } from "drizzle-orm";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
-import { upsertMessage } from "../messages/repository";
-import { createHanokiTools, HANOKI_TOOL_NAMES } from "../server/assistant/hanoki-tools";
+import {
+  listAllMessagesByChatId,
+  listMessagesByChatId,
+  upsertMessage,
+} from "../messages/repository";
+import {
+  createHanokiTools,
+  HANOKI_MUTATING_TOOL_NAMES,
+  HANOKI_TOOL_NAMES,
+} from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
@@ -16,6 +24,7 @@ import {
   createMarkdown,
   createTerminal,
   getChatById,
+  getChatCurrentBranchId,
   getChatTreeChildren,
   getFolderById,
   getItemById,
@@ -548,6 +557,74 @@ describe("Hanoki create and browse kinds", () => {
       }),
     );
     expect(onTreeChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it("appends a draft user message to an explicit chat and does not start a reply", async () => {
+    createWorkspace({ id: "send-draft-workspace", name: "Send draft" });
+    const chat = createChat({
+      workspaceId: "send-draft-workspace",
+      title: "Target",
+      folderId: null,
+    });
+    upsertMessage({
+      id: "send-draft-existing",
+      chatId: chat.id,
+      parentId: null,
+      role: "user",
+      parts: [{ type: "text", text: "Already here" }],
+      metadata: { parentId: null },
+    });
+    const note = createMarkdown({
+      workspaceId: "send-draft-workspace",
+      title: "Not a chat",
+      folderId: null,
+    });
+    const onTreeChanged = vi.fn();
+    const onMessagesChanged = vi.fn();
+    const tools = createHanokiTools({
+      workspaceId: "send-draft-workspace",
+      chatId: "host-chat",
+      onTreeChanged,
+      onMessagesChanged,
+    });
+
+    await expect(async () => {
+      await tools.hanokiSendMessage.execute!({ chatId: "", text: "Nope" }, toolExecuteOptions);
+    }).rejects.toThrow("Chat ID is required.");
+    await expect(async () => {
+      await tools.hanokiSendMessage.execute!({ chatId: note.id, text: "Nope" }, toolExecuteOptions);
+    }).rejects.toThrow(`Chat "${note.id}" does not exist in this workspace.`);
+
+    const result = unwrapToolResult(
+      await tools.hanokiSendMessage.execute!(
+        { chatId: chat.id, text: "  Draft hello  " },
+        toolExecuteOptions,
+      ),
+    );
+
+    expect(result).toEqual({
+      chatId: chat.id,
+      messageId: expect.any(String),
+      role: "user",
+      content: "Draft hello",
+      startedGeneration: false,
+    });
+    expect(HANOKI_MUTATING_TOOL_NAMES).not.toContain("hanokiSendMessage");
+    expect(onTreeChanged).not.toHaveBeenCalled();
+    expect(onMessagesChanged).toHaveBeenCalledTimes(1);
+    expect(onMessagesChanged).toHaveBeenCalledWith(chat.id);
+    const branch = listMessagesByChatId(chat.id, getChatCurrentBranchId(chat.id));
+    expect(branch.map((message) => message.role)).toEqual(["user", "user"]);
+    expect(branch.at(-1)).toEqual(
+      expect.objectContaining({
+        id: result.messageId,
+        role: "user",
+        parentId: "send-draft-existing",
+      }),
+    );
+    expect(listAllMessagesByChatId(chat.id).some((message) => message.role === "assistant")).toBe(
+      false,
+    );
   });
 
   it("rejects an oversized markdown body without creating a note", async () => {

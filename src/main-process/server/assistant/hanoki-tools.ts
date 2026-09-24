@@ -3,7 +3,11 @@ import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderName } from "@shared/folder/folder-name";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
-import { getMessageDisplayText } from "@shared/tiptap/document";
+import {
+  createTiptapDocumentFromText,
+  createTiptapMessageParts,
+  getMessageDisplayText,
+} from "@shared/tiptap/document";
 import {
   createChat,
   createFolder,
@@ -11,6 +15,7 @@ import {
   getChatById,
   getChatCurrentBranchId,
   getChatTree,
+  setChatCurrentBranch,
   getChatTreeChildren,
   getFolderById,
   getItemById,
@@ -22,7 +27,12 @@ import {
   updateMarkdownContent,
   type ChatTreeFolderNode,
 } from "../../chat-tree/repository";
-import { listAllMessagesByChatId, listMessagesByChatId } from "../../messages/repository";
+import { createUuidV7 } from "../../db/uuidv7";
+import {
+  listAllMessagesByChatId,
+  listMessagesByChatId,
+  upsertMessage,
+} from "../../messages/repository";
 
 type ItemKind = "chat" | "folder" | "markdown" | "terminal";
 type ItemRef = { kind: ItemKind; id: string };
@@ -186,10 +196,12 @@ export function createHanokiTools({
   workspaceId,
   chatId,
   onTreeChanged,
+  onMessagesChanged,
 }: {
   workspaceId: string;
   chatId: string;
   onTreeChanged?: () => void;
+  onMessagesChanged?: (chatId: string) => void;
 }) {
   const treeChanged = <T>(result: T): T => {
     onTreeChanged?.();
@@ -503,6 +515,63 @@ export function createHanokiTools({
       },
     }),
 
+    hanokiSendMessage: tool({
+      description:
+        "Append one user message as a draft in a chat in the current Hanoki workspace. Use this when the user explicitly asks to send or leave a message in a specific chat. Pass the exact chat ID from a Hanoki browse, search, or create result. This only saves the message. It does not start a reply or run the agent in that chat.",
+      strict: true,
+      inputSchema: jsonSchema<{ chatId: string; text: string }>({
+        type: "object",
+        properties: {
+          chatId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact chat ID returned by a Hanoki tool. Required.",
+          },
+          text: {
+            type: "string",
+            minLength: 1,
+            description: "The user message text to save.",
+          },
+        },
+        required: ["chatId", "text"],
+        additionalProperties: false,
+      }),
+      execute: ({ chatId: targetChatId, text }) => {
+        const normalizedChatId = targetChatId.trim();
+        if (!normalizedChatId) {
+          throw new Error("Chat ID is required.");
+        }
+        const trimmedText = text.trim();
+        if (!trimmedText) {
+          throw new Error("Message text cannot be empty.");
+        }
+        const target = getChatById(normalizedChatId);
+        if (!target || target.workspaceId !== workspaceId) {
+          throw new Error(`Chat "${normalizedChatId}" does not exist in this workspace.`);
+        }
+        const parentId =
+          listMessagesByChatId(normalizedChatId, getChatCurrentBranchId(normalizedChatId)).at(-1)
+            ?.id ?? null;
+        const saved = upsertMessage({
+          id: createUuidV7(),
+          chatId: normalizedChatId,
+          parentId,
+          role: "user",
+          parts: createTiptapMessageParts(createTiptapDocumentFromText(trimmedText)),
+          metadata: { parentId },
+        });
+        setChatCurrentBranch(normalizedChatId, saved.id);
+        onMessagesChanged?.(normalizedChatId);
+        return {
+          chatId: normalizedChatId,
+          messageId: saved.id,
+          role: "user" as const,
+          content: trimmedText,
+          startedGeneration: false,
+        };
+      },
+    }),
+
     hanokiCreateMarkdown: tool({
       description:
         "Create one markdown note in the current Hanoki workspace. Use this when the user explicitly asks to create a note. Pass an exact folder ID returned by a Hanoki tool, or null to create it at the workspace root. Optional body is saved immediately; omit it or pass null to create an empty note.",
@@ -658,6 +727,7 @@ export const HANOKI_TOOL_NAMES = [
   "hanokiGetItemLocation",
   "hanokiCreateFolder",
   "hanokiCreateChat",
+  "hanokiSendMessage",
   "hanokiCreateMarkdown",
   "hanokiMoveItems",
   "hanokiRenameItem",

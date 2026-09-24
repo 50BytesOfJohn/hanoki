@@ -3,11 +3,16 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createChatRoute } from "./routes/chat";
 import { createSumiRoute } from "./routes/sumi";
-import type { ChatTreeChangedEvent, ItemTitleUpdatedEvent } from "@shared/events";
+import type {
+  ChatMessagesChangedEvent,
+  ChatTreeChangedEvent,
+  ItemTitleUpdatedEvent,
+} from "@shared/events";
 
 interface CreateAiServerOptions {
   onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
+  onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
 }
 
 export async function createAiServer(options?: CreateAiServerOptions): Promise<{
@@ -26,6 +31,7 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
     createChatRoute({
       onItemTitleUpdated: options?.onItemTitleUpdated,
       onChatTreeChanged: options?.onChatTreeChanged,
+      onChatMessagesChanged: options?.onChatMessagesChanged,
     }),
   );
   app.route("/", createSumiRoute({ onItemTitleUpdated: options?.onItemTitleUpdated }));

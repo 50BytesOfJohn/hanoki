@@ -10,7 +10,11 @@ import {
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
-import type { ChatTreeChangedEvent, ItemTitleUpdatedEvent } from "@shared/events";
+import type {
+  ChatMessagesChangedEvent,
+  ChatTreeChangedEvent,
+  ItemTitleUpdatedEvent,
+} from "@shared/events";
 import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import {
@@ -59,6 +63,7 @@ const CONTINUATION_PROMPT =
 interface CreateChatRouteOptions {
   onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
+  onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -232,6 +237,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         workspaceId: chat.workspaceId,
         chatId: chat.id,
         onTreeChanged: () => options?.onChatTreeChanged?.({ workspaceId: chat.workspaceId }),
+        onMessagesChanged: (targetChatId) =>
+          options?.onChatMessagesChanged?.({ chatId: targetChatId }),
       }),
       ...createTerminalTools({
         chatId: chat.id,
