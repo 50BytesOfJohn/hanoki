@@ -430,12 +430,16 @@ function ItemPanelHeader({
   return (
     <header className="flex h-9 shrink-0 items-center gap-1 border-b border-separator px-2">
       <div
-        ref={dragHandleRef}
+        ref={renaming ? undefined : dragHandleRef}
         data-window-no-drag
-        tabIndex={0}
-        aria-label={`Move ${item?.title ?? "item"} pane`}
-        className="flex min-w-0 flex-1 cursor-grab items-center gap-0.5 outline-hidden active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60"
-        {...dragHandleProps}
+        tabIndex={renaming ? undefined : 0}
+        aria-label={renaming ? undefined : `Move ${item?.title ?? "item"} pane`}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-0.5 outline-hidden",
+          !renaming &&
+            "cursor-grab active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-focus/60",
+        )}
+        {...(renaming ? {} : dragHandleProps)}
       >
         {pane.itemType !== "terminal" ? (
           <ItemTitleMenu itemId={pane.itemId} onRename={() => setRenamingItemId(pane.itemId)} />
@@ -448,6 +452,13 @@ function ItemPanelHeader({
               "min-w-0 truncate px-1 text-[13px] font-medium transition-colors duration-150",
               isFocused ? "text-foreground/90" : "text-muted-foreground/60",
             )}
+            onDoubleClick={
+              pane.itemType === "terminal"
+                ? undefined
+                : () => {
+                    setRenamingItemId(pane.itemId);
+                  }
+            }
           >
             {item?.title ?? ""}
           </span>
@@ -509,7 +520,7 @@ function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => v
           <Button
             variant="ghost"
             size="icon-xs"
-            aria-label="Item actions"
+            aria-label="Title actions"
             className="text-muted-foreground"
             onPointerDown={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}

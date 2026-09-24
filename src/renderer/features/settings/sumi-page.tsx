@@ -86,7 +86,7 @@ export function SumiPage() {
         <SettingsRow
           icon={<HugeiconsIcon icon={AiContentGenerator01Icon} className="size-4" />}
           title="Title generation"
-          description="Show title generation and allow Sumi to rename chats and notes."
+          description="Generate titles for chats and notes."
           control={
             <Switch
               aria-label="Enable Sumi title generation"
