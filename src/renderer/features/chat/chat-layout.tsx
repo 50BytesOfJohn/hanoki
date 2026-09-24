@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
@@ -43,9 +44,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
-import { itemsApi } from "@/api/items";
 import { markdownApi } from "@/api/markdown";
-import { applyItemTitleUpdate } from "@/features/items/item-title-events";
+import { useRenameChatTreeItem } from "@/mutations/chat-tree";
 import { ChatSidebarProvider } from "@/features/chat/chat-sidebar";
 import { ChatSidebarTree } from "@/features/chat/chat-sidebar-tree";
 import {
@@ -522,22 +522,25 @@ function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => v
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="bottom" align="start">
-        <DropdownMenuItem onClick={onRename}>
-          <HugeiconsIcon icon={PencilEdit01Icon} />
-          Rename
-        </DropdownMenuItem>
-        {canGenerateTitle ? (
-          <DropdownMenuItem disabled={isGeneratingTitle} onClick={generateTitle}>
-            <HugeiconsIcon icon={AiBeautifyIcon} />
-            {isReplaceableItemTitle(item.title) ? "Generate title" : "Regenerate title"}
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onRename}>
+            <HugeiconsIcon icon={PencilEdit01Icon} />
+            Rename
           </DropdownMenuItem>
-        ) : null}
+          {canGenerateTitle ? (
+            <DropdownMenuItem disabled={isGeneratingTitle} onClick={generateTitle}>
+              <HugeiconsIcon icon={AiBeautifyIcon} />
+              {isReplaceableItemTitle(item.title) ? "Generate title" : "Regenerate title"}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 function ItemTitleRenameInput({ item, onDone }: { item: ItemInfo; onDone: () => void }) {
+  const renameItem = useRenameChatTreeItem();
   const [value, setValue] = React.useState(item.title);
   const committedRef = React.useRef(false);
 
@@ -547,25 +550,7 @@ function ItemTitleRenameInput({ item, onDone }: { item: ItemInfo; onDone: () => 
     onDone();
     const next = value.trim();
     if (!save || !next || next === item.title) return;
-
-    void itemsApi
-      .updateTitle(item.id, next)
-      .then((updated) => {
-        applyItemTitleUpdate({
-          type: "item:title-updated",
-          itemId: updated.id,
-          itemType: updated.type,
-          workspaceId: updated.workspaceId,
-          title: updated.title,
-        });
-      })
-      .catch((error) => {
-        toastManager.add({
-          type: "error",
-          title: "Rename failed",
-          description: error instanceof Error ? error.message : "The title could not be saved.",
-        });
-      });
+    renameItem.mutate({ itemId: `item:${item.id}`, name: next });
   }
 
   return (
