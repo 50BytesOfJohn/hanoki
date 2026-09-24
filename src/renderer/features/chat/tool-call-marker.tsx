@@ -425,7 +425,7 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     pendingLabel: () => "Saving a draft message…",
     doneLabel: (_input, output) => {
       const title = getStringField(output, "title");
-      return title ? `Saved a draft in “${title}”` : "Saved a draft";
+      return title ? `Saved a draft in “${title}”` : "Saved a draft message";
     },
     errorLabel: "Saving draft message failed",
     Details: GenericToolDetails,
@@ -563,12 +563,15 @@ function describeApprovalRequest(
   }
 
   if (toolName === "hanokiSendMessage") {
-    const targetTitle = names.targetChatTitle ?? "that chat";
+    const targetTitle = names.targetChatTitle;
     return {
       title: "Kick generation in another chat?",
       body: (
         <p className="px-0.5 text-xs text-muted-foreground">
-          Start generation in <span className="font-medium text-foreground">“{targetTitle}”</span>{" "}
+          Start generation in{" "}
+          <span className="font-medium text-foreground">
+            {targetTitle ? `“${targetTitle}”` : "that chat"}
+          </span>{" "}
           from this chat’s tool
         </p>
       ),
@@ -803,6 +806,7 @@ function DoneMarkerActions({
         size="xs"
         variant="ghost"
         className={cn(markerActionClass, "hidden @min-[240px]/tool-marker:inline-flex")}
+        aria-label="Open in new tab"
         onClick={() => openHanokiItem(target.itemId, target.itemType, "tab")}
       >
         New tab
@@ -825,7 +829,10 @@ function DoneMarkerActions({
           <DropdownMenuItem onClick={() => openHanokiItem(target.itemId, target.itemType, "split")}>
             Open in split
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => openHanokiItem(target.itemId, target.itemType, "tab")}>
+          <DropdownMenuItem
+            aria-label="Open in new tab"
+            onClick={() => openHanokiItem(target.itemId, target.itemType, "tab")}
+          >
             New tab
           </DropdownMenuItem>
         </DropdownMenuContent>
