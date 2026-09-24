@@ -75,6 +75,11 @@ const ignoreFilesOutsideViteAndNativeModules = (file: string) => {
     return false;
   }
 
+  const nodePtyPrebuild = /^\/node_modules\/node-pty\/prebuilds\/([^/]+)/.exec(file);
+  if (nodePtyPrebuild && nodePtyPrebuild[1] !== `${process.platform}-${process.arch}`) {
+    return true;
+  }
+
   const isViteBuild = file === "/.vite" || file.startsWith("/.vite/");
   const isNodeModulesRoot = file === "/node_modules";
   const isPackagedExternalModule = PACKAGED_EXTERNAL_MODULES.some(
@@ -196,12 +201,15 @@ const config: ForgeConfig = {
     asar: {
       unpack: "**/{*.node,node_modules/node-pty/**}",
     },
-    extraResource: [path.resolve(__dirname, "src/main-process/db/migrations")],
+    extraResource: [
+      path.resolve(__dirname, "src/main-process/db/migrations"),
+      ...(process.platform === "linux" ? [LINUX_ICON_PATH] : []),
+    ],
     // Forge's Vite plugin otherwise copies only `.vite`, omitting external native modules.
     ignore: ignoreFilesOutsideViteAndNativeModules,
     appBundleId: APP_IDENTIFIER,
     appCategoryType: "public.app-category.productivity",
-    executableName: APP_NAME,
+    executableName: process.platform === "linux" ? "hanoki" : APP_NAME,
     icon: packagerIcon,
     name: APP_NAME,
     ...macPackagerConfig,

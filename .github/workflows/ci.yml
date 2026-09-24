@@ -34,3 +34,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Smoke test packaged Linux app
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1 libasound2t64
+          pnpm package
+          xvfb-run -a node scripts/smoke-linux.mjs

@@ -19,6 +19,7 @@ import { useCreateChat } from "@/mutations/chats";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
+import { modShortcut } from "@/lib/platform";
 import type { NativeChatDrag } from "./chat-layout";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { ChatSearchDialog } from "./chat-search-dialog";
@@ -149,7 +150,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
             >
               <HugeiconsIcon icon={Search01Icon} />
               Search
-              <Kbd className="ml-0.5">⌘K</Kbd>
+              <Kbd className="ml-0.5">{modShortcut("K")}</Kbd>
             </Button>
           </div>
 

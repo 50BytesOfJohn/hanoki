@@ -10,6 +10,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { isMac, modShortcut } from "@/lib/platform";
 import type { ContextMenuCommand } from "@shared/ipc";
 
 const TEXT_INPUT_TYPES = new Set([
@@ -22,8 +23,6 @@ const TEXT_INPUT_TYPES = new Set([
   "text",
   "url",
 ]);
-
-const IS_MAC = navigator.platform.toLowerCase().includes("mac");
 
 interface TextContextMenuState {
   hasSelection: boolean;
@@ -169,10 +168,6 @@ function captureSelection(target: EventTarget | null): SelectionSnapshot | null 
   };
 }
 
-function shortcut(key: string): string {
-  return IS_MAC ? `⌘${key}` : `Ctrl+${key}`;
-}
-
 function resolveCopyAllText(copyAllText: string | (() => string) | undefined): string {
   if (copyAllText == null) {
     return "";
@@ -252,28 +247,28 @@ export function TextContextMenu({
             <ContextMenuGroup>
               <ContextMenuItem onClick={() => execute("undo")}>
                 Undo
-                <ContextMenuShortcut>{shortcut("Z")}</ContextMenuShortcut>
+                <ContextMenuShortcut>{modShortcut("Z")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={() => execute("redo")}>
                 Redo
-                <ContextMenuShortcut>{IS_MAC ? "⇧⌘Z" : "Ctrl+Y"}</ContextMenuShortcut>
+                <ContextMenuShortcut>{isMac ? "⇧⌘Z" : "Ctrl+Y"}</ContextMenuShortcut>
               </ContextMenuItem>
             </ContextMenuGroup>
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem disabled={!menuState.hasSelection} onClick={() => execute("cut")}>
                 Cut
-                <ContextMenuShortcut>{shortcut("X")}</ContextMenuShortcut>
+                <ContextMenuShortcut>{modShortcut("X")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem disabled={!canCopy} onClick={handleCopy}>
                 Copy
-                <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
+                <ContextMenuShortcut>{modShortcut("C")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={() => execute("paste")}>
                 Paste
-                <ContextMenuShortcut>{shortcut("V")}</ContextMenuShortcut>
+                <ContextMenuShortcut>{modShortcut("V")}</ContextMenuShortcut>
               </ContextMenuItem>
-              {IS_MAC ? (
+              {isMac ? (
                 <ContextMenuItem onClick={() => execute("paste-and-match-style")}>
                   Paste and Match Style
                   <ContextMenuShortcut>⌥⇧⌘V</ContextMenuShortcut>
@@ -287,7 +282,7 @@ export function TextContextMenu({
             <ContextMenuGroup>
               <ContextMenuItem onClick={() => execute("select-all")}>
                 Select All
-                <ContextMenuShortcut>{shortcut("A")}</ContextMenuShortcut>
+                <ContextMenuShortcut>{modShortcut("A")}</ContextMenuShortcut>
               </ContextMenuItem>
             </ContextMenuGroup>
           </>
@@ -295,7 +290,7 @@ export function TextContextMenu({
           <ContextMenuGroup>
             <ContextMenuItem disabled={!canCopy} onClick={handleCopy}>
               {menuState.hasSelection ? "Copy" : "Copy as Text"}
-              <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
+              <ContextMenuShortcut>{modShortcut("C")}</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuGroup>
         )}
@@ -304,11 +299,11 @@ export function TextContextMenu({
           <>
             <ContextMenuSeparator />
             <ContextMenuGroup>
-              {IS_MAC ? (
+              {isMac ? (
                 <ContextMenuItem onClick={() => execute("look-up")}>Look Up</ContextMenuItem>
               ) : null}
               <ContextMenuItem onClick={() => execute("search-web")}>
-                {IS_MAC ? "Search with Google" : "Search the Web"}
+                {isMac ? "Search with Google" : "Search the Web"}
               </ContextMenuItem>
             </ContextMenuGroup>
           </>

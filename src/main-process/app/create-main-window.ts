@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 
 import { isTrustedRendererUrl, type TrustedSenderRegistry } from "../ipc/trusted-senders";
@@ -12,7 +12,9 @@ export interface CreateMainWindowOptions {
 
 function getMainWindowIconPath(): string | undefined {
   if (process.platform === "linux") {
-    return path.join(__dirname, "../../assets/icons/icon.png");
+    return app.isPackaged
+      ? path.join(process.resourcesPath, "icon.png")
+      : path.join(__dirname, "../../assets/icons/icon.png");
   }
 
   if (process.platform === "win32") {
@@ -35,6 +37,7 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
 
   const mainWindow = new BrowserWindow({
     ...windowState.browserWindowOptions,
+    autoHideMenuBar: process.platform === "linux",
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     ...(isMac
       ? {

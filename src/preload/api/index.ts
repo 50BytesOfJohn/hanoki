@@ -16,6 +16,7 @@ import { createWorkspaceApi } from "./workspaces";
 
 export function createElectronApi(): IpcApi {
   return {
+    platform: process.platform,
     ...createWorkspaceApi(),
     ...createSettingsApi(),
     ...createContextMenuApi(),

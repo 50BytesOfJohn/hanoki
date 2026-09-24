@@ -57,7 +57,9 @@ export function TerminalPane({ itemId }: { itemId: string }) {
       void terminalsApi.resize(itemId, cols, rows);
     });
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !event.metaKey) return true;
+      const clipboardModifier =
+        window.electronAPI.platform === "darwin" ? event.metaKey : event.ctrlKey && event.shiftKey;
+      if (event.type !== "keydown" || !clipboardModifier) return true;
       if (event.key.toLowerCase() === "c" && terminal.hasSelection()) {
         void navigator.clipboard.writeText(terminal.getSelection());
         return false;

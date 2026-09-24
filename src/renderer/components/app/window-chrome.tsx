@@ -39,7 +39,8 @@ export function WindowChrome({
 }: WindowChromeProps) {
   const chromeStyle = {
     "--window-toolbar-height": `${WINDOW_TOOLBAR_HEIGHT}px`,
-    "--window-traffic-lights-spacer": `${WINDOW_TRAFFIC_LIGHTS_SPACER}px`,
+    "--window-traffic-lights-spacer":
+      window.electronAPI.platform === "darwin" ? `${WINDOW_TRAFFIC_LIGHTS_SPACER}px` : "0px",
   } as React.CSSProperties;
 
   return (

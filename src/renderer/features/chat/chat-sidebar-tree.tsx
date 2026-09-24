@@ -38,6 +38,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { useHotkey } from "@tanstack/react-hotkeys";
+import { modShortcut } from "@/lib/platform";
 
 import {
   AlertDialog,
@@ -837,7 +838,7 @@ function ChatSidebarTreeInner({
             size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
-            aria-label="Search chats (⌘K)"
+            aria-label={`Search chats (${modShortcut("K")})`}
             onClick={() => {
               setSearchOpen(true);
             }}
@@ -1288,7 +1289,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
             size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
-            aria-label="Search chats (⌘K)"
+            aria-label={`Search chats (${modShortcut("K")})`}
             onClick={() => {
               setSearchOpen(true);
             }}

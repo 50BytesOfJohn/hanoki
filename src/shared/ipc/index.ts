@@ -534,6 +534,7 @@ export type EditMessageBehavior = "branch" | "overwrite";
 export type DeleteMessageScope = "message" | "branch";
 
 export interface IpcApi {
+  platform: NodeJS.Platform;
   onSystemEvent: (callback: (event: import("../events").SystemEvent) => void) => () => void;
   onTerminalEvent: (callback: (event: TerminalEvent) => void) => () => void;
   getSystemState: () => Promise<import("../events").SystemState>;
