@@ -43,6 +43,19 @@ export interface ChatTreeChangedEvent {
   workspaceId: string;
 }
 
+/** Emitted when a chat transcript changes outside the renderer, e.g. a draft send. */
+export interface ChatMessagesChangedEvent {
+  type: "chat:messages-changed";
+  chatId: string;
+}
+
+/** Asks the renderer to start one reply in a chat. The tool does not run an agent. */
+export interface ChatGenerationRequestedEvent {
+  type: "chat:generation-requested";
+  chatId: string;
+  modelId: string;
+}
+
 /**
  * Auto-update lifecycle, mirrored from Electron's `autoUpdater` in the main process.
  *
@@ -77,6 +90,8 @@ export type SystemEvent =
   | GlobalChatSettingsUpdatedEvent
   | ItemTitleUpdatedEvent
   | ChatTreeChangedEvent
+  | ChatMessagesChangedEvent
+  | ChatGenerationRequestedEvent
   | UpdateStateChangedEvent;
 
 export interface AiServerStateSnapshot {

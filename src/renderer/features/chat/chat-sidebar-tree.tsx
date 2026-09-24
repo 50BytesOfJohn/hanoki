@@ -129,6 +129,7 @@ import { useChatTreeSort } from "./use-chat-tree-sort";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTreeChanges } from "../items/item-title-events";
+import { clearSidebarFolderReveal, subscribeSidebarFolderReveal } from "./sidebar-reveal";
 import { useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane } from "../workspace/store/layout-tree";
 
@@ -502,6 +503,20 @@ function ChatSidebarTreeInner({
   React.useEffect(() => {
     expandedItemsEvent(expandedItems);
   }, [expandedItems]);
+
+  React.useEffect(
+    () =>
+      subscribeSidebarFolderReveal((reveal) => {
+        setExpandedItems((current) => {
+          const next = new Set(current);
+          for (const ancestorId of reveal.ancestorFolderIds) next.add(`folder:${ancestorId}`);
+          return [...next];
+        });
+        setSelectedItems([`folder:${reveal.folderId}`]);
+        clearSidebarFolderReveal(reveal.folderId);
+      }),
+    [],
+  );
 
   const tree = useTree<ChatTreeNodeData>({
     rootItemId: ROOT_ITEM_ID,

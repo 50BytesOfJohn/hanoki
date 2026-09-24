@@ -67,6 +67,12 @@ if (!app.requestSingleInstanceLock()) {
         onChatTreeChanged: (event) => {
           broadcastSystemEvent({ type: "chat-tree:changed", ...event });
         },
+        onChatMessagesChanged: (event) => {
+          broadcastSystemEvent({ type: "chat:messages-changed", ...event });
+        },
+        onChatGenerationRequested: (event) => {
+          broadcastSystemEvent({ type: "chat:generation-requested", ...event });
+        },
       });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
       broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });
