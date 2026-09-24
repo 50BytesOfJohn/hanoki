@@ -559,14 +559,15 @@ function describeApprovalRequest(
   }
 
   if (toolName === "hanokiSendMessage") {
-    const text = getStringField(input, "text");
+    const targetTitle = names.targetChatTitle ?? "that chat";
     return {
-      title: "Start a reply in another chat?",
-      body: text ? (
-        <p className="rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
-          {text}
+      title: "Kick generation in another chat?",
+      body: (
+        <p className="px-0.5 text-xs text-muted-foreground">
+          Start generation in <span className="font-medium text-foreground">“{targetTitle}”</span>{" "}
+          from this chat’s tool
         </p>
-      ) : null,
+      ),
     };
   }
 
@@ -609,13 +610,19 @@ function collectTreeNames(snapshot: ChatTreeSnapshot | undefined) {
 function approvalNamesFromInput(
   input: unknown,
   snapshot: ChatTreeSnapshot | undefined,
-): { destinationFolderName: string | null; currentItemName: string | null } {
+): {
+  destinationFolderName: string | null;
+  currentItemName: string | null;
+  targetChatTitle: string | null;
+} {
   const { folders, items } = collectTreeNames(snapshot);
   const destinationFolderId = getStringField(input, "destinationFolderId");
   const itemId = getStringField(input, "id");
+  const targetChatId = getStringField(input, "chatId");
   return {
     destinationFolderName: destinationFolderId ? (folders.get(destinationFolderId) ?? null) : null,
     currentItemName: itemId ? (items.get(itemId) ?? folders.get(itemId) ?? null) : null,
+    targetChatTitle: targetChatId ? (items.get(targetChatId) ?? null) : null,
   };
 }
 

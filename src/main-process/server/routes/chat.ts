@@ -37,6 +37,7 @@ import { generateSumiItemTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
 import {
   createHanokiTools,
+  hanokiSendKickNeedsApproval,
   HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
 } from "../assistant/hanoki-tools";
@@ -266,8 +267,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         toolApproval[name] = "user-approval";
       }
     }
-    const sendMessageApproval = (input: { kick?: boolean }) =>
-      input.kick === true ? ("user-approval" as const) : undefined;
+    const sendMessageApproval = (input: { kick?: boolean; chatId?: string }) =>
+      hanokiSendKickNeedsApproval(chat.id, input) ? ("user-approval" as const) : undefined;
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {

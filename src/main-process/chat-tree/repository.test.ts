@@ -14,6 +14,7 @@ import {
 } from "../messages/repository";
 import {
   createHanokiTools,
+  hanokiSendKickNeedsApproval,
   HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
 } from "../server/assistant/hanoki-tools";
@@ -730,6 +731,12 @@ describe("Hanoki create and browse kinds", () => {
         role: "user",
       }),
     );
+    expect(hanokiSendKickNeedsApproval(host.id, { chatId: host.id, kick: true })).toBe(false);
+    expect(hanokiSendKickNeedsApproval(host.id, { chatId: target.id, kick: false })).toBe(false);
+    beginChatGeneration(target.id);
+    expect(hanokiSendKickNeedsApproval(host.id, { chatId: target.id, kick: true })).toBe(false);
+    endChatGeneration(target.id);
+    expect(hanokiSendKickNeedsApproval(host.id, { chatId: target.id, kick: true })).toBe(true);
     expect(onGenerationRequested).toHaveBeenCalledTimes(1);
     expect(onGenerationRequested).toHaveBeenCalledWith(target.id, "kick-active");
     expect(listAllMessagesByChatId(target.id).map((message) => message.role)).toEqual(["user"]);

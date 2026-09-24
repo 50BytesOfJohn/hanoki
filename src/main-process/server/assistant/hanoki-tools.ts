@@ -36,6 +36,17 @@ import {
 } from "../../messages/repository";
 import { isChatGenerationBusy, reserveChatKick } from "../chat-generation-gate";
 
+/** Cross-chat kick asks Allow once. Self-kick and a busy target skip the card and fail in execute. */
+export function hanokiSendKickNeedsApproval(
+  hostChatId: string,
+  input: { kick?: boolean; chatId?: string },
+): boolean {
+  if (input.kick !== true) return false;
+  const targetChatId = input.chatId?.trim() ?? "";
+  if (!targetChatId || targetChatId === hostChatId) return false;
+  return !isChatGenerationBusy(targetChatId);
+}
+
 type ItemKind = "chat" | "folder" | "markdown" | "terminal";
 type ItemRef = { kind: ItemKind; id: string };
 type BrowseKind = "all" | ItemKind;
