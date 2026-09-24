@@ -463,6 +463,7 @@ function ChatSidebarTreeInner({
 
   const { sortOrder, folderPlacement } = useChatTreeSort(workspaceId);
   const sortRef = React.useRef({ sortOrder, folderPlacement });
+  const pendingReloadRef = React.useRef(false);
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -648,6 +649,7 @@ function ChatSidebarTreeInner({
         }
 
         if (tree.isRenamingItem()) {
+          pendingReloadRef.current = true;
           return;
         }
 
@@ -656,6 +658,16 @@ function ChatSidebarTreeInner({
       }),
     [invalidateTree, tree, workspaceId],
   );
+
+  React.useEffect(() => {
+    if (renamingItem || !pendingReloadRef.current) {
+      return;
+    }
+
+    pendingReloadRef.current = false;
+    invalidateTree();
+    tree.rebuildTree();
+  }, [invalidateTree, renamingItem, tree]);
 
   // Children are ordered as they load, so a sort change has to reload the loaded levels.
   React.useEffect(() => {
