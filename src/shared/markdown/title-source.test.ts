@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMarkdownTitleSource,
+  isReplaceableItemTitle,
   ITEM_TITLE_SOURCE_MAX_LENGTH,
   MARKDOWN_TITLE_SOURCE_MAX_WORDS,
+  shouldCommitGeneratedTitle,
 } from "./title-source";
+
+describe("Generated title commit", () => {
+  it("auto-replaces only default titles and never a title that changed mid-flight", () => {
+    expect(isReplaceableItemTitle("New chat")).toBe(true);
+    expect(isReplaceableItemTitle("New markdown")).toBe(true);
+    expect(isReplaceableItemTitle("Untitled")).toBe(true);
+    expect(isReplaceableItemTitle("Ch 03 — The Bridge")).toBe(false);
+
+    expect(shouldCommitGeneratedTitle("auto", "New chat", "New chat")).toBe(true);
+    expect(shouldCommitGeneratedTitle("auto", "Kael — voice", "Kael — voice")).toBe(false);
+    expect(shouldCommitGeneratedTitle("auto", "New chat", "Kael — voice")).toBe(false);
+    expect(shouldCommitGeneratedTitle("explicit", "Kael — voice", "Kael — voice")).toBe(true);
+    expect(shouldCommitGeneratedTitle("explicit", "New chat", "Kael — voice")).toBe(false);
+  });
+});
 
 describe("Markdown title source", () => {
   it("uses at most the first 500 whitespace-delimited words", () => {

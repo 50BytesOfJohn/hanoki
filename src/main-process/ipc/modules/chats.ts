@@ -9,6 +9,7 @@ import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import { isReasoningEffort } from "@shared/models/reasoning";
+import { broadcastItemTitleUpdated } from "../../broadcast-item-title";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -246,7 +247,11 @@ export function registerChatsIpcModule(
       expectArgCount(args, 2);
       return [parseValidChatId(args[0]), parseValidChatTitle(args[1])];
     },
-    handler: ({ services }, _event, id, title) => services.chatTree.updateChatTitle(id, title),
+    handler: ({ services }, _event, id, title) => {
+      const chat = services.chatTree.updateChatTitle(id, title);
+      broadcastItemTitleUpdated(chat);
+      return chat;
+    },
   });
 
   registerInvokeHandler<[string, ChatSettingsUpdateInput], ChatInfo>(context, registeredChannels, {

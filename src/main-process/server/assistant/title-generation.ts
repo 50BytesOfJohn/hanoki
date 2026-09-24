@@ -5,7 +5,11 @@ import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import type { ItemTitleUpdatedEvent } from "@shared/events";
 import type { SumiModelReference } from "@shared/ipc";
-import { buildMarkdownTitleSource } from "@shared/markdown/title-source";
+import {
+  buildMarkdownTitleSource,
+  isReplaceableItemTitle,
+  shouldCommitGeneratedTitle,
+} from "@shared/markdown/title-source";
 import { getChatTreeChildren, getItemById, updateItemTitle } from "../../chat-tree/repository";
 import { listMessagesByChatId, type MessageRow } from "../../messages/repository";
 import { getModelById } from "../../models/repository";
@@ -23,20 +27,22 @@ interface ResolvedSumiModel {
 interface GenerateSumiItemTitleInput {
   itemId: string;
   sourcePrompt?: string | null;
+  mode?: "auto" | "explicit";
 }
 
-const pendingTitleGenerations = new Map<string, Promise<ItemTitleUpdatedEvent>>();
+const pendingTitleGenerations = new Map<string, Promise<ItemTitleUpdatedEvent | null>>();
 
 export function generateSumiItemTitle({
   itemId,
   sourcePrompt,
-}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent> {
+  mode = "explicit",
+}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
   const pending = pendingTitleGenerations.get(itemId);
   if (pending) {
     return pending;
   }
 
-  const generation = generateItemTitle(itemId, sourcePrompt?.trim() || null);
+  const generation = generateItemTitle(itemId, sourcePrompt?.trim() || null, mode);
   pendingTitleGenerations.set(itemId, generation);
   const cleanup = () => {
     if (pendingTitleGenerations.get(itemId) === generation) {
@@ -51,7 +57,8 @@ export function generateSumiItemTitle({
 async function generateItemTitle(
   itemId: string,
   sourcePrompt: string | null,
-): Promise<ItemTitleUpdatedEvent> {
+  mode: "auto" | "explicit",
+): Promise<ItemTitleUpdatedEvent | null> {
   const settings = readSumiSettings();
   if (!settings.titleGeneration.enabled) {
     throw new Error("Sumi title generation is disabled.");
@@ -65,6 +72,11 @@ async function generateItemTitle(
   const item = getItemById(itemId);
   if (!item || item.type === "terminal") {
     throw new Error("Item not found or unsupported.");
+  }
+
+  const titleAtStart = item.title;
+  if (mode === "auto" && !isReplaceableItemTitle(titleAtStart)) {
+    return null;
   }
 
   const source = sourcePrompt
@@ -95,6 +107,11 @@ async function generateItemTitle(
     maxOutputTokens: 48,
   });
   const title = normalizeGeneratedTitle(text);
+  const current = getItemById(item.id);
+  if (!current || !shouldCommitGeneratedTitle(mode, titleAtStart, current.title)) {
+    return null;
+  }
+
   const updatedItem = updateItemTitle(item.id, title);
 
   return {

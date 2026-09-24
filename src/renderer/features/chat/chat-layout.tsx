@@ -86,6 +86,7 @@ import { ActiveChatView } from "./chat-page";
 import { ChatGraphPage } from "./modules/graph/chat-graph-page";
 import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-page";
 import { ChatSettingsPage } from "./chat-settings-page";
+import { isReplaceableItemTitle } from "@shared/markdown/title-source";
 import { generateSumiItemTitle } from "../items/sumi-item-title-generation";
 
 export type NativeChatDrag =
@@ -509,7 +510,6 @@ function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => v
             variant="ghost"
             size="icon-xs"
             aria-label="Item actions"
-            disabled={isGeneratingTitle}
             className="text-muted-foreground"
             onPointerDown={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
@@ -527,9 +527,9 @@ function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => v
           Rename
         </DropdownMenuItem>
         {canGenerateTitle ? (
-          <DropdownMenuItem onClick={generateTitle}>
+          <DropdownMenuItem disabled={isGeneratingTitle} onClick={generateTitle}>
             <HugeiconsIcon icon={AiBeautifyIcon} />
-            Generate automatically
+            {isReplaceableItemTitle(item.title) ? "Generate title" : "Regenerate title"}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>

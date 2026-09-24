@@ -175,8 +175,10 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         void generateSumiItemTitle({
           itemId: chat.id,
           sourcePrompt: extractUiMessageText(lastRequestMessage),
+          mode: "auto",
         })
           .then((event) => {
+            if (!event) return;
             options?.onItemTitleUpdated?.({
               itemId: event.itemId,
               itemType: event.itemType,

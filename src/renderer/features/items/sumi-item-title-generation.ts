@@ -6,24 +6,27 @@ interface GenerateSumiItemTitleInput {
   apiUrl: string;
   itemId: string;
   sourcePrompt?: string;
+  mode?: "auto" | "explicit";
 }
 
 interface SumiItemTitleRequest {
   itemId: string;
   sourcePrompt?: string;
+  mode?: "auto" | "explicit";
 }
 
-const pendingGenerations = new Map<string, Promise<ItemTitleUpdatedEvent>>();
+const pendingGenerations = new Map<string, Promise<ItemTitleUpdatedEvent | null>>();
 
 export function generateSumiItemTitle({
   apiUrl,
   itemId,
   sourcePrompt,
-}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent> {
+  mode = "explicit",
+}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
   const pending = pendingGenerations.get(itemId);
   if (pending) return pending;
 
-  const generation = requestSumiItemTitle({ apiUrl, itemId, sourcePrompt });
+  const generation = requestSumiItemTitle({ apiUrl, itemId, sourcePrompt, mode });
   pendingGenerations.set(itemId, generation);
   const cleanup = () => {
     if (pendingGenerations.get(itemId) === generation) pendingGenerations.delete(itemId);
@@ -36,10 +39,11 @@ async function requestSumiItemTitle({
   apiUrl,
   itemId,
   sourcePrompt,
-}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent> {
+  mode = "explicit",
+}: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
   if (!apiUrl) throw new Error("Sumi is not ready.");
 
-  const body: SumiItemTitleRequest = { itemId };
+  const body: SumiItemTitleRequest = { itemId, mode };
   if (sourcePrompt?.trim()) body.sourcePrompt = sourcePrompt.trim();
 
   const response = await fetch(`${apiUrl}/title`, {
@@ -52,6 +56,8 @@ async function requestSumiItemTitle({
     const message = (await response.text()).trim();
     throw new Error(message || "Sumi could not generate an item title.");
   }
+
+  if (response.status === 204) return null;
 
   const event: ItemTitleUpdatedEvent = await response.json();
   applyItemTitleUpdate(event);

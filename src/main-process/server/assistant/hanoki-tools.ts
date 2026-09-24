@@ -1,4 +1,5 @@
 import { jsonSchema, tool, type JSONSchema7 } from "ai";
+import { broadcastItemTitleUpdated } from "../../broadcast-item-title";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderName } from "@shared/folder/folder-name";
@@ -637,9 +638,9 @@ export function createHanokiTools({
           if (!parsed.ok) throw new Error(parsed.error);
           updateFolderName(id, parsed.value);
         } else if (kind === "chat") {
-          updateChatTitle(id, parseItemTitle(kind, newName));
+          broadcastItemTitleUpdated(updateChatTitle(id, parseItemTitle(kind, newName)));
         } else {
-          updateItemTitle(id, parseItemTitle(kind, newName));
+          broadcastItemTitleUpdated(updateItemTitle(id, parseItemTitle(kind, newName)));
         }
         return treeChanged({
           before,

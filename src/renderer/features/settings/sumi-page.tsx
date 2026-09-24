@@ -80,13 +80,13 @@ export function SumiPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Chat titles"
-        description="Generate concise names for chats with a dedicated Sumi model."
+        title="Titles"
+        description="Generate concise names for chats and notes with a dedicated Sumi model."
       >
         <SettingsRow
           icon={<HugeiconsIcon icon={AiContentGenerator01Icon} className="size-4" />}
           title="Title generation"
-          description="Show the title regeneration action and allow Sumi to rename chats."
+          description="Show title generation and allow Sumi to rename chats and notes."
           control={
             <Switch
               aria-label="Enable Sumi title generation"
@@ -98,10 +98,10 @@ export function SumiPage() {
         />
         <SettingsRow
           title="Automatic titles"
-          description="Generate a title after the first user message in a new chat."
+          description="Replace a default chat or note title after the first content. A renamed title is left alone."
           control={
             <Switch
-              aria-label="Automatically generate chat titles"
+              aria-label="Automatically generate titles for new chats and notes"
               checked={titleGeneration?.autoGenerate ?? false}
               disabled={isPending || !titleGeneration?.enabled}
               onCheckedChange={(autoGenerate) =>

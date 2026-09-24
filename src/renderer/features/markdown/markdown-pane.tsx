@@ -120,6 +120,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
         void generateSumiItemTitle({
           apiUrl: `http://127.0.0.1:${port}/api/sumi`,
           itemId: saved.id,
+          mode: "auto",
         }).catch((titleError) => {
           toastManager.add({
             type: "error",

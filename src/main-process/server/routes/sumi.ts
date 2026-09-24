@@ -86,12 +86,17 @@ export function createSumiRoute(options?: CreateSumiRouteOptions) {
     ) {
       return c.text("sourcePrompt must be a non-empty string.", 400);
     }
+    if (input.mode !== undefined && input.mode !== "auto" && input.mode !== "explicit") {
+      return c.text("mode must be auto or explicit.", 400);
+    }
 
     try {
       const event = await generateSumiItemTitle({
         itemId: parsedItemId.value,
         sourcePrompt: typeof input.sourcePrompt === "string" ? input.sourcePrompt : null,
+        mode: input.mode === "auto" ? "auto" : "explicit",
       });
+      if (!event) return c.body(null, 204);
       options?.onItemTitleUpdated?.({
         itemId: event.itemId,
         itemType: event.itemType,
