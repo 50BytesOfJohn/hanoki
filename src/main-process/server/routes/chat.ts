@@ -14,7 +14,6 @@ import type {
   ChatGenerationRequestedEvent,
   ChatMessagesChangedEvent,
   ChatTreeChangedEvent,
-  ItemTitleUpdatedEvent,
 } from "@shared/events";
 import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
@@ -64,7 +63,6 @@ const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
 
 interface CreateChatRouteOptions {
-  onItemTitleUpdated?: (event: Omit<ItemTitleUpdatedEvent, "type">) => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
@@ -184,18 +182,10 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         void generateSumiItemTitle({
           itemId: chat.id,
           sourcePrompt: extractUiMessageText(lastRequestMessage),
-        })
-          .then((event) => {
-            options?.onItemTitleUpdated?.({
-              itemId: event.itemId,
-              itemType: event.itemType,
-              workspaceId: event.workspaceId,
-              title: event.title,
-            });
-          })
-          .catch((error) => {
-            console.error("[sumi-title] Automatic title generation failed.", error);
-          });
+          mode: "auto",
+        }).catch((error) => {
+          console.error("[sumi-title] Automatic title generation failed.", error);
+        });
       }
     }
 
