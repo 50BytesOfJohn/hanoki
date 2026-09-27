@@ -15,7 +15,7 @@ are easier to review and merge.
 Requirements:
 
 - Node.js 22 or newer
-- pnpm 10.14.0
+- pnpm 12
 
 ```bash
 pnpm install
