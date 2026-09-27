@@ -34,14 +34,18 @@ import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
 import { generateSumiItemTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
+import { formatAttachedContextInstructions } from "@shared/chat/attached-items";
 import {
   createHanokiTools,
   hanokiSendKickNeedsApproval,
   HANOKI_MUTATING_TOOL_NAMES,
+  HANOKI_READ_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
+  resolveAttachedItemPointers,
 } from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
 import {
+  getTurnItemMentions,
   isHanokiToolEnabledForRequest,
   isTerminalToolEnabledForRequest,
   isWebToolEnabledForRequest,
@@ -66,6 +70,13 @@ interface CreateChatRouteOptions {
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
+  flushMarkdownContent?: (id: string) => {
+    id: string;
+    workspaceId: string;
+    title: string;
+    type: "markdown";
+    data: { markdown: string };
+  };
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -215,6 +226,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.data.settings.hanokiEnabled),
       latestUserMessage,
     );
+    const itemMentions = getTurnItemMentions(messages);
+    const mentionedPointers = resolveAttachedItemPointers(chat.workspaceId, itemMentions);
+    const mentionedInstructions = formatAttachedContextInstructions(mentionedPointers);
     // The chat opts in via the tools menu or an @Terminal mention, same as the
     // web tools; the app-wide setting only decides whether calls need approval.
     const terminalSettings = readTerminalToolSettings();
@@ -230,6 +244,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ...createHanokiTools({
         workspaceId: chat.workspaceId,
         chatId: chat.id,
+        flushMarkdownContent: options?.flushMarkdownContent,
         onTreeChanged: () => options?.onChatTreeChanged?.({ workspaceId: chat.workspaceId }),
         onMessagesChanged: (targetChatId) =>
           options?.onChatMessagesChanged?.({ chatId: targetChatId }),
@@ -244,6 +259,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const activeTools: (keyof typeof tools)[] = [];
     if (isWebEnabledForRequest) activeTools.push("webSearch", "webFetch");
     if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
+    else if (itemMentions.length > 0) activeTools.push(...HANOKI_READ_TOOL_NAMES);
     if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
 
     const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
@@ -280,7 +296,10 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         : undefined;
     const agent = new ToolLoopAgent({
       model: languageModel,
-      instructions: chat.data.settings.systemPrompt?.trim() || undefined,
+      instructions:
+        [chat.data.settings.systemPrompt?.trim() || "", mentionedInstructions ?? ""]
+          .filter((part) => part.length > 0)
+          .join("\n\n") || undefined,
       temperature: chat.data.settings.modelConfig?.temperature,
       reasoning: reasoningEffort,
       providerOptions: buildReasoningProviderOptions(

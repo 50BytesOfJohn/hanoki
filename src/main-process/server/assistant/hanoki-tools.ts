@@ -1,4 +1,9 @@
 import { jsonSchema, tool, type JSONSchema7 } from "ai";
+import {
+  HANOKI_READ_CHAR_CEILING,
+  type AttachedItemPointer,
+  type AttachedItemRef,
+} from "@shared/chat/attached-items";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderName } from "@shared/folder/folder-name";
@@ -212,6 +217,83 @@ function resolveKickModelId(
   throw new Error("No enabled model is available to start a reply in this chat.");
 }
 
+export function resolveAttachedItemPointers(
+  workspaceId: string,
+  items: readonly AttachedItemRef[],
+): AttachedItemPointer[] {
+  return items.map((item) => {
+    const row = getItemById(item.itemId);
+    const expectedType = item.kind === "note" ? "markdown" : "chat";
+    if (!row || row.workspaceId !== workspaceId || row.type !== expectedType) {
+      return { kind: item.kind, itemId: item.itemId, title: null };
+    }
+    return { kind: item.kind, itemId: item.itemId, title: row.title };
+  });
+}
+
+const READ_TRUNCATION_MARKER = `\n\n[truncated: this read stopped at ${HANOKI_READ_CHAR_CEILING} characters]`;
+
+function capReadText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= HANOKI_READ_CHAR_CEILING) return { text, truncated: false };
+  return {
+    text: `${text.slice(0, HANOKI_READ_CHAR_CEILING)}${READ_TRUNCATION_MARKER}`,
+    truncated: true,
+  };
+}
+
+interface ReadableChatMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: number;
+}
+
+function capChatMessages(page: readonly ReadableChatMessage[]): {
+  messages: ReadableChatMessage[];
+  truncated: boolean;
+} {
+  let used = 0;
+  const kept: ReadableChatMessage[] = [];
+  let truncated = false;
+  for (let index = page.length - 1; index >= 0; index -= 1) {
+    const message = page[index];
+    if (!message) continue;
+    const remaining = HANOKI_READ_CHAR_CEILING - used;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    if (message.content.length > remaining) {
+      kept.push({
+        ...message,
+        content: `${message.content.slice(0, remaining)}${READ_TRUNCATION_MARKER}`,
+      });
+      truncated = true;
+      break;
+    }
+    kept.push(message);
+    used += message.content.length;
+  }
+  kept.reverse();
+  return { messages: kept, truncated };
+}
+
+interface FlushedNote {
+  id: string;
+  workspaceId: string;
+  title: string;
+  type: "markdown";
+  data: { markdown: string };
+}
+
+function flushStoredMarkdown(id: string): FlushedNote {
+  const item = getItemById(id);
+  if (!item || item.type !== "markdown") {
+    throw new Error(`Item "${id}" is not a note.`);
+  }
+  return item;
+}
+
 function parseItemTitle(kind: Exclude<ItemKind, "folder">, newName: string): string {
   const parsed = parseChatTitle(newName);
   if (!parsed.ok) {
@@ -226,17 +308,87 @@ export function createHanokiTools({
   onTreeChanged,
   onMessagesChanged,
   onGenerationRequested,
+  flushMarkdownContent = flushStoredMarkdown,
 }: {
   workspaceId: string;
   chatId: string;
   onTreeChanged?: () => void;
   onMessagesChanged?: (chatId: string) => void;
   onGenerationRequested?: (chatId: string, modelId: string) => void;
+  flushMarkdownContent?: (id: string) => FlushedNote;
 }) {
   const treeChanged = <T>(result: T): T => {
     onTreeChanged?.();
     return result;
   };
+
+  function readChatPage(input: { chatId: string; limit: number; beforeMessageId?: string | null }) {
+    const target = getChatById(input.chatId);
+    if (!target || target.workspaceId !== workspaceId) {
+      throw new Error(`Chat "${input.chatId}" does not exist in this workspace.`);
+    }
+    const limit = Math.min(100, Math.max(1, input.limit));
+    const branch = listMessagesByChatId(input.chatId, getChatCurrentBranchId(input.chatId));
+    const normalizedBeforeMessageId = normalizeNullableString(input.beforeMessageId);
+    const end =
+      normalizedBeforeMessageId === null
+        ? branch.length
+        : branch.findIndex((message) => message.id === normalizedBeforeMessageId);
+    if (end < 0) {
+      throw new Error(`Message "${normalizedBeforeMessageId}" is not on the selected chat branch.`);
+    }
+    const start = Math.max(0, end - limit);
+    const page = branch.slice(start, end).map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: getStoredMessageText(message),
+      createdAt: message.createdAt,
+    }));
+    const capped = capChatMessages(page);
+    const oldestIncluded = capped.messages[0];
+    const hasOlder = start > 0 || capped.messages.length < page.length;
+    return {
+      chat: summarizeItem(
+        workspaceId,
+        { kind: "chat", id: input.chatId },
+        getFolderPaths(workspaceId),
+      ),
+      messages: capped.messages,
+      truncated: capped.truncated,
+      nextBeforeMessageId: hasOlder && oldestIncluded ? oldestIncluded.id : null,
+    };
+  }
+
+  const chatReadSchema = jsonSchema<{
+    chatId: string;
+    limit: number;
+    beforeMessageId?: string | null;
+  }>({
+    type: "object",
+    properties: {
+      chatId: {
+        type: "string",
+        minLength: 1,
+        description: "Exact chat ID from an attached context pointer or another Hanoki tool.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+        description: "Maximum number of messages to return, from 1 to 100.",
+      },
+      beforeMessageId: {
+        type: ["string", "null"],
+        default: null,
+        description:
+          "Return the page older than this message ID. Pass nextBeforeMessageId from the previous result. Omit for the latest page. Repeat until nextBeforeMessageId is null.",
+      },
+    },
+    required: ["chatId", "limit"],
+    additionalProperties: false,
+  });
+
+  const chatReadDescription = `Read messages from a chat in the current Hanoki workspace. Returns the latest page of the selected branch by default, in conversation order, at most 100 messages and ${HANOKI_READ_CHAR_CEILING} characters of message text. A truncated page ends with a truncation marker and sets truncated to true. Walk older history by calling again with beforeMessageId set to nextBeforeMessageId until that field is null. Does not modify the chat.`;
 
   return {
     hanokiBrowseItems: tool({
@@ -364,64 +516,58 @@ export function createHanokiTools({
     }),
 
     hanokiGetChatContent: tool({
-      description:
-        "Read messages from a chat in the current Hanoki workspace. Use this after browsing or searching when the chat's actual conversation is needed. It returns the latest page of the currently selected branch by default, with messages in conversation order, without modifying the chat.",
-      inputSchema: jsonSchema<{
-        chatId: string;
-        limit: number;
-        beforeMessageId?: string | null;
-      }>({
+      description: chatReadDescription,
+      inputSchema: chatReadSchema,
+      execute: (input) => readChatPage(input),
+    }),
+
+    readNote: tool({
+      description: `Read a markdown note in the current workspace by exact note id. Flushes unsaved editor text before reading. Returns at most ${HANOKI_READ_CHAR_CEILING} characters; longer notes include a truncation marker and are not returned in full. Fails if the id is missing, in another workspace, or not a note.`,
+      inputSchema: jsonSchema<{ noteId: string }>({
         type: "object",
         properties: {
-          chatId: {
+          noteId: {
             type: "string",
             minLength: 1,
-            description: "Exact chat ID returned by a Hanoki tool.",
-          },
-          limit: {
-            type: "integer",
-            minimum: 1,
-            maximum: 100,
-            description: "Maximum number of messages to return, from 1 to 100.",
-          },
-          beforeMessageId: {
-            type: ["string", "null"],
-            default: null,
-            description: "Return older messages before this message ID. Omit for the latest page.",
+            description: "Exact note id from an attached context pointer.",
           },
         },
-        required: ["chatId", "limit"],
+        required: ["noteId"],
         additionalProperties: false,
       }),
-      execute: ({ chatId, limit, beforeMessageId = null }) => {
-        const chat = getChatById(chatId);
-        if (!chat || chat.workspaceId !== workspaceId) {
-          throw new Error(`Chat "${chatId}" does not exist in this workspace.`);
+      execute: ({ noteId }) => {
+        const existing = getItemById(noteId);
+        if (!existing || existing.workspaceId !== workspaceId) {
+          throw new Error(`Note "${noteId}" does not exist in this workspace.`);
         }
-        const branch = listMessagesByChatId(chatId, getChatCurrentBranchId(chatId));
-        const normalizedBeforeMessageId = normalizeNullableString(beforeMessageId);
-        const end =
-          normalizedBeforeMessageId === null
-            ? branch.length
-            : branch.findIndex((message) => message.id === normalizedBeforeMessageId);
-        if (end < 0) {
+        if (existing.type !== "markdown") {
+          throw new Error(`Item "${noteId}" is not a note.`);
+        }
+        const flushed = (flushMarkdownContent ?? flushStoredMarkdown)(noteId);
+        if (flushed.type !== "markdown" || flushed.workspaceId !== workspaceId) {
+          throw new Error(`Note "${noteId}" does not exist in this workspace.`);
+        }
+        const capped = capReadText(flushed.data.markdown ?? "");
+        return {
+          kind: "note" as const,
+          itemId: flushed.id,
+          title: flushed.title,
+          content: capped.text,
+          truncated: capped.truncated,
+        };
+      },
+    }),
+
+    readChat: tool({
+      description: `${chatReadDescription} Refuses the chat hosting this turn: that conversation is already in context, and the in-flight turn is not a stable snapshot.`,
+      inputSchema: chatReadSchema,
+      execute: (input) => {
+        if (input.chatId.trim() === chatId) {
           throw new Error(
-            `Message "${normalizedBeforeMessageId}" is not on the selected chat branch.`,
+            "Cannot read the chat hosting this turn. Its messages are already in the conversation.",
           );
         }
-        const start = Math.max(0, end - limit);
-        const page = branch.slice(start, end);
-        const folderPaths = getFolderPaths(workspaceId);
-        return {
-          chat: summarizeItem(workspaceId, { kind: "chat", id: chatId }, folderPaths),
-          messages: page.map((message) => ({
-            id: message.id,
-            role: message.role,
-            content: getStoredMessageText(message),
-            createdAt: message.createdAt,
-          })),
-          nextBeforeMessageId: start > 0 ? (page[0]?.id ?? null) : null,
-        };
+        return readChatPage(input);
       },
     }),
 
@@ -807,10 +953,14 @@ export function createHanokiTools({
   };
 }
 
+export const HANOKI_READ_TOOL_NAMES = ["readNote", "readChat"] as const;
+
 export const HANOKI_TOOL_NAMES = [
   "hanokiBrowseItems",
   "hanokiSearchChats",
   "hanokiGetChatContent",
+  "readNote",
+  "readChat",
   "hanokiGetCurrentFolder",
   "hanokiGetItemLocation",
   "hanokiCreateFolder",

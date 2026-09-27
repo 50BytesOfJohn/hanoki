@@ -55,7 +55,7 @@ Hanoki is open source (MIT). Contributions are welcome — please read [CONTRIBU
 ### Requirements
 
 - Node.js 22+
-- pnpm 10.14.0
+- pnpm 12
 
 ### Getting started
 

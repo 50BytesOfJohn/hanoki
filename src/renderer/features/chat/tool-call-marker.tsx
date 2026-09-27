@@ -12,6 +12,7 @@ import {
   FileEditIcon,
   FileScriptIcon,
   Folder01Icon,
+  MessagesSquare,
   FolderAddIcon,
   FolderTransferIcon,
   GlobalSearchIcon,
@@ -287,6 +288,26 @@ function GenericToolDetails({ input, output }: { input: unknown; output: unknown
   );
 }
 
+function ReadResultDetails({ output }: { input: unknown; output: unknown }) {
+  const record =
+    typeof output === "object" && output !== null ? (output as Record<string, unknown>) : null;
+  const chat =
+    record && typeof record.chat === "object" && record.chat !== null
+      ? (record.chat as Record<string, unknown>)
+      : null;
+  const title =
+    getStringField(output, "title") ?? (typeof chat?.name === "string" ? chat.name : null);
+  const messageCount = Array.isArray(record?.messages) ? record.messages.length : null;
+  const truncated = record?.truncated === true;
+  return (
+    <p className="text-xs text-muted-foreground">
+      {title ? `“${title}”` : "Item"}
+      {messageCount !== null ? ` · ${messageCount} messages` : ""}
+      {truncated ? " · truncated" : ""}
+    </p>
+  );
+}
+
 const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
   webSearch: {
     icon: GlobalSearchIcon,
@@ -378,7 +399,33 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     pendingLabel: () => "Reading a Hanoki chat…",
     doneLabel: () => "Read a Hanoki chat",
     errorLabel: "Reading Hanoki chat failed",
-    Details: GenericToolDetails,
+    Details: ReadResultDetails,
+  },
+  readNote: {
+    icon: FileScriptIcon,
+    pendingLabel: () => "Reading a note…",
+    doneLabel: (_input, output) => {
+      const title = getStringField(output, "title");
+      return title ? `Read “${title}”` : "Read a note";
+    },
+    errorLabel: "Reading the note failed",
+    Details: ReadResultDetails,
+  },
+  readChat: {
+    icon: MessagesSquare,
+    pendingLabel: () => "Reading a chat…",
+    doneLabel: (_input, output) => {
+      const record =
+        typeof output === "object" && output !== null ? (output as Record<string, unknown>) : null;
+      const chat =
+        record && typeof record.chat === "object" && record.chat !== null
+          ? (record.chat as Record<string, unknown>)
+          : null;
+      const title = typeof chat?.name === "string" ? chat.name : null;
+      return title ? `Read “${title}”` : "Read a chat";
+    },
+    errorLabel: "Reading the chat failed",
+    Details: ReadResultDetails,
   },
   hanokiGetCurrentFolder: {
     icon: Folder01Icon,

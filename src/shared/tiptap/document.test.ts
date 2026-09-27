@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 
+import { renderToHTMLString } from "@tiptap/static-renderer/pm/html-string";
+
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import {
   createTiptapDocumentFromText,
   createTiptapMessageParts,
   getMessageDisplayText,
+  getSelectedItemMentions,
+  getSelectedToolIds,
+  getTurnItemMentions,
   isHanokiToolEnabledForRequest,
   isWebToolEnabledForRequest,
   parseTiptapDocument,
   type TiptapDocument,
 } from "./document";
 import {
+  createMessageTiptapExtensions,
   getTiptapMessageDisplayText,
   normalizeAssistantTiptapParts,
   parseMarkdownToTiptap,
@@ -94,6 +100,127 @@ describe("parseTiptapDocument", () => {
     expect(parsed.ok && parsed.value.modelText).toBe("Hanoki tool");
     expect(parsed.ok && parsed.value.selectedToolIds).toEqual(["hanoki"]);
     expect(isHanokiToolEnabledForRequest(false, message)).toBe(true);
+  });
+
+  it("keeps item mentions in the prose and out of tool ids", () => {
+    const document: TiptapDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "read " },
+            {
+              type: "mention",
+              attrs: { id: null, kind: "note", itemId: "note-1", label: "NoteName" },
+            },
+            { type: "text", text: " and do " },
+            { type: "mention", attrs: { id: "web", label: "Web" } },
+            { type: "text", text: " then " },
+            {
+              type: "mention",
+              attrs: { kind: "note", itemId: "note-1", label: "NoteName" },
+            },
+          ],
+        },
+      ],
+    };
+    const parsed = parseTiptapDocument(document);
+    const message = {
+      parts: [{ type: "data-tiptap", data: document }],
+    } as Pick<HanokiUiMessage, "parts">;
+
+    expect(parsed.ok && parsed.value.displayText).toBe("read @NoteName and do @Web then @NoteName");
+    expect(parsed.ok && parsed.value.modelText).toBe(
+      "read @NoteName and do Web tool then @NoteName",
+    );
+    expect(parsed.ok && parsed.value.selectedToolIds).toEqual(["web"]);
+    expect(getSelectedToolIds(message)).toEqual(["web"]);
+    expect(getSelectedItemMentions(message)).toEqual([{ kind: "note", itemId: "note-1" }]);
+    expect(isHanokiToolEnabledForRequest(false, message)).toBe(false);
+  });
+
+  it("takes item mentions from the latest user message only", () => {
+    const document: TiptapDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "mention", attrs: { kind: "note", itemId: "note-1", label: "Plan" } }],
+        },
+      ],
+    };
+    const mentioned = {
+      role: "user" as const,
+      parts: [{ type: "data-tiptap" as const, data: document }],
+    };
+    const plain = {
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "thanks" }],
+    };
+    const assistant = { role: "assistant" as const, parts: [] };
+
+    expect(getTurnItemMentions([mentioned, assistant, plain])).toEqual([]);
+    expect(getTurnItemMentions([plain, mentioned])).toEqual([{ kind: "note", itemId: "note-1" }]);
+    expect(getSelectedToolIds(mentioned)).toEqual([]);
+  });
+
+  it("renders item mention attributes without putting the item id in data-id", () => {
+    const html = renderToHTMLString({
+      extensions: createMessageTiptapExtensions(),
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "mention", attrs: { kind: "note", itemId: "note-1", label: "Plan" } },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(html).toContain('data-mention-kind="note"');
+    expect(html).toContain('data-item-id="note-1"');
+    expect(html).not.toContain('data-id="note-1"');
+    expect(html).toContain("@Plan");
+  });
+
+  it("rejects an item id stored in mention.attrs.id", () => {
+    const parsed = parseTiptapDocument({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "mention",
+              attrs: { id: "note-1", kind: "note", itemId: "note-1", label: "Plan" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
+
+  it("rejects item ids in tool mention attrs", () => {
+    const parsed = parseTiptapDocument({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "mention", attrs: { id: "note-1", label: "Plan" } }],
+        },
+      ],
+    });
+
+    expect(parsed).toEqual({
+      ok: false,
+      error: "doc.content[0].content[0] contains an unsupported mention ID.",
+    });
   });
 
   it("rejects unsupported mention IDs", () => {

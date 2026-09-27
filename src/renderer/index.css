@@ -225,6 +225,7 @@
 .tiptap-tool-mention {
   display: inline-flex;
   align-items: center;
+  gap: 0.15rem;
   border-radius: 0.35rem;
   background: var(--accent-soft);
   color: var(--accent-soft-foreground);
@@ -232,6 +233,27 @@
   line-height: 1.35;
   padding: 0.05rem 0.3rem;
   white-space: nowrap;
+}
+
+.tiptap-tool-mention button {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.tiptap-tool-mention button:disabled {
+  cursor: default;
+}
+
+.tiptap-tool-mention:has(.mention-broken) {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
 }
 
 .ProseMirror-selectednode.tiptap-tool-mention {

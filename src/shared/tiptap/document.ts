@@ -1,3 +1,4 @@
+import { isAttachedItemKind, type AttachedItemRef } from "../chat/attached-items";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 
 export const WEB_TOOL_ID = "web" as const;
@@ -147,6 +148,33 @@ export function getMessageDisplayText(message: Pick<HanokiUiMessage, "parts">): 
   return blocks.join("\n");
 }
 
+/** Item mentions on one message. Tool mention ids stay in `getSelectedToolIds`. */
+export function getSelectedItemMentions(
+  message: Pick<HanokiUiMessage, "parts"> | undefined,
+): AttachedItemRef[] {
+  if (!message) return [];
+  const seen = new Set<string>();
+  const items: AttachedItemRef[] = [];
+  for (const part of message.parts) {
+    if (part.type !== "data-tiptap") continue;
+    const parsed = parseTiptapDocument(part.data);
+    if (!parsed.ok) continue;
+    collectItemMentions(parsed.value.document, seen, items);
+  }
+  return items;
+}
+
+/** Latest user message only. An earlier turn's mentions do not carry forward. */
+export function getTurnItemMentions(
+  messages: readonly Pick<HanokiUiMessage, "role" | "parts">[],
+): AttachedItemRef[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") return getSelectedItemMentions(message);
+  }
+  return [];
+}
+
 export function getSelectedToolIds(message: Pick<HanokiUiMessage, "parts">): string[] {
   const selected = new Set<string>();
   for (const part of message.parts) {
@@ -270,7 +298,7 @@ function validateNode(
   }
 
   if (nodeType === "mention") {
-    if (!isRecord(input.attrs) || !isChatToolId(input.attrs.id)) {
+    if (!isRecord(input.attrs) || mentionAttrsError(input.attrs)) {
       return `${path} contains an unsupported mention ID.`;
     }
     if (input.content !== undefined) {
@@ -383,10 +411,18 @@ function renderNode(
   }
   if (node.type === "mention") {
     const toolId = node.attrs?.id;
-    if (!isChatToolId(toolId)) return "";
-    selectedToolIds.add(toolId);
-    const label = CHAT_TOOL_LABELS[toolId];
-    return mode === "display" ? `@${label}` : `${label} tool`;
+    if (isChatToolId(toolId)) {
+      selectedToolIds.add(toolId);
+      const label = CHAT_TOOL_LABELS[toolId];
+      return mode === "display" ? `@${label}` : `${label} tool`;
+    }
+    const item = readItemMention(node.attrs);
+    if (!item) return "";
+    const label =
+      typeof node.attrs?.label === "string" && node.attrs.label.length > 0
+        ? node.attrs.label
+        : "Missing";
+    return `@${label}`;
   }
 
   const children = node.content ?? [];
@@ -410,4 +446,39 @@ function renderNode(
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+/** Tool mentions use `attrs.id`. Item mentions use `kind` + `itemId` and must not put the item id in `id`. */
+function mentionAttrsError(attrs: Record<string, unknown>): boolean {
+  const id = attrs.id;
+  const hasToolId = typeof id === "string" && id.length > 0;
+  const hasItemFields =
+    (attrs.kind !== undefined && attrs.kind !== null) ||
+    (typeof attrs.itemId === "string" && attrs.itemId.length > 0);
+  if (hasToolId && !hasItemFields) return !isChatToolId(id);
+  if (!hasToolId && readItemMention(attrs)) {
+    return attrs.label !== undefined && attrs.label !== null && typeof attrs.label !== "string";
+  }
+  return true;
+}
+
+function readItemMention(attrs: Record<string, unknown> | undefined): AttachedItemRef | null {
+  if (!attrs) return null;
+  const id = attrs.id;
+  if (typeof id === "string" && id.length > 0) return null;
+  if (!isAttachedItemKind(attrs.kind)) return null;
+  if (typeof attrs.itemId !== "string" || attrs.itemId.length === 0) return null;
+  return { kind: attrs.kind, itemId: attrs.itemId };
+}
+
+function collectItemMentions(node: TiptapNode, seen: Set<string>, items: AttachedItemRef[]) {
+  const mention = node.type === "mention" ? readItemMention(node.attrs) : null;
+  if (mention) {
+    const key = `${mention.kind}:${mention.itemId}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      items.push(mention);
+    }
+  }
+  for (const child of node.content ?? []) collectItemMentions(child, seen, items);
 }

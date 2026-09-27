@@ -6,7 +6,6 @@ import type { Extensions } from "@tiptap/core";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import {
   CHAT_TOOL_LABELS,
-  WEB_TOOL_LABEL,
   createTiptapMessageParts,
   isChatToolId,
   parseTiptapDocument,
@@ -14,38 +13,59 @@ import {
   type TiptapNode,
 } from "./document";
 
-function getToolLabel(toolId: unknown): string {
-  return isChatToolId(toolId) ? CHAT_TOOL_LABELS[toolId] : WEB_TOOL_LABEL;
+function mentionLabel(attrs: Record<string, unknown>): string {
+  if (isChatToolId(attrs.id)) return CHAT_TOOL_LABELS[attrs.id];
+  if (typeof attrs.label === "string" && attrs.label.length > 0) return attrs.label;
+  return "Missing";
+}
+
+export const HanokiMention = Mention.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      kind: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute("data-mention-kind"),
+        renderHTML: (attributes: { kind?: string | null }) =>
+          attributes.kind ? { "data-mention-kind": attributes.kind } : {},
+      },
+      itemId: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute("data-item-id"),
+        renderHTML: (attributes: { itemId?: string | null }) =>
+          attributes.itemId ? { "data-item-id": attributes.itemId } : {},
+      },
+    };
+  },
+});
+
+export function hanokiMentionOptions(
+  suggestion?: MentionOptions["suggestion"],
+): Partial<MentionOptions> {
+  return {
+    HTMLAttributes: {
+      class: "tiptap-tool-mention",
+    },
+    renderText: ({ node }) => `@${mentionLabel(node.attrs)}`,
+    renderHTML: ({ options, node }) => [
+      "span",
+      options.HTMLAttributes,
+      `@${mentionLabel(node.attrs)}`,
+    ],
+    ...(suggestion ? { suggestion } : {}),
+  };
 }
 
 interface MessageTiptapExtensionOptions {
   suggestion?: MentionOptions["suggestion"];
+  mention?: Extensions[number];
 }
 
 export function createMessageTiptapExtensions({
   suggestion,
+  mention,
 }: MessageTiptapExtensionOptions = {}): Extensions {
-  return [
-    StarterKit,
-    Mention.configure({
-      HTMLAttributes: {
-        class: "tiptap-tool-mention",
-      },
-      renderText: ({ node }) => `@${getToolLabel(node.attrs.id)}`,
-      renderHTML: ({ node }) => {
-        const label = getToolLabel(node.attrs.id);
-        return [
-          "span",
-          {
-            class: "tiptap-tool-mention",
-            "data-tool-id": node.attrs.id,
-          },
-          `@${label}`,
-        ];
-      },
-      ...(suggestion ? { suggestion } : {}),
-    }),
-  ];
+  return [StarterKit, mention ?? HanokiMention.configure(hanokiMentionOptions(suggestion))];
 }
 
 const markdownManager = new MarkdownManager({

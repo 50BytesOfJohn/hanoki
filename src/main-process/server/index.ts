@@ -13,6 +13,13 @@ interface CreateAiServerOptions {
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
+  flushMarkdownContent?: (id: string) => {
+    id: string;
+    workspaceId: string;
+    title: string;
+    type: "markdown";
+    data: { markdown: string };
+  };
 }
 
 export async function createAiServer(options?: CreateAiServerOptions): Promise<{
@@ -32,6 +39,7 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
       onChatTreeChanged: options?.onChatTreeChanged,
       onChatMessagesChanged: options?.onChatMessagesChanged,
       onChatGenerationRequested: options?.onChatGenerationRequested,
+      flushMarkdownContent: options?.flushMarkdownContent,
     }),
   );
   app.route("/", createSumiRoute());
