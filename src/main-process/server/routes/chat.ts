@@ -45,6 +45,7 @@ import {
 } from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
 import {
+  getSelectedItemMentions,
   isHanokiToolEnabledForRequest,
   isTerminalToolEnabledForRequest,
   isWebToolEnabledForRequest,
@@ -225,9 +226,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.data.settings.hanokiEnabled),
       latestUserMessage,
     );
-    const attachedItemIds = chat.data.settings.attachedItemIds ?? [];
-    const attachedPointers = resolveAttachedItemPointers(chat.workspaceId, attachedItemIds);
-    const attachedInstructions = formatAttachedContextInstructions(attachedPointers);
+    const itemMentions = getSelectedItemMentions(latestUserMessage);
+    const mentionedPointers = resolveAttachedItemPointers(chat.workspaceId, itemMentions);
+    const mentionedInstructions = formatAttachedContextInstructions(mentionedPointers);
     // The chat opts in via the tools menu or an @Terminal mention, same as the
     // web tools; the app-wide setting only decides whether calls need approval.
     const terminalSettings = readTerminalToolSettings();
@@ -258,7 +259,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const activeTools: (keyof typeof tools)[] = [];
     if (isWebEnabledForRequest) activeTools.push("webSearch", "webFetch");
     if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
-    else if (attachedItemIds.length > 0) activeTools.push(...HANOKI_READ_TOOL_NAMES);
+    else if (itemMentions.length > 0) activeTools.push(...HANOKI_READ_TOOL_NAMES);
     if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
 
     const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
@@ -296,7 +297,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const agent = new ToolLoopAgent({
       model: languageModel,
       instructions:
-        [chat.data.settings.systemPrompt?.trim() || "", attachedInstructions ?? ""]
+        [chat.data.settings.systemPrompt?.trim() || "", mentionedInstructions ?? ""]
           .filter((part) => part.length > 0)
           .join("\n\n") || undefined,
       temperature: chat.data.settings.modelConfig?.temperature,

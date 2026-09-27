@@ -2,8 +2,10 @@ import * as React from "react";
 import { renderToReactElement } from "@tiptap/static-renderer/pm/react";
 
 import { cn } from "@/lib/utils";
+import { isAttachedItemKind } from "@shared/chat/attached-items";
 import type { TiptapDocument } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";
+import { openMentionTarget } from "./mention-context";
 
 const messageExtensions = createMessageTiptapExtensions();
 
@@ -26,7 +28,19 @@ export const TiptapMessageContent = React.memo(function TiptapMessageContent({
   );
 
   return (
-    <div className={cn("tiptap-message-content", TIPTAP_MESSAGE_PROSE_CLASS, className)}>
+    <div
+      className={cn("tiptap-message-content", TIPTAP_MESSAGE_PROSE_CLASS, className)}
+      onClick={(event) => {
+        if (!(event.target instanceof HTMLElement)) return;
+        const target = event.target.closest("[data-mention-kind]");
+        if (!target) return;
+        const kind = target.getAttribute("data-mention-kind");
+        const itemId = target.getAttribute("data-item-id");
+        if (!isAttachedItemKind(kind) || !itemId) return;
+        event.preventDefault();
+        void openMentionTarget(kind, itemId);
+      }}
+    >
       {content}
     </div>
   );

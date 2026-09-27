@@ -1,4 +1,3 @@
-import { parseAttachedItemIdsUpdate } from "@shared/chat/attached-items";
 import { IPC_CHANNELS, type ChatInfo, type ChatSettingsUpdateInput } from "@shared/ipc";
 import {
   isChatExportFormat,
@@ -90,7 +89,6 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     "hanokiEnabled",
     "terminalEnabled",
     "terminalAutoApprove",
-    "attachedItemIds",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -191,16 +189,6 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     parsedInput.terminalAutoApprove = inputRecord.terminalAutoApprove;
-  }
-
-  if (inputRecord.attachedItemIds !== undefined) {
-    try {
-      parsedInput.attachedItemIds = parseAttachedItemIdsUpdate(inputRecord.attachedItemIds);
-    } catch (error) {
-      throw AppError.badRequest(
-        error instanceof Error ? error.message : "attachedItemIds is invalid.",
-      );
-    }
   }
 
   return [chatId, parsedInput];

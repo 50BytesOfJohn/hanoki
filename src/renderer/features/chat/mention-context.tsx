@@ -1,29 +1,25 @@
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import type { MentionNodeAttrs } from "@tiptap/extension-mention";
 import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
 import {
   AiWebBrowsingIcon,
-  Cancel01Icon,
   ComputerTerminal01Icon,
   Database02Icon,
   FileScriptIcon,
-  LinkSquare02Icon,
   MessagesSquare,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { chatTreeApi } from "@/api/chat-tree";
+import { itemsApi } from "@/api/items";
 import { cn } from "@/lib/utils";
-import { queryClient } from "@/lib/query-client";
-import { useUpdateChatSettings } from "@/mutations/chats";
-import { getChatQueryOptions } from "@/queries/chats";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import { MAX_ATTACHED_ITEMS, type AttachedItemRef } from "@shared/chat/attached-items";
-import type { ChatInfo, ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import type { AttachedItemKind } from "@shared/chat/attached-items";
+import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
 import {
   CHAT_TOOL_LABELS,
   HANOKI_TOOL_ID,
@@ -31,10 +27,9 @@ import {
   WEB_TOOL_ID,
   type ChatToolId,
 } from "@shared/tiptap/document";
-import { useChatId } from "./chat-context";
 
 export interface MentionCatalogItem {
-  kind: AttachedItemRef["kind"];
+  kind: AttachedItemKind;
   itemId: string;
   title: string;
 }
@@ -76,7 +71,7 @@ type PickerRow =
   | {
       key: string;
       type: "item";
-      kind: AttachedItemRef["kind"];
+      kind: AttachedItemKind;
       itemId: string;
       title: string;
       icon: ToolPickerItem["icon"];
@@ -93,9 +88,45 @@ type PickerRow =
 
 export const mentionBridge = {
   workspaceId: null as string | null,
-  attachItem: (_item: AttachedItemRef) => {},
+  insertItemMention: (_item: MentionCatalogItem) => {},
   insertToolMention: (_tool: { id: ChatToolId; label: string }) => {},
 };
+
+export function itemMentionContent(item: MentionCatalogItem) {
+  return [
+    {
+      type: "mention" as const,
+      attrs: { id: null, label: item.title, kind: item.kind, itemId: item.itemId },
+    },
+    { type: "text" as const, text: " " },
+  ];
+}
+
+export async function mentionTargetExists(
+  kind: AttachedItemKind,
+  itemId: string,
+): Promise<boolean> {
+  try {
+    const item = await itemsApi.get(itemId);
+    const workspaceId = useWorkspaceStore.getState().workspace?.id;
+    const expected = kind === "note" ? "markdown" : "chat";
+    return Boolean(workspaceId && item.workspaceId === workspaceId && item.type === expected);
+  } catch {
+    return false;
+  }
+}
+
+export async function openMentionTarget(kind: AttachedItemKind, itemId: string) {
+  if (!(await mentionTargetExists(kind, itemId))) return;
+  const itemType = kind === "note" ? "markdown" : "chat";
+  const { tabs, activeTabId, openTab, splitPane } = useWorkspaceStore.getState();
+  const tab = tabs.find((candidate) => candidate.id === activeTabId);
+  if (!tab) {
+    openTab({ type: itemType, itemId });
+    return;
+  }
+  splitPane(tab.id, tab.focusedPaneId, itemId, itemType, "right");
+}
 
 export function flattenMentionCatalog(snapshot: ChatTreeSnapshot): MentionCatalog {
   const notes: MentionCatalogItem[] = [];
@@ -137,7 +168,7 @@ interface MentionPickerProps {
   includeTools?: boolean;
   showSearch?: boolean;
   onQueryChange?: (query: string) => void;
-  onPickItem: (item: AttachedItemRef) => void;
+  onPickItem: (item: MentionCatalogItem) => void;
   onPickTool: (tool: { id: ChatToolId; label: string }) => void;
 }
 
@@ -158,6 +189,12 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
   ) {
     const rows = React.useMemo(() => {
       const next: PickerRow[] = [];
+      if (includeTools) {
+        for (const tool of TOOL_PICKER_ITEMS) {
+          if (!matchesQuery(tool.label, query)) continue;
+          next.push({ key: `tool:${tool.id}`, type: "tool", ...tool });
+        }
+      }
       for (const note of notes) {
         if (!matchesQuery(note.title, query)) continue;
         next.push({
@@ -182,12 +219,6 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
           kindLabel: "Chat",
         });
       }
-      if (includeTools) {
-        for (const tool of TOOL_PICKER_ITEMS) {
-          if (!matchesQuery(tool.label, query)) continue;
-          next.push({ key: `tool:${tool.id}`, type: "tool", ...tool });
-        }
-      }
       return next;
     }, [chats, includeTools, notes, query]);
 
@@ -203,7 +234,7 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
         const row = rows[index];
         if (!row) return;
         if (row.type === "item") {
-          onPickItem({ kind: row.kind, itemId: row.itemId });
+          onPickItem({ kind: row.kind, itemId: row.itemId, title: row.title });
           return;
         }
         onPickTool({ id: row.id, label: row.label });
@@ -276,6 +307,18 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
           </div>
         ) : null}
         <div className="max-h-72 overflow-y-auto p-1">
+          {includeTools ? (
+            <PickerSection
+              heading="Tools"
+              emptyLabel="No tools match"
+              rows={toolRows}
+              showEmpty
+              selectedKey={rows[selectedIndex]?.key}
+              onSelect={selectRow}
+              onHover={setSelectedIndex}
+              rowIndex={(row) => rows.findIndex((candidate) => candidate.key === row.key)}
+            />
+          ) : null}
           <PickerSection
             heading="Notes"
             emptyLabel="No notes match"
@@ -296,18 +339,6 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
             onHover={setSelectedIndex}
             rowIndex={(row) => rows.findIndex((candidate) => candidate.key === row.key)}
           />
-          {includeTools ? (
-            <PickerSection
-              heading="Tools"
-              emptyLabel="No tools match"
-              rows={toolRows}
-              showEmpty
-              selectedKey={rows[selectedIndex]?.key}
-              onSelect={selectRow}
-              onHover={setSelectedIndex}
-              rowIndex={(row) => rows.findIndex((candidate) => candidate.key === row.key)}
-            />
-          ) : null}
         </div>
       </div>
     );
@@ -386,85 +417,6 @@ function useMentionCatalog() {
   });
 }
 
-export function ContextChips() {
-  const chatId = useChatId();
-  const { data: chat } = useQuery(getChatQueryOptions(chatId));
-  const catalog = useMentionCatalog();
-  const updateChatSettings = useUpdateChatSettings();
-  const items = chat?.data.settings.attachedItemIds ?? [];
-  if (items.length === 0) return null;
-
-  function removeItem(item: AttachedItemRef) {
-    const current = queryClient.getQueryData<ChatInfo>(queryKeys.chats.byId(chatId));
-    const existing = current?.data.settings.attachedItemIds ?? items;
-    updateChatSettings.mutate({
-      id: chatId,
-      input: {
-        attachedItemIds: existing.filter(
-          (entry) => entry.kind !== item.kind || entry.itemId !== item.itemId,
-        ),
-      },
-    });
-  }
-
-  return (
-    <div className="flex flex-wrap gap-1 px-2 pt-0.5">
-      {items.map((item) => {
-        const list = item.kind === "note" ? catalog.data?.notes : catalog.data?.chats;
-        const match = list?.find((entry) => entry.itemId === item.itemId) ?? null;
-        const broken = catalog.isFetched && !match;
-        const title = match?.title ?? (broken ? "Missing" : "…");
-        const kindLabel = item.kind === "note" ? "Note" : "Chat";
-        return (
-          <span
-            key={`${item.kind}:${item.itemId}`}
-            className={cn(
-              "inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-xs",
-              broken ? "text-muted-foreground line-through" : "text-foreground",
-            )}
-          >
-            <HugeiconsIcon
-              icon={item.kind === "note" ? FileScriptIcon : MessagesSquare}
-              className="size-3 shrink-0 text-muted-foreground"
-            />
-            <span className="max-w-40 truncate">{title}</span>
-            <span className="text-muted-foreground">{kindLabel}</span>
-            {match ? (
-              <button
-                type="button"
-                aria-label={`Open ${title}`}
-                className="rounded-sm text-muted-foreground hover:text-foreground"
-                onClick={() => openAttachedItem(item)}
-              >
-                <HugeiconsIcon icon={LinkSquare02Icon} className="size-3" />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label={`Remove ${title}`}
-              className="rounded-sm text-muted-foreground hover:text-foreground"
-              onClick={() => removeItem(item)}
-            >
-              <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-            </button>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function openAttachedItem(item: AttachedItemRef) {
-  const itemType = item.kind === "note" ? "markdown" : "chat";
-  const { tabs, activeTabId, openTab, splitPane } = useWorkspaceStore.getState();
-  const tab = tabs.find((candidate) => candidate.id === activeTabId);
-  if (!tab) {
-    openTab({ type: itemType, itemId: item.itemId });
-    return;
-  }
-  splitPane(tab.id, tab.focusedPaneId, item.itemId, itemType, "right");
-}
-
 export function MentionItemsMenu({
   anchorRef,
   open,
@@ -501,7 +453,7 @@ export function MentionItemsMenu({
                 catalogReady={catalog.isSuccess}
                 showSearch
                 onPickItem={(item) => {
-                  mentionBridge.attachItem(item);
+                  mentionBridge.insertItemMention(item);
                   onOpenChange(false);
                 }}
                 onPickTool={(tool) => {
@@ -514,28 +466,6 @@ export function MentionItemsMenu({
         </PopoverPrimitive.Positioner>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
-  );
-}
-
-export function useAttachContextItem() {
-  const chatId = useChatId();
-  const updateChatSettings = useUpdateChatSettings();
-  const client = useQueryClient();
-
-  return React.useCallback(
-    (item: AttachedItemRef) => {
-      const current = client.getQueryData<ChatInfo>(queryKeys.chats.byId(chatId));
-      const existing = current?.data.settings.attachedItemIds ?? [];
-      if (existing.some((entry) => entry.kind === item.kind && entry.itemId === item.itemId)) {
-        return;
-      }
-      if (existing.length >= MAX_ATTACHED_ITEMS) return;
-      updateChatSettings.mutate({
-        id: chatId,
-        input: { attachedItemIds: [...existing, item] },
-      });
-    },
-    [chatId, client, updateChatSettings],
   );
 }
 
@@ -573,8 +503,13 @@ export const AtMentionList = React.forwardRef<
       chats={catalog?.chats ?? []}
       catalogReady={catalog !== null}
       onPickItem={(item) => {
-        editor.chain().focus().deleteRange(range).run();
-        mentionBridge.attachItem(item);
+        const nodeAfter = editor.view.state.selection.$to.nodeAfter;
+        const to = nodeAfter?.text?.startsWith(" ") ? range.to + 1 : range.to;
+        editor
+          .chain()
+          .focus()
+          .insertContentAt({ from: range.from, to }, itemMentionContent(item))
+          .run();
       }}
       onPickTool={(tool) => command({ id: tool.id, label: tool.label })}
     />

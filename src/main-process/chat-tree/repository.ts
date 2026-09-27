@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homedir } from "node:os";
 
-import { normalizeAttachedItemIds } from "@shared/chat/attached-items";
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
@@ -265,11 +264,6 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.terminalAutoApprove = record.terminalAutoApprove;
   }
 
-  const attachedItemIds = normalizeAttachedItemIds(record.attachedItemIds);
-  if (attachedItemIds.length > 0) {
-    normalizedSettings.attachedItemIds = attachedItemIds;
-  }
-
   return normalizedSettings;
 }
 
@@ -325,15 +319,6 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
 
   if ("terminalAutoApprove" in settingsPatch) {
     nextSettings.terminalAutoApprove = settingsPatch.terminalAutoApprove ?? false;
-  }
-
-  if ("attachedItemIds" in settingsPatch) {
-    const attachedItemIds = normalizeAttachedItemIds(settingsPatch.attachedItemIds);
-    if (attachedItemIds.length > 0) {
-      nextSettings.attachedItemIds = attachedItemIds;
-    } else {
-      delete nextSettings.attachedItemIds;
-    }
   }
 
   return nextSettings;

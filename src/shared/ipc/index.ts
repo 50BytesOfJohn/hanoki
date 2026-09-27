@@ -3,7 +3,6 @@ import type { ReasoningEffort } from "../models/reasoning";
 import type { HanokiUiMessage } from "../chat/message-metadata";
 import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "../markdown/folder-io";
-import type { AttachedItemRef } from "../chat/attached-items";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
 import type { TiptapDocument } from "../tiptap/document";
 
@@ -330,8 +329,6 @@ export interface ChatSettings {
   terminalEnabled?: boolean;
   /** Set by "Allow for this chat" on an approval card; skips further prompts. */
   terminalAutoApprove?: boolean;
-  /** Workspace items attached as context. Pointers only; not chat tool mention ids. */
-  attachedItemIds?: AttachedItemRef[];
 }
 
 export interface ChatModelConfig {
@@ -351,7 +348,6 @@ export interface ChatSettingsUpdateInput {
   hanokiEnabled?: boolean;
   terminalEnabled?: boolean;
   terminalAutoApprove?: boolean;
-  attachedItemIds?: AttachedItemRef[];
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {

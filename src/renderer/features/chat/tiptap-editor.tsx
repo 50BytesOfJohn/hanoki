@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Document } from "@tiptap/extension-document";
 import { HardBreak } from "@tiptap/extension-hard-break";
-import { Mention, type MentionNodeAttrs } from "@tiptap/extension-mention";
+import type { MentionNodeAttrs } from "@tiptap/extension-mention";
 import { Paragraph } from "@tiptap/extension-paragraph";
 import { Text } from "@tiptap/extension-text";
 import { PluginKey } from "@tiptap/pm/state";
@@ -9,22 +9,18 @@ import { EditorContent, ReactRenderer, useEditor } from "@tiptap/react";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
 
 import { cn } from "@/lib/utils";
-import type { AttachedItemRef } from "@shared/chat/attached-items";
-import {
-  CHAT_TOOL_LABELS,
-  WEB_TOOL_LABEL,
-  isChatToolId,
-  parseTiptapDocument,
-  type TiptapDocument,
-} from "@shared/tiptap/document";
+import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";
 import { TIPTAP_MESSAGE_PROSE_CLASS } from "./tiptap-message-content";
-import { AtMentionList, mentionBridge, type MentionPickerHandle } from "./mention-context";
+import {
+  AtMentionList,
+  itemMentionContent,
+  mentionBridge,
+  type MentionPickerHandle,
+} from "./mention-context";
+import { createEditorMention } from "./mention-node";
 import type { ChatFormSubmitBehavior } from "@shared/ipc";
 
-function getComposerToolLabel(toolId: unknown): string {
-  return isChatToolId(toolId) ? CHAT_TOOL_LABELS[toolId] : WEB_TOOL_LABEL;
-}
 const toolSuggestionPluginKey = new PluginKey("hanoki-tool-mention");
 
 const toolSuggestion: Omit<SuggestionOptions<{ id: string }, MentionNodeAttrs>, "editor"> = {
@@ -72,17 +68,7 @@ const composerExtensions = [
   Paragraph,
   Text,
   HardBreak,
-  Mention.configure({
-    HTMLAttributes: {
-      class: "tiptap-tool-mention",
-    },
-    renderText: ({ node }) => `@${getComposerToolLabel(node.attrs.id)}`,
-    renderHTML: ({ node }) => {
-      const label = getComposerToolLabel(node.attrs.id);
-      return ["span", { class: "tiptap-tool-mention", "data-tool-id": node.attrs.id }, `@${label}`];
-    },
-    suggestion: toolSuggestion,
-  }),
+  createEditorMention(toolSuggestion),
 ];
 
 interface ChatComposerEditorProps {
@@ -90,7 +76,6 @@ interface ChatComposerEditorProps {
   disabled: boolean;
   submitBehavior: ChatFormSubmitBehavior;
   workspaceId: string | null;
-  onAttachItem: (item: AttachedItemRef) => void;
   onChange: (document: TiptapDocument) => void;
   onSubmit: () => boolean;
 }
@@ -100,7 +85,6 @@ export function ChatComposerEditor({
   disabled,
   submitBehavior,
   workspaceId,
-  onAttachItem,
   onChange,
   onSubmit,
 }: ChatComposerEditorProps) {
@@ -109,7 +93,6 @@ export function ChatComposerEditor({
   submitBehaviorRef.current = submitBehavior;
   onSubmitRef.current = onSubmit;
   mentionBridge.workspaceId = workspaceId;
-  mentionBridge.attachItem = onAttachItem;
 
   const editor = useEditor({
     extensions: composerExtensions,
@@ -160,6 +143,9 @@ export function ChatComposerEditor({
   }, [disabled, editor]);
 
   React.useEffect(() => {
+    mentionBridge.insertItemMention = (item) => {
+      editor?.chain().focus().insertContent(itemMentionContent(item)).run();
+    };
     mentionBridge.insertToolMention = (tool) => {
       editor
         ?.chain()
@@ -205,7 +191,10 @@ interface MessageTiptapEditorProps {
 
 export function MessageTiptapEditor({ className, document, onChange }: MessageTiptapEditorProps) {
   const extensions = React.useMemo(
-    () => createMessageTiptapExtensions({ suggestion: toolSuggestion }),
+    () =>
+      createMessageTiptapExtensions({
+        mention: createEditorMention(toolSuggestion),
+      }),
     [],
   );
   const editor = useEditor({

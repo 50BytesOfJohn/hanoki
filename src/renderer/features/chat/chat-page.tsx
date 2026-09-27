@@ -76,7 +76,7 @@ import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
 import { SumiPromptAction } from "./sumi-prompt-action";
-import { ContextChips, MentionItemsMenu, useAttachContextItem } from "./mention-context";
+import { MentionItemsMenu } from "./mention-context";
 import { ChatComposerEditor } from "./tiptap-editor";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
@@ -188,7 +188,6 @@ function ActiveChatContent() {
   });
   const inputRef = React.useRef(input);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
-  const attachItem = useAttachContextItem();
   const saveDraft = useDebouncedCallback(
     (document: TiptapDocument) => useWorkspaceStore.getState().setChatDraft(chatId, document),
     { wait: 500 },
@@ -427,13 +426,11 @@ function ActiveChatContent() {
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
               <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-                <ContextChips />
                 <ChatComposerEditor
                   document={input}
                   disabled={isInteractionLocked}
                   submitBehavior={submitBehavior}
                   workspaceId={workspaceId}
-                  onAttachItem={attachItem}
                   onChange={updateInput}
                   onSubmit={submitMessage}
                 />

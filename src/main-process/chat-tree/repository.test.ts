@@ -262,41 +262,6 @@ describe("updateChatSettings", () => {
 
     expect(getChatById(chat.id)?.data.settings.modelId).toBe("selected-model");
   });
-
-  it("stores attached item pointers and drops tool ids", () => {
-    createWorkspace({ id: "attached-items-workspace", name: "Attached" });
-    const chat = createChat({
-      workspaceId: "attached-items-workspace",
-      title: "Host",
-      folderId: null,
-    });
-
-    expect(
-      updateChatSettings(chat.id, {
-        attachedItemIds: [
-          { kind: "note", itemId: "note-1" },
-          { kind: "chat", itemId: "chat-1" },
-        ],
-      }).data.settings.attachedItemIds,
-    ).toEqual([
-      { kind: "note", itemId: "note-1" },
-      { kind: "chat", itemId: "chat-1" },
-    ]);
-
-    expect(
-      updateChatSettings(chat.id, {
-        attachedItemIds: [
-          { kind: "note", itemId: "note-1" },
-          { kind: "web", itemId: "web" },
-          { kind: "terminal", itemId: "term-1" },
-        ] as never,
-      }).data.settings.attachedItemIds,
-    ).toEqual([{ kind: "note", itemId: "note-1" }]);
-
-    expect(
-      updateChatSettings(chat.id, { attachedItemIds: [] }).data.settings.attachedItemIds,
-    ).toBeUndefined();
-  });
 });
 
 describe("Hanoki tool nullable inputs", () => {
