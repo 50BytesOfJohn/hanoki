@@ -148,7 +148,7 @@ export function getMessageDisplayText(message: Pick<HanokiUiMessage, "parts">): 
   return blocks.join("\n");
 }
 
-/** Item mentions on a turn. Tool mention ids stay in `getSelectedToolIds`. */
+/** Item mentions on one message. Tool mention ids stay in `getSelectedToolIds`. */
 export function getSelectedItemMentions(
   message: Pick<HanokiUiMessage, "parts"> | undefined,
 ): AttachedItemRef[] {
@@ -162,6 +162,17 @@ export function getSelectedItemMentions(
     collectItemMentions(parsed.value.document, seen, items);
   }
   return items;
+}
+
+/** Latest user message only. An earlier turn's mentions do not carry forward. */
+export function getTurnItemMentions(
+  messages: readonly Pick<HanokiUiMessage, "role" | "parts">[],
+): AttachedItemRef[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user") return getSelectedItemMentions(message);
+  }
+  return [];
 }
 
 export function getSelectedToolIds(message: Pick<HanokiUiMessage, "parts">): string[] {

@@ -9,6 +9,7 @@ import {
   getMessageDisplayText,
   getSelectedItemMentions,
   getSelectedToolIds,
+  getTurnItemMentions,
   isHanokiToolEnabledForRequest,
   isWebToolEnabledForRequest,
   parseTiptapDocument,
@@ -137,6 +138,31 @@ describe("parseTiptapDocument", () => {
     expect(getSelectedToolIds(message)).toEqual(["web"]);
     expect(getSelectedItemMentions(message)).toEqual([{ kind: "note", itemId: "note-1" }]);
     expect(isHanokiToolEnabledForRequest(false, message)).toBe(false);
+  });
+
+  it("takes item mentions from the latest user message only", () => {
+    const document: TiptapDocument = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "mention", attrs: { kind: "note", itemId: "note-1", label: "Plan" } }],
+        },
+      ],
+    };
+    const mentioned = {
+      role: "user" as const,
+      parts: [{ type: "data-tiptap" as const, data: document }],
+    };
+    const plain = {
+      role: "user" as const,
+      parts: [{ type: "text" as const, text: "thanks" }],
+    };
+    const assistant = { role: "assistant" as const, parts: [] };
+
+    expect(getTurnItemMentions([mentioned, assistant, plain])).toEqual([]);
+    expect(getTurnItemMentions([plain, mentioned])).toEqual([{ kind: "note", itemId: "note-1" }]);
+    expect(getSelectedToolIds(mentioned)).toEqual([]);
   });
 
   it("renders item mention attributes without putting the item id in data-id", () => {

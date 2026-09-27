@@ -45,7 +45,7 @@ import {
 } from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
 import {
-  getSelectedItemMentions,
+  getTurnItemMentions,
   isHanokiToolEnabledForRequest,
   isTerminalToolEnabledForRequest,
   isWebToolEnabledForRequest,
@@ -226,7 +226,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.data.settings.hanokiEnabled),
       latestUserMessage,
     );
-    const itemMentions = getSelectedItemMentions(latestUserMessage);
+    const itemMentions = getTurnItemMentions(messages);
     const mentionedPointers = resolveAttachedItemPointers(chat.workspaceId, itemMentions);
     const mentionedInstructions = formatAttachedContextInstructions(mentionedPointers);
     // The chat opts in via the tools menu or an @Terminal mention, same as the
