@@ -73,6 +73,10 @@ if (!app.requestSingleInstanceLock()) {
         onChatGenerationRequested: (event) => {
           broadcastSystemEvent({ type: "chat:generation-requested", ...event });
         },
+        flushMarkdownContent: (id) => {
+          if (!backend) throw new Error("Backend is not initialized.");
+          return backend.services.chatTree.flushMarkdownContent(id);
+        },
       });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
       broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });

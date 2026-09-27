@@ -96,6 +96,23 @@ describe("parseTiptapDocument", () => {
     expect(isHanokiToolEnabledForRequest(false, message)).toBe(true);
   });
 
+  it("rejects item ids in tool mention attrs", () => {
+    const parsed = parseTiptapDocument({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "mention", attrs: { id: "note-1", label: "Plan" } }],
+        },
+      ],
+    });
+
+    expect(parsed).toEqual({
+      ok: false,
+      error: "doc.content[0].content[0] contains an unsupported mention ID.",
+    });
+  });
+
   it("rejects unsupported mention IDs", () => {
     const parsed = parseTiptapDocument({
       type: "doc",

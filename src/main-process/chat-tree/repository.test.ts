@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sql } from "drizzle-orm";
+import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
@@ -17,6 +18,7 @@ import {
   hanokiSendKickNeedsApproval,
   HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
+  resolveAttachedItemPointers,
 } from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
@@ -25,6 +27,7 @@ import {
   createFolder,
   createMarkdown,
   createTerminal,
+  updateMarkdownContent,
   getChatById,
   getChatCurrentBranchId,
   getChatTreeChildren,
@@ -258,6 +261,41 @@ describe("updateChatSettings", () => {
     });
 
     expect(getChatById(chat.id)?.data.settings.modelId).toBe("selected-model");
+  });
+
+  it("stores attached item pointers and drops tool ids", () => {
+    createWorkspace({ id: "attached-items-workspace", name: "Attached" });
+    const chat = createChat({
+      workspaceId: "attached-items-workspace",
+      title: "Host",
+      folderId: null,
+    });
+
+    expect(
+      updateChatSettings(chat.id, {
+        attachedItemIds: [
+          { kind: "note", itemId: "note-1" },
+          { kind: "chat", itemId: "chat-1" },
+        ],
+      }).data.settings.attachedItemIds,
+    ).toEqual([
+      { kind: "note", itemId: "note-1" },
+      { kind: "chat", itemId: "chat-1" },
+    ]);
+
+    expect(
+      updateChatSettings(chat.id, {
+        attachedItemIds: [
+          { kind: "note", itemId: "note-1" },
+          { kind: "web", itemId: "web" },
+          { kind: "terminal", itemId: "term-1" },
+        ] as never,
+      }).data.settings.attachedItemIds,
+    ).toEqual([{ kind: "note", itemId: "note-1" }]);
+
+    expect(
+      updateChatSettings(chat.id, { attachedItemIds: [] }).data.settings.attachedItemIds,
+    ).toBeUndefined();
   });
 });
 
@@ -950,6 +988,141 @@ describe("searchWorkspaceChats", () => {
 
     expect(searchWorkspaceChats("search-workspace", "searchable phrase", 10, 0)).toEqual([
       expect.objectContaining({ id: chat.id }),
+    ]);
+  });
+});
+
+describe("Hanoki context reads", () => {
+  it("flushes a note before reading and truncates past the ceiling", async () => {
+    createWorkspace({ id: "read-note-workspace", name: "Notes" });
+    const host = createChat({
+      workspaceId: "read-note-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const note = createMarkdown({
+      workspaceId: "read-note-workspace",
+      title: "Plan",
+      folderId: null,
+    });
+    updateMarkdownContent(note.id, "stale");
+    const chat = createChat({
+      workspaceId: "read-note-workspace",
+      title: "Other",
+      folderId: null,
+    });
+    let flushedOnce = false;
+    const tools = createHanokiTools({
+      workspaceId: "read-note-workspace",
+      chatId: host.id,
+      flushMarkdownContent: (id) => {
+        if (!flushedOnce) {
+          flushedOnce = true;
+          updateMarkdownContent(id, "fresh from editor");
+        }
+        const saved = getItemById(id);
+        if (!saved || saved.type !== "markdown") throw new Error("missing note");
+        return saved;
+      },
+    });
+
+    const read = unwrapToolResult(
+      await tools.readNote.execute!({ noteId: note.id }, toolExecuteOptions),
+    );
+    expect(read).toEqual({
+      kind: "note",
+      itemId: note.id,
+      title: "Plan",
+      content: "fresh from editor",
+      truncated: false,
+    });
+    expect(getItemById(note.id)?.data).toEqual({ markdown: "fresh from editor" });
+
+    const long = "x".repeat(HANOKI_READ_CHAR_CEILING + 20);
+    updateMarkdownContent(note.id, long);
+    const truncated = unwrapToolResult(
+      await tools.readNote.execute!({ noteId: note.id }, toolExecuteOptions),
+    );
+    expect(truncated.truncated).toBe(true);
+    expect(truncated.content.startsWith("x".repeat(HANOKI_READ_CHAR_CEILING))).toBe(true);
+    expect(truncated.content).toContain(
+      `[truncated: this read stopped at ${HANOKI_READ_CHAR_CEILING} characters]`,
+    );
+
+    await expect(async () => {
+      await tools.readNote.execute!({ noteId: chat.id }, toolExecuteOptions);
+    }).rejects.toThrow(/not a note/);
+    await expect(async () => {
+      await tools.readNote.execute!({ noteId: "missing-note" }, toolExecuteOptions);
+    }).rejects.toThrow(/does not exist/);
+  });
+
+  it("pages chats with a character ceiling and refuses the hosting chat", async () => {
+    createWorkspace({ id: "read-chat-workspace", name: "Chats" });
+    const host = createChat({
+      workspaceId: "read-chat-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const other = createChat({
+      workspaceId: "read-chat-workspace",
+      title: "Source",
+      folderId: null,
+    });
+    upsertMessage({
+      id: "read-chat-old",
+      chatId: other.id,
+      parentId: null,
+      role: "user",
+      parts: [{ type: "text", text: "older page" }],
+      metadata: { parentId: null },
+    });
+    upsertMessage({
+      id: "read-chat-new",
+      chatId: other.id,
+      parentId: "read-chat-old",
+      role: "assistant",
+      parts: [{ type: "text", text: "y".repeat(HANOKI_READ_CHAR_CEILING + 5) }],
+      metadata: { parentId: "read-chat-old" },
+    });
+    const tools = createHanokiTools({ workspaceId: "read-chat-workspace", chatId: host.id });
+
+    await expect(async () => {
+      await tools.readChat.execute!({ chatId: host.id, limit: 10 }, toolExecuteOptions);
+    }).rejects.toThrow(/hosting this turn/);
+
+    const latest = unwrapToolResult(
+      await tools.readChat.execute!({ chatId: other.id, limit: 100 }, toolExecuteOptions),
+    );
+    expect(latest.truncated).toBe(true);
+    expect(latest.messages).toHaveLength(1);
+    expect(latest.messages[0]?.id).toBe("read-chat-new");
+    expect(latest.messages[0]?.content).toContain("[truncated:");
+    expect(latest.nextBeforeMessageId).toBe("read-chat-new");
+
+    const older = unwrapToolResult(
+      await tools.readChat.execute!(
+        { chatId: other.id, limit: 100, beforeMessageId: latest.nextBeforeMessageId },
+        toolExecuteOptions,
+      ),
+    );
+    expect(older.truncated).toBe(false);
+    expect(older.messages.map((message) => message.content)).toEqual(["older page"]);
+    expect(older.nextBeforeMessageId).toBeNull();
+
+    const hostRead = unwrapToolResult(
+      await tools.hanokiGetChatContent.execute!({ chatId: host.id, limit: 10 }, toolExecuteOptions),
+    );
+    expect(hostRead.messages).toEqual([]);
+
+    expect(
+      resolveAttachedItemPointers("read-chat-workspace", [
+        { kind: "note", itemId: "missing" },
+        { kind: "chat", itemId: other.id },
+      ]),
+    ).toEqual([
+      { kind: "note", itemId: "missing", title: null },
+      { kind: "chat", itemId: other.id, title: "Source" },
     ]);
   });
 });

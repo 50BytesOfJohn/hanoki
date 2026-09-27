@@ -29,8 +29,10 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -74,6 +76,7 @@ import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
 import { SumiPromptAction } from "./sumi-prompt-action";
+import { ContextChips, MentionItemsMenu, useAttachContextItem } from "./mention-context";
 import { ChatComposerEditor } from "./tiptap-editor";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
@@ -184,6 +187,8 @@ function ActiveChatContent() {
     return parsed.ok ? parsed.value.document : createEmptyTiptapDocument();
   });
   const inputRef = React.useRef(input);
+  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const attachItem = useAttachContextItem();
   const saveDraft = useDebouncedCallback(
     (document: TiptapDocument) => useWorkspaceStore.getState().setChatDraft(chatId, document),
     { wait: 500 },
@@ -422,10 +427,13 @@ function ActiveChatContent() {
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
               <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                <ContextChips />
                 <ChatComposerEditor
                   document={input}
                   disabled={isInteractionLocked}
                   submitBehavior={submitBehavior}
+                  workspaceId={workspaceId}
+                  onAttachItem={attachItem}
                   onChange={updateInput}
                   onSubmit={submitMessage}
                 />
@@ -494,80 +502,99 @@ function ChatToolsMenu() {
   const isInteractionLocked = useChatIsInteractionLocked();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const updateChatSettings = useUpdateChatSettings();
+  const toolsButtonRef = React.useRef<HTMLButtonElement>(null);
+  const [mentionOpen, setMentionOpen] = React.useState(false);
   const webEnabled = chat?.data.settings.webEnabled ?? false;
   const hanokiEnabled = chat?.data.settings.hanokiEnabled ?? false;
   const terminalEnabled = chat?.data.settings.terminalEnabled ?? false;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-foreground"
-            aria-label="Chat tools"
-            aria-pressed={webEnabled || hanokiEnabled || terminalEnabled}
-            disabled={isInteractionLocked}
-          />
-        }
-      >
-        <HugeiconsIcon icon={Add01Icon} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-44">
-        <DropdownMenuGroup>
-          <DropdownMenuCheckboxItem
-            variant="switch"
-            checked={webEnabled}
-            disabled={updateChatSettings.isPending}
-            onCheckedChange={(checked) => {
-              updateChatSettings.mutate({
-                id: chatId,
-                input: { webEnabled: checked },
-              });
-            }}
-          >
-            <span className="flex items-center gap-2">
-              <HugeiconsIcon icon={AiWebBrowsingIcon} />
-              Web
-            </span>
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            variant="switch"
-            checked={hanokiEnabled}
-            disabled={updateChatSettings.isPending}
-            onCheckedChange={(checked) => {
-              updateChatSettings.mutate({
-                id: chatId,
-                input: { hanokiEnabled: checked },
-              });
-            }}
-          >
-            <span className="flex items-center gap-2">
-              <HugeiconsIcon icon={Database02Icon} />
-              Hanoki
-            </span>
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            variant="switch"
-            checked={terminalEnabled}
-            disabled={updateChatSettings.isPending}
-            onCheckedChange={(checked) => {
-              updateChatSettings.mutate({
-                id: chatId,
-                input: { terminalEnabled: checked },
-              });
-            }}
-          >
-            <span className="flex items-center gap-2">
-              <HugeiconsIcon icon={ComputerTerminal01Icon} />
-              Terminal
-            </span>
-          </DropdownMenuCheckboxItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              ref={toolsButtonRef}
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="text-foreground"
+              aria-label="Chat tools"
+              aria-pressed={webEnabled || hanokiEnabled || terminalEnabled}
+              disabled={isInteractionLocked}
+            />
+          }
+        >
+          <HugeiconsIcon icon={Add01Icon} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="w-44">
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              disabled={isInteractionLocked}
+              onClick={() => {
+                window.setTimeout(() => setMentionOpen(true), 0);
+              }}
+            >
+              Mention item…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              variant="switch"
+              checked={webEnabled}
+              disabled={updateChatSettings.isPending}
+              onCheckedChange={(checked) => {
+                updateChatSettings.mutate({
+                  id: chatId,
+                  input: { webEnabled: checked },
+                });
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <HugeiconsIcon icon={AiWebBrowsingIcon} />
+                Web
+              </span>
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              variant="switch"
+              checked={hanokiEnabled}
+              disabled={updateChatSettings.isPending}
+              onCheckedChange={(checked) => {
+                updateChatSettings.mutate({
+                  id: chatId,
+                  input: { hanokiEnabled: checked },
+                });
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <HugeiconsIcon icon={Database02Icon} />
+                Hanoki
+              </span>
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              variant="switch"
+              checked={terminalEnabled}
+              disabled={updateChatSettings.isPending}
+              onCheckedChange={(checked) => {
+                updateChatSettings.mutate({
+                  id: chatId,
+                  input: { terminalEnabled: checked },
+                });
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <HugeiconsIcon icon={ComputerTerminal01Icon} />
+                Terminal
+              </span>
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <MentionItemsMenu
+        anchorRef={toolsButtonRef}
+        open={mentionOpen}
+        onOpenChange={setMentionOpen}
+      />
+    </>
   );
 }
 
