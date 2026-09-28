@@ -1,18 +1,22 @@
 import { BrowserWindow } from "electron";
 import { SYSTEM_EVENT_CHANNEL, type ItemTitleUpdatedEvent } from "@shared/events";
 
-export function broadcastItemTitleUpdated(item: {
-  id: string;
-  type: ItemTitleUpdatedEvent["itemType"];
-  workspaceId: string;
-  title: string;
-}): void {
+export function broadcastItemTitleUpdated(
+  item: {
+    id: string;
+    type: ItemTitleUpdatedEvent["itemType"];
+    workspaceId: string;
+    title: string;
+  },
+  previousTitle?: string,
+): void {
   const event: ItemTitleUpdatedEvent = {
     type: "item:title-updated",
     itemId: item.id,
     itemType: item.type,
     workspaceId: item.workspaceId,
     title: item.title,
+    previousTitle,
   };
 
   if (!BrowserWindow?.getAllWindows) return;

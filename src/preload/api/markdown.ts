@@ -6,6 +6,8 @@ type MarkdownApi = Pick<
   | "createMarkdown"
   | "queueMarkdownContent"
   | "flushMarkdownContent"
+  | "listMarkdownTitles"
+  | "listNoteBacklinks"
   | "exportMarkdownNotesFolder"
   | "importMarkdownNotesFolder"
 >;
@@ -17,6 +19,8 @@ export function createMarkdownApi(): MarkdownApi {
     queueMarkdownContent: (id, markdown) =>
       invokeIpc(IPC_CHANNELS.markdown.queueContent, id, markdown),
     flushMarkdownContent: (id) => invokeIpc(IPC_CHANNELS.markdown.flushContent, id),
+    listMarkdownTitles: (workspaceId) => invokeIpc(IPC_CHANNELS.markdown.listTitles, workspaceId),
+    listNoteBacklinks: (itemId) => invokeIpc(IPC_CHANNELS.markdown.listBacklinks, itemId),
     exportMarkdownNotesFolder: (workspaceId) =>
       invokeIpc(IPC_CHANNELS.markdown.exportFolder, workspaceId),
     importMarkdownNotesFolder: (workspaceId) =>

@@ -245,6 +245,27 @@ export const workspaceProviderOverrides = sqliteTable(
   ],
 );
 
+export const noteLinks = sqliteTable(
+  "note_links",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    fromItemId: text("from_item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    toItemId: text("to_item_id").references(() => items.id, { onDelete: "set null" }),
+    targetText: text("target_text").notNull(),
+    alias: text("alias").notNull().default(""),
+  },
+  (table) => [
+    primaryKey({ columns: [table.fromItemId, table.targetText, table.alias] }),
+    index("note_links_to_item_id_idx").on(table.toItemId),
+    index("note_links_workspace_to_idx").on(table.workspaceId, table.toItemId),
+    index("note_links_from_item_id_idx").on(table.fromItemId),
+  ],
+);
+
 export const workspaceModelOverrides = sqliteTable(
   "workspace_model_overrides",
   {

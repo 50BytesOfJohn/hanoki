@@ -3,7 +3,11 @@ import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 import { updatesApi } from "@/api/updates";
 import { toastManager } from "@/components/ui/toast";
-import { applyItemTitleUpdate, notifyChatTreeChanged } from "@/features/items/item-title-events";
+import {
+  applyItemTitleUpdate,
+  notifyChatTreeChanged,
+  notifyMarkdownBodiesRewritten,
+} from "@/features/items/item-title-events";
 import {
   notifyChatMessagesChanged,
   startRequestedChatGeneration,
@@ -21,6 +25,11 @@ export function SystemEventListener() {
 
       if (event.type === "item:title-updated") {
         applyItemTitleUpdate(event);
+        return;
+      }
+
+      if (event.type === "markdown:bodies-rewritten") {
+        notifyMarkdownBodiesRewritten(event.itemIds);
         return;
       }
 

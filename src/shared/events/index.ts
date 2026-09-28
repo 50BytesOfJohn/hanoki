@@ -35,6 +35,13 @@ export interface ItemTitleUpdatedEvent {
   itemType: ItemType;
   workspaceId: string;
   title: string;
+  previousTitle?: string;
+}
+
+export interface MarkdownBodiesRewrittenEvent {
+  type: "markdown:bodies-rewritten";
+  workspaceId: string;
+  itemIds: string[];
 }
 
 /** Emitted when the chat tree changes outside the renderer, e.g. Hanoki assistant tools. */
@@ -89,6 +96,7 @@ export type SystemEvent =
   | ProvidersStartupModelSyncCompletedEvent
   | GlobalChatSettingsUpdatedEvent
   | ItemTitleUpdatedEvent
+  | MarkdownBodiesRewrittenEvent
   | ChatTreeChangedEvent
   | ChatMessagesChangedEvent
   | ChatGenerationRequestedEvent

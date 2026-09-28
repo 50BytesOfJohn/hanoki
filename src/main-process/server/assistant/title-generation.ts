@@ -146,6 +146,7 @@ async function generateItemTitle(
     itemType: updatedItem.type,
     workspaceId: updatedItem.workspaceId,
     title: updatedItem.title,
+    previousTitle: titleAtStart,
   };
 }
 

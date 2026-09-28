@@ -260,6 +260,39 @@
   box-shadow: 0 0 0 1px var(--focus);
 }
 
+.tiptap-wikilink button {
+  display: inline;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--link);
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tiptap-wikilink button.wikilink-broken {
+  color: var(--muted-foreground);
+  text-decoration-style: dashed;
+  cursor: default;
+}
+
+.ProseMirror-selectednode.tiptap-wikilink button {
+  outline: 1px dashed var(--muted-foreground);
+  outline-offset: 1px;
+}
+
+.wikilink-picker [data-slot="command-item"]:hover {
+  background: var(--hover);
+}
+
+.wikilink-picker [data-slot="command-item"][data-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
 /* Ambient wash behind the new tab page. Transform-only so it stays on the
    compositor; the softness comes from the gradient itself, never `filter: blur()`. */
 @keyframes hanoki-drift {

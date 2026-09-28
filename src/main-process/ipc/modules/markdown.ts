@@ -1,7 +1,12 @@
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
-import { IPC_CHANNELS, type MarkdownInfo } from "@shared/ipc";
+import {
+  IPC_CHANNELS,
+  type MarkdownInfo,
+  type MarkdownTitleOption,
+  type NoteBacklink,
+} from "@shared/ipc";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "@shared/markdown/folder-io";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
@@ -92,6 +97,23 @@ export function registerMarkdownIpcModule(
       return [parseMarkdownId(args[0])];
     },
     handler: ({ services }, _event, itemId) => services.chatTree.flushMarkdownContent(itemId),
+  });
+  registerInvokeHandler<[string], MarkdownTitleOption[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.listTitles,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseValidWorkspaceId(args[0])];
+    },
+    handler: ({ services }, _event, workspaceId) =>
+      services.chatTree.listMarkdownTitles(workspaceId),
+  });
+  registerInvokeHandler<[string], NoteBacklink[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.listBacklinks,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseMarkdownId(args[0])];
+    },
+    handler: ({ services }, _event, itemId) => services.chatTree.listNoteBacklinks(itemId),
   });
   registerInvokeHandler<[string], NotesFolderExportResult>(context, registeredChannels, {
     channel: IPC_CHANNELS.markdown.exportFolder,

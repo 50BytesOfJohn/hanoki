@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
+import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
+import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -878,7 +880,7 @@ export function deleteChatTreeItems(
     };
   }
 
-  return getAppDatabase().transaction((tx) => {
+  const deleted = getAppDatabase().transaction((tx) => {
     const selectedFolderIds = [
       ...new Set(itemRefs.filter((item) => item.kind === "folder").map((item) => item.id)),
     ];
@@ -957,6 +959,8 @@ export function deleteChatTreeItems(
       deletedFolderIds: sortedDeletedFolderIds,
     };
   });
+  resolveOpenNoteLinks(workspaceId);
+  return deleted;
 }
 
 export function moveChatTreeItems(
@@ -1086,10 +1090,18 @@ export function moveChatTreeItems(
   });
 }
 
+let flushPendingMarkdown: (() => void) | null = null;
+
+export function setPendingMarkdownFlush(flush: () => void): void {
+  flushPendingMarkdown = flush;
+}
+
 export function updateItemTitle(id: string, title: string): ItemRow;
 export function updateItemTitle(id: string, title: string, expectedTitle: string): ItemRow | null;
 export function updateItemTitle(id: string, title: string, expectedTitle?: string): ItemRow | null {
-  requireItemById(id);
+  flushPendingMarkdown?.();
+  const existing = requireItemById(id);
+  const previousTitle = existing.title;
   const result = getAppDatabase()
     .update(items)
     .set({ title, updatedAt: Date.now() })
@@ -1101,7 +1113,12 @@ export function updateItemTitle(id: string, title: string, expectedTitle?: strin
     .run();
   if (expectedTitle !== undefined && result.changes === 0) return null;
   const updated = requireItemById(id);
-  broadcastItemTitleUpdated(updated);
+  broadcastItemTitleUpdated(updated, previousTitle);
+  if (updated.type === "markdown" && previousTitle !== updated.title) {
+    const rewritten = rewriteNoteLinkTargets(updated.id, previousTitle, updated.title);
+    resolveOpenNoteLinks(updated.workspaceId);
+    if (rewritten.length > 0) broadcastMarkdownBodiesRewritten(updated.workspaceId, rewritten);
+  }
   return updated;
 }
 
@@ -1128,6 +1145,7 @@ export function moveItem(id: string, folderId: string | null): ItemRow {
 export function deleteItem(id: string): ItemRow {
   const item = requireItemById(id);
   getAppDatabase().delete(items).where(eq(items.id, id)).run();
+  if (item.type === "markdown") resolveOpenNoteLinks(item.workspaceId);
   return item;
 }
 
@@ -1189,6 +1207,7 @@ export function createMarkdown(input: {
     .run();
   const markdown = requireItemById(id);
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+  resolveOpenNoteLinks(markdown.workspaceId);
   return markdown;
 }
 
@@ -1202,6 +1221,7 @@ export function updateMarkdownContent(id: string, markdown: string): MarkdownRow
     .run();
   const updated = requireItemById(id);
   if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+  reindexNoteLinks(updated.id);
   return updated;
 }
 

@@ -20,6 +20,9 @@ describe("MarkdownEditor", () => {
     const view = render(
       <MarkdownEditor
         key="document-a"
+        itemId="document-a"
+        workspaceId="workspace"
+        folderId={null}
         markdown="Alpha persisted content"
         editable
         onChange={onChange}
@@ -36,6 +39,9 @@ describe("MarkdownEditor", () => {
     view.rerender(
       <MarkdownEditor
         key="document-b"
+        itemId="document-b"
+        workspaceId="workspace"
+        folderId={null}
         markdown="Beta persisted content"
         editable
         onChange={onChange}
@@ -51,6 +57,9 @@ describe("MarkdownEditor", () => {
     view.rerender(
       <MarkdownEditor
         key="document-a"
+        itemId="document-a"
+        workspaceId="workspace"
+        folderId={null}
         markdown="Alpha persisted content"
         editable
         onChange={onChange}

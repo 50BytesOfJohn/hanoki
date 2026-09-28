@@ -1,6 +1,7 @@
 import type { ItemTitleUpdatedEvent } from "@shared/events";
 
 import { applyItemTitleUpdate } from "./item-title-events";
+import { flushOpenMarkdownEditors } from "../markdown/markdown-session";
 
 interface GenerateSumiItemTitleInput {
   apiUrl: string;
@@ -47,6 +48,7 @@ async function requestSumiItemTitle({
   mode = "explicit",
 }: GenerateSumiItemTitleInput): Promise<ItemTitleUpdatedEvent | null> {
   if (!apiUrl) throw new Error("Sumi is not ready.");
+  await flushOpenMarkdownEditors();
 
   const body: SumiItemTitleRequest = { itemId, mode };
   if (sourcePrompt?.trim()) body.sourcePrompt = sourcePrompt.trim();

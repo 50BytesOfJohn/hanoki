@@ -21,6 +21,8 @@ import { toastManager } from "@/components/ui/toast";
 import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
+import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
+import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
@@ -67,7 +69,7 @@ export function useMarkdownPane(): MarkdownPaneContextValue {
   return context;
 }
 
-const MARKDOWN_EXTENSIONS = [StarterKit, Markdown];
+const MARKDOWN_EXTENSIONS = [StarterKit, Markdown, WikilinkEditor];
 const MARKDOWN_PROSE_CLASS =
   "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link";
 
@@ -174,6 +176,18 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
 
   const markdown = document?.itemId === itemId ? document.markdown : null;
 
+  React.useEffect(() => {
+    return registerMarkdownSaver(itemId, {
+      flush: () => saver.flush(),
+      cancel: () => {
+        saver.cancel();
+      },
+      adopt: (nextMarkdown) => {
+        setDocument({ itemId, markdown: nextMarkdown });
+      },
+    });
+  }, [itemId, saver]);
+
   if (error) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-sm text-destructive">
@@ -184,51 +198,63 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   if (!markdownItem || markdown === null) return <div className="flex-1" />;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-surface">
-      {mode === "source" ? (
-        <textarea
-          autoFocus
-          aria-label="Markdown source"
-          spellCheck
-          value={markdown}
-          placeholder="Write Markdown…"
-          onChange={(event) => updateMarkdown(event.target.value)}
-          onBlur={() => void saver.flush()}
-          className="h-full min-h-full w-full resize-none bg-transparent px-6 py-5 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
-        />
-      ) : markdown.trim() || mode === "rich-text" ? (
-        <MarkdownEditor
-          markdown={markdown}
-          editable={mode === "rich-text"}
-          onChange={updateMarkdown}
-          onBlur={() => void saver.flush()}
-        />
-      ) : (
-        <Empty className="h-full rounded-none border-0">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <HugeiconsIcon icon={FileScriptIcon} />
-            </EmptyMedia>
-            <EmptyTitle>Start this document</EmptyTitle>
-            <EmptyDescription>
-              Write formatted text or switch to Markdown source when you need exact syntax.
-            </EmptyDescription>
-          </EmptyHeader>
-          <Button size="sm" onClick={() => setMode("rich-text")}>
-            Edit document
-          </Button>
-        </Empty>
-      )}
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      <div className="min-h-0 flex-1 overflow-auto">
+        {mode === "source" ? (
+          <textarea
+            autoFocus
+            aria-label="Markdown source"
+            spellCheck
+            value={markdown}
+            placeholder="Write Markdown…"
+            onChange={(event) => updateMarkdown(event.target.value)}
+            onBlur={() => void saver.flush()}
+            className="h-full min-h-full w-full resize-none bg-transparent px-6 py-5 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
+          />
+        ) : markdown.trim() || mode === "rich-text" ? (
+          <MarkdownEditor
+            itemId={itemId}
+            workspaceId={markdownItem.workspaceId}
+            folderId={markdownItem.folderId}
+            markdown={markdown}
+            editable={mode === "rich-text"}
+            onChange={updateMarkdown}
+            onBlur={() => void saver.flush()}
+          />
+        ) : (
+          <Empty className="h-full rounded-none border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <HugeiconsIcon icon={FileScriptIcon} />
+              </EmptyMedia>
+              <EmptyTitle>Start this document</EmptyTitle>
+              <EmptyDescription>
+                Write formatted text or switch to Markdown source when you need exact syntax.
+              </EmptyDescription>
+            </EmptyHeader>
+            <Button size="sm" onClick={() => setMode("rich-text")}>
+              Edit document
+            </Button>
+          </Empty>
+        )}
+      </div>
+      <BacklinksFooter itemId={itemId} />
     </div>
   );
 }
 
 export function MarkdownEditor({
+  itemId,
+  workspaceId,
+  folderId,
   markdown,
   editable,
   onChange,
   onBlur,
 }: {
+  itemId: string;
+  workspaceId: string;
+  folderId: string | null;
   markdown: string;
   editable: boolean;
   onChange: (markdown: string) => void;
@@ -258,6 +284,12 @@ export function MarkdownEditor({
     editor.setEditable(editable, false);
     if (editable) editor.commands.focus("end");
   }, [editable, editor]);
+
+  React.useEffect(() => {
+    if (!editor) return;
+    setWikilinkEditorContext(editor, workspaceId, folderId);
+    return registerMarkdownEditor(itemId, editor);
+  }, [editor, folderId, itemId, workspaceId]);
 
   React.useEffect(() => {
     if (!editor || editable) return;

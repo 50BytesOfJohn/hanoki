@@ -50,7 +50,12 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(sqlite)).toBe(2);
+    expect(migrationCount(sqlite)).toBe(3);
+    expect(
+      sqlite
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'note_links'")
+        .get(),
+    ).toEqual({ name: "note_links" });
     expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     sqlite
@@ -100,7 +105,7 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(migrated)).toBe(2);
+    expect(migrationCount(migrated)).toBe(3);
     expect(migrated.prepare("SELECT type FROM items WHERE id = 'chat'").get()).toEqual({
       type: "chat",
     });
