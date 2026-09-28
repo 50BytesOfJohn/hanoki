@@ -1,5 +1,7 @@
 import { ipcRenderer } from "electron";
 import {
+  MARKDOWN_FLUSH_EDITORS_ACK_CHANNEL,
+  MARKDOWN_FLUSH_EDITORS_CHANNEL,
   SYSTEM_EVENT_CHANNEL,
   SYSTEM_STATE_CHANNEL,
   type SystemEvent,
@@ -24,6 +26,14 @@ export function createEventsApi() {
       return () => {
         ipcRenderer.removeListener(SYSTEM_EVENT_CHANNEL, handler);
       };
+    },
+    onFlushMarkdownEditors: (callback: (requestId: string) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, requestId: string) => callback(requestId);
+      ipcRenderer.on(MARKDOWN_FLUSH_EDITORS_CHANNEL, handler);
+      return () => ipcRenderer.removeListener(MARKDOWN_FLUSH_EDITORS_CHANNEL, handler);
+    },
+    ackMarkdownEditorsFlushed: (requestId: string): void => {
+      ipcRenderer.send(MARKDOWN_FLUSH_EDITORS_ACK_CHANNEL, requestId);
     },
     getSystemState: (): Promise<SystemState> => {
       return ipcRenderer.invoke(SYSTEM_STATE_CHANNEL);

@@ -2,6 +2,7 @@ import { IPC_CHANNELS, type ItemInfo } from "@shared/ipc";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
+import { flushOpenMarkdownEditorsInRenderer } from "../../flush-open-markdown-editors";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -49,8 +50,10 @@ export function registerItemsIpcModule(
       count(args, 2);
       return [itemId(args[0]), title(args[1])];
     },
-    handler: ({ services }, _event, id, nextTitle) =>
-      services.chatTree.updateItemTitle(id, nextTitle),
+    handler: async ({ services }, _event, id, nextTitle) => {
+      await flushOpenMarkdownEditorsInRenderer();
+      return services.chatTree.updateItemTitle(id, nextTitle);
+    },
   });
   registerInvokeHandler<[string, string | null], ItemInfo>(context, registeredChannels, {
     channel: IPC_CHANNELS.items.move,

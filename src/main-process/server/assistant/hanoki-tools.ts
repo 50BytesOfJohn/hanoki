@@ -33,6 +33,7 @@ import {
   type ChatTreeFolderNode,
 } from "../../chat-tree/repository";
 import { createUuidV7 } from "../../db/uuidv7";
+import { flushOpenMarkdownEditorsInRenderer } from "../../flush-open-markdown-editors";
 import { getModelById, listEnabledModels } from "../../models/repository";
 import {
   listAllMessagesByChatId,
@@ -932,7 +933,7 @@ export function createHanokiTools({
         required: ["kind", "id", "newName"],
         additionalProperties: false,
       }),
-      execute: ({ kind, id, newName }) => {
+      execute: async ({ kind, id, newName }) => {
         const beforePaths = getFolderPaths(workspaceId);
         const before = summarizeItem(workspaceId, { kind, id }, beforePaths);
         if (kind === "folder") {
@@ -942,6 +943,7 @@ export function createHanokiTools({
         } else if (kind === "chat") {
           updateChatTitle(id, parseItemTitle(kind, newName));
         } else {
+          await flushOpenMarkdownEditorsInRenderer();
           updateItemTitle(id, parseItemTitle(kind, newName));
         }
         return treeChanged({

@@ -2,6 +2,8 @@ import type { GlobalChatSettings, ItemType } from "../ipc";
 
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
 export const SYSTEM_STATE_CHANNEL = "system:getState" as const;
+export const MARKDOWN_FLUSH_EDITORS_CHANNEL = "markdown:flush-editors" as const;
+export const MARKDOWN_FLUSH_EDITORS_ACK_CHANNEL = "markdown:flush-editors:ack" as const;
 
 export type AiServerEvent =
   | { type: "ai-server:starting" }

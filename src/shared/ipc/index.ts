@@ -552,6 +552,8 @@ export interface IpcApi {
   platform: NodeJS.Platform;
   onSystemEvent: (callback: (event: import("../events").SystemEvent) => void) => () => void;
   onTerminalEvent: (callback: (event: TerminalEvent) => void) => () => void;
+  onFlushMarkdownEditors: (callback: (requestId: string) => void) => () => void;
+  ackMarkdownEditorsFlushed: (requestId: string) => void;
   getSystemState: () => Promise<import("../events").SystemState>;
   listWorkspaces: () => Promise<WorkspaceInfo[]>;
   getActiveWorkspace: (options?: GetActiveWorkspaceOptions) => Promise<ActiveWorkspaceInfo>;
