@@ -13,7 +13,9 @@ import {
 export type NotesFolderImportTree = Pick<
   ChatTreeService,
   "createFolder" | "createMarkdown" | "queueMarkdownContent" | "flushMarkdownContent"
->;
+> & {
+  rebuildNoteLinks?: (workspaceId: string) => void;
+};
 
 export async function importMarkdownNotesFolder({
   services,
@@ -68,6 +70,8 @@ export async function importMarkdownNotesFromDirectory(
       );
     }
   }
+
+  chatTree.rebuildNoteLinks?.(workspaceId);
 
   return {
     status: "imported",

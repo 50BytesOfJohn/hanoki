@@ -28,6 +28,7 @@ export function useCreateMarkdown() {
     onSuccess: (item) => {
       queryClient.setQueryData(queryKeys.items.byId(item.id), item);
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
       openTab({ type: "markdown", itemId: item.id });
     },
     onError: (error) => {
@@ -50,6 +51,7 @@ export function useFlushMarkdownContent() {
         current ? { ...item, title: current.title } : item,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
     },
   });
 }

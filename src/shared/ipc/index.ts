@@ -69,6 +69,8 @@ export const IPC_CHANNELS = {
     create: "markdown:create",
     queueContent: "markdown:queueContent",
     flushContent: "markdown:flushContent",
+    listTitles: "markdown:listTitles",
+    listBacklinks: "markdown:listBacklinks",
     exportFolder: "markdown:exportFolder",
     importFolder: "markdown:importFolder",
   },
@@ -288,6 +290,19 @@ export interface TerminalInfo {
 
 export interface MarkdownItemData extends Record<string, unknown> {
   markdown: string;
+}
+
+export interface MarkdownTitleOption {
+  id: string;
+  title: string;
+  folderPath: string;
+  createdAt: number;
+}
+
+export interface NoteBacklink {
+  itemId: string;
+  title: string;
+  snippet: string;
 }
 
 export interface MarkdownInfo {
@@ -537,6 +552,8 @@ export interface IpcApi {
   platform: NodeJS.Platform;
   onSystemEvent: (callback: (event: import("../events").SystemEvent) => void) => () => void;
   onTerminalEvent: (callback: (event: TerminalEvent) => void) => () => void;
+  onFlushMarkdownEditors: (callback: (requestId: string) => void) => () => void;
+  ackMarkdownEditorsFlushed: (requestId: string) => void;
   getSystemState: () => Promise<import("../events").SystemState>;
   listWorkspaces: () => Promise<WorkspaceInfo[]>;
   getActiveWorkspace: (options?: GetActiveWorkspaceOptions) => Promise<ActiveWorkspaceInfo>;
@@ -621,6 +638,8 @@ export interface IpcApi {
   ) => Promise<MarkdownInfo>;
   queueMarkdownContent: (id: string, markdown: string) => Promise<void>;
   flushMarkdownContent: (id: string) => Promise<MarkdownInfo>;
+  listMarkdownTitles: (workspaceId: string) => Promise<MarkdownTitleOption[]>;
+  listNoteBacklinks: (itemId: string) => Promise<NoteBacklink[]>;
   exportMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderExportResult>;
   importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
   listProviders: () => Promise<ProviderInfo[]>;

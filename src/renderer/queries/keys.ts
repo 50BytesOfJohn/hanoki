@@ -32,6 +32,11 @@ export const queryKeys = {
     all: ["items"] as const,
     byId: (itemId: string) => [...queryKeys.items.all, "byId", itemId] as const,
   },
+  notes: {
+    all: ["notes"] as const,
+    titles: (workspaceId: string) => [...queryKeys.notes.all, "titles", workspaceId] as const,
+    backlinks: (itemId: string) => [...queryKeys.notes.all, "backlinks", itemId] as const,
+  },
   folders: {
     all: ["folders"] as const,
     detail: (workspaceId: string, folderId: string) =>

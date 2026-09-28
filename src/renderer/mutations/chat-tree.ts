@@ -7,6 +7,7 @@ import { itemsApi } from "../api/items";
 import { foldersApi } from "../api/folders";
 import { toastManager } from "../components/ui/toast";
 import { applyItemTitleUpdate } from "../features/items/item-title-events";
+import { flushOpenMarkdownEditors } from "../features/markdown/markdown-session";
 import { queryKeys } from "../queries/keys";
 import { useWorkspaceStore } from "../features/workspace/store";
 
@@ -36,6 +37,7 @@ export function useRenameChatTreeItem() {
       if (itemId.startsWith("folder:")) {
         return foldersApi.updateName(itemId.slice("folder:".length), name);
       }
+      await flushOpenMarkdownEditors();
       return itemsApi.updateTitle(itemId.slice("item:".length), name);
     },
     onSuccess: (result) => {

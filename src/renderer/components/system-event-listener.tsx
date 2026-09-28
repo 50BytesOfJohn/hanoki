@@ -3,16 +3,29 @@ import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 import { updatesApi } from "@/api/updates";
 import { toastManager } from "@/components/ui/toast";
-import { applyItemTitleUpdate, notifyChatTreeChanged } from "@/features/items/item-title-events";
+import {
+  applyItemTitleUpdate,
+  notifyChatTreeChanged,
+  notifyMarkdownBodiesRewritten,
+} from "@/features/items/item-title-events";
 import {
   notifyChatMessagesChanged,
   startRequestedChatGeneration,
 } from "@/features/chat/chat-messages-events";
+import { flushOpenMarkdownEditors } from "@/features/markdown/markdown-session";
 import { useSystemStore } from "../stores/system-store";
 
 export function SystemEventListener() {
   const handleSystemEvent = useSystemStore((s) => s.handleSystemEvent);
   const syncState = useSystemStore((s) => s.syncState);
+
+  useEffect(() => {
+    return window.electronAPI.onFlushMarkdownEditors((requestId) => {
+      void flushOpenMarkdownEditors().finally(() => {
+        window.electronAPI.ackMarkdownEditorsFlushed(requestId);
+      });
+    });
+  }, []);
 
   useEffect(() => {
     void window.electronAPI.getSystemState().then(syncState);
@@ -21,6 +34,11 @@ export function SystemEventListener() {
 
       if (event.type === "item:title-updated") {
         applyItemTitleUpdate(event);
+        return;
+      }
+
+      if (event.type === "markdown:bodies-rewritten") {
+        notifyMarkdownBodiesRewritten(event.itemIds);
         return;
       }
 

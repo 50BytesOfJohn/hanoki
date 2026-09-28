@@ -2,11 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { items, noteLinks } from "../db/schema";
 import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
 import {
   listAllMessagesByChatId,
@@ -32,11 +33,18 @@ import {
   getChatCurrentBranchId,
   getChatTreeChildren,
   getFolderById,
+  deleteItem,
   getItemById,
   moveChatTreeItems,
   searchWorkspaceChats,
   updateChatSettings,
+  updateItemTitle,
 } from "./repository";
+import {
+  listMarkdownTitleOptions,
+  listNoteBacklinks,
+  rebuildWorkspaceNoteLinks,
+} from "./note-links";
 
 const testDataDirectory = mkdtempSync(join(tmpdir(), "hanoki-move-items-"));
 
@@ -86,6 +94,18 @@ beforeAll(() => {
       extensions text not null default '{}',
       created_at integer not null,
       updated_at integer not null
+    )
+  `),
+  );
+  db.run(
+    sql.raw(`
+    create table note_links (
+      workspace_id text not null references workspaces(id) on delete cascade,
+      from_item_id text not null references items(id) on delete cascade,
+      to_item_id text references items(id) on delete set null,
+      target_text text not null,
+      alias text not null default '',
+      primary key (from_item_id, target_text, alias)
     )
   `),
   );
@@ -1089,5 +1109,137 @@ describe("Hanoki context reads", () => {
       { kind: "note", itemId: "missing", title: null },
       { kind: "chat", itemId: other.id, title: "Source" },
     ]);
+  });
+});
+
+function markdownOf(itemId: string): string {
+  const item = getItemById(itemId);
+  if (item?.type !== "markdown") throw new Error(`Item "${itemId}" is not markdown.`);
+  return item.data.markdown;
+}
+
+describe("note links", () => {
+  it("indexes title links, keeps aliases, and ignores code", () => {
+    const workspace = createWorkspace({ id: "links-workspace", name: "Links" });
+    const folder = createFolder({
+      workspaceId: workspace.id,
+      name: "Garden",
+      parentId: null,
+    });
+    const target = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: folder.id,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Source",
+      folderId: null,
+    });
+    updateMarkdownContent(
+      source.id,
+      "See [[Alpha|the plant]] today.\n\n```\n[[Alpha]]\n```\n\n`[[Alpha]]`",
+    );
+
+    expect(
+      listMarkdownTitleOptions(workspace.id).find((note) => note.id === target.id),
+    ).toMatchObject({
+      title: "Alpha",
+      folderPath: "Garden",
+    });
+    expect(listNoteBacklinks(target.id)).toEqual([
+      {
+        itemId: source.id,
+        title: "Source",
+        snippet: "See the plant today.",
+      },
+    ]);
+    expect(getItemById(source.id)?.type === "markdown" && getItemById(source.id)).toBeTruthy();
+    const saved = getItemById(source.id);
+    expect(saved?.type).toBe("markdown");
+    if (saved?.type === "markdown") {
+      expect(saved.data.markdown).toContain("[[Alpha|the plant]]");
+      expect(saved.data.markdown).not.toContain(target.id);
+    }
+  });
+
+  it("resolves duplicate titles to the oldest item id and leaves misses unresolved", () => {
+    const workspace = createWorkspace({ id: "links-dupes", name: "Dupes" });
+    const older = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    getAppDatabase().update(items).set({ createdAt: 0 }).where(eq(items.id, newer.id)).run();
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Twin]]\n[[Missing]]");
+
+    expect(older.id < newer.id).toBe(true);
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(newer.id)).toEqual([]);
+    expect(
+      getAppDatabase().select().from(noteLinks).where(eq(noteLinks.fromItemId, source.id)).all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetText: "Twin", toItemId: older.id }),
+        expect.objectContaining({ targetText: "Missing", toItemId: null }),
+      ]),
+    );
+
+    deleteItem(older.id);
+    expect(listNoteBacklinks(newer.id).map((link) => link.itemId)).toEqual([source.id]);
+  });
+
+  it("rewrites linking markdown when the target note is renamed", () => {
+    const workspace = createWorkspace({ id: "links-rename", name: "Rename" });
+    const target = createMarkdown({ workspaceId: workspace.id, title: "Old", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Old|pet]]");
+
+    updateItemTitle(target.id, "New");
+    const saved = getItemById(source.id);
+    expect(saved?.type).toBe("markdown");
+    if (saved?.type === "markdown") expect(saved.data.markdown).toBe("[[New|pet]]");
+    expect(listNoteBacklinks(target.id)).toEqual([
+      { itemId: source.id, title: "Source", snippet: "pet" },
+    ]);
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(listNoteBacklinks(target.id).map((link) => link.itemId)).toEqual([source.id]);
+  });
+
+  it("rewrites only notes whose link resolved to the renamed item", () => {
+    const workspace = createWorkspace({ id: "links-rename-scope", name: "Rename scope" });
+    const older = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    const bystander = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Bystander",
+      folderId: null,
+    });
+    const solo = createMarkdown({ workspaceId: workspace.id, title: "Solo", folderId: null });
+    updateMarkdownContent(source.id, "[[Twin]]");
+    updateMarkdownContent(bystander.id, "```\n[[Twin]]\n```\n\n[[Solo]]");
+
+    updateItemTitle(newer.id, "Renamed");
+    expect(markdownOf(source.id)).toBe("[[Twin]]");
+    expect(markdownOf(bystander.id)).toBe("```\n[[Twin]]\n```\n\n[[Solo]]");
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+
+    updateItemTitle(older.id, "Winner");
+    expect(markdownOf(source.id)).toBe("[[Winner]]");
+    expect(markdownOf(source.id)).not.toContain(older.id);
+    expect(markdownOf(bystander.id)).toBe("```\n[[Twin]]\n```\n\n[[Solo]]");
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(solo.id).map((link) => link.itemId)).toEqual([bystander.id]);
+  });
+
+  it("resolves a link when the target note is created later", () => {
+    const workspace = createWorkspace({ id: "links-later", name: "Later" });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Future]] and [[Source]]");
+    const future = createMarkdown({ workspaceId: workspace.id, title: "Future", folderId: null });
+
+    expect(listNoteBacklinks(future.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
   });
 });

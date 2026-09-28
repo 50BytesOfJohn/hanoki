@@ -15,6 +15,13 @@
       "when": 1787494186055,
       "tag": "0001_markdown_items",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790583757373,
+      "tag": "0002_note_links",
+      "breakpoints": true
     }
   ]
 }

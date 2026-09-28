@@ -6,12 +6,14 @@ import { queryKeys } from "@/queries/keys";
 
 const titleUpdateSubscribers = new Set<(event: ItemTitleUpdatedEvent) => void>();
 const chatTreeChangeSubscribers = new Set<(workspaceId: string) => void>();
+const markdownRewriteSubscribers = new Set<(itemIds: readonly string[]) => void>();
 
 export function notifyChatTreeChanged(workspaceId: string): void {
   void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
   void queryClient.invalidateQueries({ queryKey: queryKeys.items.all });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
   for (const subscriber of chatTreeChangeSubscribers) subscriber(workspaceId);
 }
 
@@ -31,6 +33,18 @@ export function applyItemTitleUpdate(event: ItemTitleUpdatedEvent): void {
   notifyChatTreeChanged(event.workspaceId);
 
   for (const subscriber of titleUpdateSubscribers) subscriber(event);
+}
+
+export function notifyMarkdownBodiesRewritten(itemIds: readonly string[]): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+  for (const subscriber of markdownRewriteSubscribers) subscriber(itemIds);
+}
+
+export function subscribeToMarkdownRewrites(
+  callback: (itemIds: readonly string[]) => void,
+): () => void {
+  markdownRewriteSubscribers.add(callback);
+  return () => markdownRewriteSubscribers.delete(callback);
 }
 
 export function subscribeToItemTitleUpdates(

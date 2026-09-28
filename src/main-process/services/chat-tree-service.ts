@@ -18,6 +18,7 @@ import {
   moveFolder,
   updateChatSettings,
   updateChatTitle,
+  setPendingMarkdownFlush,
   updateItemTitle as updateItemTitleInRepo,
   updateMarkdownContent as updateMarkdownContentInRepo,
   updateFolderName,
@@ -48,9 +49,16 @@ import type {
   DeleteChatTreeItemsResult,
   FolderInfo,
   MarkdownInfo,
+  MarkdownTitleOption,
+  NoteBacklink,
   TabsUiState,
   TabStateItem,
 } from "@shared/ipc";
+import {
+  listMarkdownTitleOptions,
+  listNoteBacklinks as listNoteBacklinksInRepo,
+  rebuildWorkspaceNoteLinks,
+} from "../chat-tree/note-links";
 import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/repository";
 
 const CHAT_TREE_EXPANDED_FOLDER_IDS_SETTINGS_KEY = "chatTreeExpandedFolderIds";
@@ -88,6 +96,9 @@ export interface ChatTreeService {
   queueMarkdownContent(id: string, markdown: string): void;
   flushMarkdownContent(id: string): MarkdownInfo;
   flushAllMarkdownContent(): void;
+  listMarkdownTitles(workspaceId: string): MarkdownTitleOption[];
+  listNoteBacklinks(itemId: string): NoteBacklink[];
+  rebuildNoteLinks(workspaceId: string): void;
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -532,6 +543,8 @@ export function createChatTreeService(): ChatTreeService {
     };
   }
 
+  setPendingMarkdownFlush(flushAllPendingMarkdownContent);
+
   return {
     getItem(id: string): ItemInfo {
       const item = getItemById(id);
@@ -620,6 +633,19 @@ export function createChatTreeService(): ChatTreeService {
 
     flushAllMarkdownContent(): void {
       flushAllPendingMarkdownContent();
+    },
+
+    listMarkdownTitles(workspaceId: string): MarkdownTitleOption[] {
+      return listMarkdownTitleOptions(workspaceId);
+    },
+
+    listNoteBacklinks(itemId: string): NoteBacklink[] {
+      return listNoteBacklinksInRepo(itemId);
+    },
+
+    rebuildNoteLinks(workspaceId: string): void {
+      flushAllPendingMarkdownContent();
+      rebuildWorkspaceNoteLinks(workspaceId);
     },
 
     cloneChat(chatId: string): ChatInfo {

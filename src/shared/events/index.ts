@@ -2,6 +2,8 @@ import type { GlobalChatSettings, ItemType } from "../ipc";
 
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
 export const SYSTEM_STATE_CHANNEL = "system:getState" as const;
+export const MARKDOWN_FLUSH_EDITORS_CHANNEL = "markdown:flush-editors" as const;
+export const MARKDOWN_FLUSH_EDITORS_ACK_CHANNEL = "markdown:flush-editors:ack" as const;
 
 export type AiServerEvent =
   | { type: "ai-server:starting" }
@@ -35,6 +37,13 @@ export interface ItemTitleUpdatedEvent {
   itemType: ItemType;
   workspaceId: string;
   title: string;
+  previousTitle?: string;
+}
+
+export interface MarkdownBodiesRewrittenEvent {
+  type: "markdown:bodies-rewritten";
+  workspaceId: string;
+  itemIds: string[];
 }
 
 /** Emitted when the chat tree changes outside the renderer, e.g. Hanoki assistant tools. */
@@ -89,6 +98,7 @@ export type SystemEvent =
   | ProvidersStartupModelSyncCompletedEvent
   | GlobalChatSettingsUpdatedEvent
   | ItemTitleUpdatedEvent
+  | MarkdownBodiesRewrittenEvent
   | ChatTreeChangedEvent
   | ChatMessagesChangedEvent
   | ChatGenerationRequestedEvent
