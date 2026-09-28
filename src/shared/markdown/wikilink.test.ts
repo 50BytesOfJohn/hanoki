@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { findWikilinks, formatWikilink, rewriteWikilinkTargets, wikilinkSnippet } from "./wikilink";
+import {
+  findWikilinks,
+  formatWikilink,
+  oldestByItemId,
+  rewriteWikilinkTargets,
+  wikilinkSnippet,
+} from "./wikilink";
 
 describe("wikilinks", () => {
   it("reads target and alias text", () => {
@@ -41,6 +47,16 @@ describe("wikilinks", () => {
       "[[New]]\n\n```\n[[Old]]\n```\n\n[[New|pet]] and [[Other]]",
     );
     expect(rewriteWikilinkTargets(markdown, "Missing", "New")).toBe(markdown);
+  });
+
+  it("picks the oldest item id and treats no match as unresolved", () => {
+    expect(oldestByItemId([])).toBeNull();
+    expect(
+      oldestByItemId([
+        { id: "0199ffff-0000-7000-8000-000000000002", createdAt: 1 },
+        { id: "0199aaaa-0000-7000-8000-000000000001", createdAt: 9 },
+      ])?.id,
+    ).toBe("0199aaaa-0000-7000-8000-000000000001");
   });
 
   it("snippets the linking line without walking other notes", () => {

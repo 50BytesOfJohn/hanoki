@@ -12,6 +12,15 @@ export function normalizeWikilinkTitle(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Raw `[[Title]]` stores no item id. Among title matches, the oldest item id wins. No match stays unresolved. */
+export function oldestByItemId<T extends { id: string }>(matches: readonly T[]): T | null {
+  let oldest: T | null = null;
+  for (const match of matches) {
+    if (!oldest || match.id < oldest.id) oldest = match;
+  }
+  return oldest;
+}
+
 export function formatWikilink(target: string, alias: string | null): string {
   const trimmedTarget = target.trim();
   const trimmedAlias = alias?.trim() ?? "";

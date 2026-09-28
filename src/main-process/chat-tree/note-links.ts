@@ -4,6 +4,7 @@ import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
 import {
   findWikilinks,
   normalizeWikilinkTitle,
+  oldestByItemId,
   rewriteWikilinkTargets,
   wikilinkSnippet,
 } from "@shared/markdown/wikilink";
@@ -50,9 +51,11 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
     .from(items)
     .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
     .all();
-  const titles = notes
-    .map((note) => ({ id: note.id, title: note.title, createdAt: note.createdAt }))
-    .sort(byOldest);
+  const titles = notes.map((note) => ({
+    id: note.id,
+    title: note.title,
+    createdAt: note.createdAt,
+  }));
 
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.workspaceId, workspaceId)).run();
@@ -70,6 +73,7 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
   });
 }
 
+/** Rewrites bodies only for edges that already resolved to this item id, then reindexes those notes. */
 export function rewriteNoteLinkTargets(
   itemId: string,
   previousTitle: string,
@@ -139,7 +143,7 @@ export function listMarkdownTitleOptions(workspaceId: string): MarkdownTitleOpti
     })
     .from(items)
     .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
-    .orderBy(asc(items.title), asc(items.createdAt), asc(items.id))
+    .orderBy(asc(items.title), asc(items.id))
     .all();
   const folderRows = db
     .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
@@ -207,16 +211,10 @@ function uniqueEdges(markdown: string, titles: readonly MarkdownTitleRow[]) {
 function resolveTitle(titles: readonly MarkdownTitleRow[], target: string): string | null {
   const key = normalizeWikilinkTitle(target);
   if (key.length === 0) return null;
-  let best: MarkdownTitleRow | null = null;
-  for (const title of titles) {
-    if (normalizeWikilinkTitle(title.title) !== key) continue;
-    if (!best || byOldest(title, best) < 0) best = title;
-  }
-  return best?.id ?? null;
-}
-
-function byOldest(left: MarkdownTitleRow, right: MarkdownTitleRow): number {
-  return left.createdAt - right.createdAt || left.id.localeCompare(right.id);
+  return (
+    oldestByItemId(titles.filter((title) => normalizeWikilinkTitle(title.title) === key))?.id ??
+    null
+  );
 }
 
 function loadMarkdownTitles(workspaceId: string): MarkdownTitleRow[] {

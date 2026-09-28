@@ -2,11 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { items, noteLinks } from "../db/schema";
 import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
 import {
   listAllMessagesByChatId,
@@ -1111,6 +1112,12 @@ describe("Hanoki context reads", () => {
   });
 });
 
+function markdownOf(itemId: string): string {
+  const item = getItemById(itemId);
+  if (item?.type !== "markdown") throw new Error(`Item "${itemId}" is not markdown.`);
+  return item.data.markdown;
+}
+
 describe("note links", () => {
   it("indexes title links, keeps aliases, and ignores code", () => {
     const workspace = createWorkspace({ id: "links-workspace", name: "Links" });
@@ -1156,15 +1163,25 @@ describe("note links", () => {
     }
   });
 
-  it("resolves duplicate titles to the oldest note", () => {
+  it("resolves duplicate titles to the oldest item id and leaves misses unresolved", () => {
     const workspace = createWorkspace({ id: "links-dupes", name: "Dupes" });
     const older = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
     const newer = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    getAppDatabase().update(items).set({ createdAt: 0 }).where(eq(items.id, newer.id)).run();
     const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
-    updateMarkdownContent(source.id, "[[Twin]]");
+    updateMarkdownContent(source.id, "[[Twin]]\n[[Missing]]");
 
+    expect(older.id < newer.id).toBe(true);
     expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(newer.id)).toEqual([]);
+    expect(
+      getAppDatabase().select().from(noteLinks).where(eq(noteLinks.fromItemId, source.id)).all(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetText: "Twin", toItemId: older.id }),
+        expect.objectContaining({ targetText: "Missing", toItemId: null }),
+      ]),
+    );
 
     deleteItem(older.id);
     expect(listNoteBacklinks(newer.id).map((link) => link.itemId)).toEqual([source.id]);
@@ -1186,6 +1203,33 @@ describe("note links", () => {
 
     rebuildWorkspaceNoteLinks(workspace.id);
     expect(listNoteBacklinks(target.id).map((link) => link.itemId)).toEqual([source.id]);
+  });
+
+  it("rewrites only notes whose link resolved to the renamed item", () => {
+    const workspace = createWorkspace({ id: "links-rename-scope", name: "Rename scope" });
+    const older = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Twin", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    const bystander = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Bystander",
+      folderId: null,
+    });
+    const solo = createMarkdown({ workspaceId: workspace.id, title: "Solo", folderId: null });
+    updateMarkdownContent(source.id, "[[Twin]]");
+    updateMarkdownContent(bystander.id, "```\n[[Twin]]\n```\n\n[[Solo]]");
+
+    updateItemTitle(newer.id, "Renamed");
+    expect(markdownOf(source.id)).toBe("[[Twin]]");
+    expect(markdownOf(bystander.id)).toBe("```\n[[Twin]]\n```\n\n[[Solo]]");
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+
+    updateItemTitle(older.id, "Winner");
+    expect(markdownOf(source.id)).toBe("[[Winner]]");
+    expect(markdownOf(source.id)).not.toContain(older.id);
+    expect(markdownOf(bystander.id)).toBe("```\n[[Twin]]\n```\n\n[[Solo]]");
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(solo.id).map((link) => link.itemId)).toEqual([bystander.id]);
   });
 
   it("resolves a link when the target note is created later", () => {

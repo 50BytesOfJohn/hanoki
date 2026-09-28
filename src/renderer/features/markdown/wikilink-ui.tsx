@@ -9,7 +9,7 @@ import type { Editor } from "@tiptap/core";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
-import { normalizeWikilinkTitle } from "@shared/markdown/wikilink";
+import { normalizeWikilinkTitle, oldestByItemId } from "@shared/markdown/wikilink";
 
 import { markdownApi } from "@/api/markdown";
 import {
@@ -128,18 +128,16 @@ function WikilinkNodeView({ node }: ReactNodeViewProps) {
     setRenamedTitle(null);
   }, [targetText]);
 
+  const resolved = resolveTitle(titles, targetText);
   React.useEffect(() => {
     return subscribeToItemTitleUpdates((event) => {
-      if (event.itemType !== "markdown" || !event.previousTitle) return;
-      const current = renamedTitle ?? targetText;
-      if (normalizeWikilinkTitle(event.previousTitle) !== normalizeWikilinkTitle(current)) return;
+      if (event.itemType !== "markdown" || event.itemId !== resolved?.id) return;
       setRenamedTitle(event.title);
     });
-  }, [renamedTitle, targetText]);
+  }, [resolved?.id]);
 
-  const resolved = resolveTitle(titles, renamedTitle ?? targetText);
   const broken = Boolean(titles) && !resolved && renamedTitle === null;
-  const label = alias ?? resolved?.title ?? renamedTitle ?? targetText;
+  const label = alias ?? renamedTitle ?? resolved?.title ?? targetText;
 
   return (
     <NodeViewWrapper as="span">
@@ -389,18 +387,7 @@ function resolveTitle(
 ): MarkdownTitleOption | null {
   if (!titles) return null;
   const key = normalizeWikilinkTitle(target);
-  let best: MarkdownTitleOption | null = null;
-  for (const title of titles) {
-    if (normalizeWikilinkTitle(title.title) !== key) continue;
-    if (
-      !best ||
-      title.createdAt < best.createdAt ||
-      (title.createdAt === best.createdAt && title.id < best.id)
-    ) {
-      best = title;
-    }
-  }
-  return best;
+  return oldestByItemId(titles.filter((title) => normalizeWikilinkTitle(title.title) === key));
 }
 
 function insertWikilink(editor: Editor, range: { from: number; to: number }, title: string): void {
