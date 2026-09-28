@@ -167,6 +167,10 @@ function afterContextMenuClose(run: () => void) {
   });
 }
 
+function selectRenameInputText(event: React.FocusEvent<HTMLInputElement>) {
+  event.currentTarget.select();
+}
+
 function ChatTreeItemContextMenu({
   children,
   itemKind,
@@ -994,6 +998,7 @@ function ChatSidebarTreeInner({
                       <Input
                         className="h-7 min-w-0 flex-1 px-2 text-sm"
                         {...item.getRenameInputProps()}
+                        onFocus={selectRenameInputText}
                       />
                     </ChatTreeItemRow>
                   );
@@ -1334,7 +1339,8 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                             onChange={(event) => {
                               setRenamingChat({ id: chat.id, value: event.target.value });
                             }}
-                            onFocus={() => {
+                            onFocus={(event) => {
+                              selectRenameInputText(event);
                               requestAnimationFrame(() => {
                                 renameReadyRef.current = true;
                               });
