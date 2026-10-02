@@ -1,3 +1,5 @@
+export const NOTES_FOLDER_IMPORT_PROGRESS_MIN = 25;
+
 export type NotesFolderExportResult =
   | { status: "canceled" }
   | {
@@ -8,14 +10,33 @@ export type NotesFolderExportResult =
       skippedNonMarkdownCount: number;
     };
 
+export interface NotesFolderImportFailure {
+  relativePath: string;
+  reason: string;
+}
+
+export interface NotesFolderImportProgress {
+  folderPath: string;
+  index: number;
+  total: number;
+  relativePath: string;
+}
+
 export type NotesFolderImportResult =
   | { status: "canceled" }
   | {
       status: "imported";
       folderPath: string;
+      /** `Imported/<vaultName>`, relative to the workspace root. */
+      wrapFolderPath: string;
       noteCount: number;
       folderCount: number;
       skippedCount: number;
+      skippedDuplicatePathCount: number;
+      skippedPaths: string[];
+      failedCount: number;
+      failures: NotesFolderImportFailure[];
+      canceled: boolean;
       skippedOversizedCount: number;
       ignoredNonMarkdownCount: number;
       ignoredDirectoryNames: string[];
@@ -24,6 +45,12 @@ export type NotesFolderImportResult =
 
 function counted(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function notesFolderImportSkipCount(
+  result: Extract<NotesFolderImportResult, { status: "imported" }>,
+): number {
+  return result.skippedDuplicatePathCount + result.skippedOversizedCount;
 }
 
 export function formatNotesFolderExportSummary(
@@ -43,10 +70,16 @@ export function formatNotesFolderExportSummary(
 export function formatNotesFolderImportSummary(
   result: Extract<NotesFolderImportResult, { status: "imported" }>,
 ): string {
-  const parts = [`${counted(result.noteCount, "note")} added from ${result.folderPath}.`];
-  if (result.skippedOversizedCount > 0) {
-    parts.push(`${counted(result.skippedOversizedCount, "oversized file")} skipped.`);
-  }
+  const skip = notesFolderImportSkipCount(result);
+  const counts = `New ${result.noteCount} · Skip ${skip} · Fail ${result.failedCount}.`;
+  const placed = `Copied under ${result.wrapFolderPath}.`;
+  const parts = [
+    result.canceled
+      ? result.noteCount > 0
+        ? `Import canceled. Partial copy kept. ${counts} ${placed}`
+        : "Import canceled. Nothing was copied."
+      : `${counts} ${placed}`,
+  ];
   if (result.ignoredNonMarkdownCount > 0) {
     parts.push(`${counted(result.ignoredNonMarkdownCount, "non-markdown file")} ignored.`);
   }

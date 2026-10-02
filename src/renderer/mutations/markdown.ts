@@ -1,13 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { MarkdownInfo } from "@shared/ipc";
 
-import {
-  formatNotesFolderExportSummary,
-  formatNotesFolderImportSummary,
-} from "@shared/markdown/folder-io";
+import { formatNotesFolderExportSummary } from "@shared/markdown/folder-io";
 
 import { markdownApi } from "../api/markdown";
 import { toastManager } from "../components/ui/toast";
+import { notesImportUi } from "../features/settings/notes-folder-import-dialog";
 import { useWorkspaceStore } from "../features/workspace/store";
 import { queryKeys } from "../queries/keys";
 
@@ -83,21 +81,20 @@ export function useImportMarkdownNotesFolder() {
 
   return useMutation({
     mutationFn: ({ workspaceId }: { workspaceId: string }) => markdownApi.importFolder(workspaceId),
+    onMutate: () => {
+      notesImportUi.begin();
+    },
     onSuccess: (result) => {
-      if (result.status !== "imported") return;
+      if (result.status !== "imported") {
+        notesImportUi.reset();
+        return;
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
-      const hasSkips =
-        result.skippedOversizedCount > 0 ||
-        result.ignoredNonMarkdownCount > 0 ||
-        result.ignoredDirectoryNames.length > 0 ||
-        result.skippedCount > 0;
-      toastManager.add({
-        type: hasSkips ? "warning" : "success",
-        title: "Markdown notes imported",
-        description: formatNotesFolderImportSummary(result),
-      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      notesImportUi.finish(result);
     },
     onError: (error) => {
+      notesImportUi.reset();
       toastManager.add({
         type: "error",
         title: "Markdown notes could not be imported",

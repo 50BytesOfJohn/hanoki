@@ -4,6 +4,7 @@ import { RouterProvider, createHashHistory, createRouter } from "@tanstack/react
 import { routeTree } from "./routeTree.gen";
 import { QueryProvider } from "./providers/query-provider";
 import { SystemEventListener } from "./components/system-event-listener";
+import { NotesFolderImportDialog } from "./features/settings/notes-folder-import-dialog";
 import "./index.css";
 import "streamdown/styles.css";
 
@@ -34,6 +35,7 @@ createRoot(rootElement).render(
   <StrictMode>
     <QueryProvider>
       <SystemEventListener />
+      <NotesFolderImportDialog />
       <RouterProvider router={router} />
     </QueryProvider>
   </StrictMode>,

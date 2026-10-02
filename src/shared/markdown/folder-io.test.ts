@@ -54,56 +54,69 @@ describe("formatNotesFolderExportSummary", () => {
   });
 });
 
+function imported(
+  overrides: Partial<Extract<Parameters<typeof formatNotesFolderImportSummary>[0], object>>,
+) {
+  return {
+    status: "imported" as const,
+    folderPath: "/notes",
+    wrapFolderPath: "Imported/Vault",
+    noteCount: 1,
+    folderCount: 1,
+    skippedCount: 0,
+    skippedDuplicatePathCount: 0,
+    skippedPaths: [],
+    failedCount: 0,
+    failures: [],
+    canceled: false,
+    skippedOversizedCount: 0,
+    ignoredNonMarkdownCount: 0,
+    ignoredDirectoryNames: [],
+    warnings: [],
+    ...overrides,
+  };
+}
+
 describe("formatNotesFolderImportSummary", () => {
   it("reports oversized skips and ignored non-markdown and vault dirs", () => {
     expect(
-      formatNotesFolderImportSummary({
-        status: "imported",
-        folderPath: "/notes",
-        noteCount: 3,
-        folderCount: 1,
-        skippedCount: 2,
-        skippedOversizedCount: 2,
-        ignoredNonMarkdownCount: 4,
-        ignoredDirectoryNames: [".git", ".obsidian"],
-        warnings: [],
-      }),
+      formatNotesFolderImportSummary(
+        imported({
+          noteCount: 3,
+          skippedCount: 2,
+          skippedOversizedCount: 2,
+          ignoredNonMarkdownCount: 4,
+          ignoredDirectoryNames: [".git", ".obsidian"],
+        }),
+      ),
     ).toBe(
-      "3 notes added from /notes. 2 oversized files skipped. 4 non-markdown files ignored. Ignored .git/, .obsidian/.",
+      "New 3 · Skip 2 · Fail 0. Copied under Imported/Vault. 4 non-markdown files ignored. Ignored .git/, .obsidian/.",
     );
   });
 
   it("omits zero-count skip clauses", () => {
-    expect(
-      formatNotesFolderImportSummary({
-        status: "imported",
-        folderPath: "/notes",
-        noteCount: 1,
-        folderCount: 0,
-        skippedCount: 0,
-        skippedOversizedCount: 0,
-        ignoredNonMarkdownCount: 0,
-        ignoredDirectoryNames: [],
-        warnings: [],
-      }),
-    ).toBe("1 note added from /notes.");
+    expect(formatNotesFolderImportSummary(imported({}))).toBe(
+      "New 1 · Skip 0 · Fail 0. Copied under Imported/Vault.",
+    );
   });
 
   it("appends warning paths", () => {
     expect(
-      formatNotesFolderImportSummary({
-        status: "imported",
-        folderPath: "/notes",
-        noteCount: 1,
-        folderCount: 0,
-        skippedCount: 1,
-        skippedOversizedCount: 1,
-        ignoredNonMarkdownCount: 0,
-        ignoredDirectoryNames: [],
-        warnings: ["huge.md is larger than 5 MiB and was skipped."],
-      }),
+      formatNotesFolderImportSummary(
+        imported({
+          skippedCount: 1,
+          skippedOversizedCount: 1,
+          warnings: ["huge.md is larger than 5 MiB and was skipped."],
+        }),
+      ),
     ).toBe(
-      "1 note added from /notes. 1 oversized file skipped. huge.md is larger than 5 MiB and was skipped.",
+      "New 1 · Skip 1 · Fail 0. Copied under Imported/Vault. huge.md is larger than 5 MiB and was skipped.",
+    );
+  });
+
+  it("says when cancel kept a partial copy", () => {
+    expect(formatNotesFolderImportSummary(imported({ noteCount: 2, canceled: true }))).toBe(
+      "Import canceled. Partial copy kept. New 2 · Skip 0 · Fail 0. Copied under Imported/Vault.",
     );
   });
 });

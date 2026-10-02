@@ -10,6 +10,7 @@ type MarkdownApi = Pick<
   | "listNoteBacklinks"
   | "exportMarkdownNotesFolder"
   | "importMarkdownNotesFolder"
+  | "cancelMarkdownNotesImport"
 >;
 
 export function createMarkdownApi(): MarkdownApi {
@@ -25,5 +26,6 @@ export function createMarkdownApi(): MarkdownApi {
       invokeIpc(IPC_CHANNELS.markdown.exportFolder, workspaceId),
     importMarkdownNotesFolder: (workspaceId) =>
       invokeIpc(IPC_CHANNELS.markdown.importFolder, workspaceId),
+    cancelMarkdownNotesImport: () => invokeIpc(IPC_CHANNELS.markdown.cancelImport),
   };
 }

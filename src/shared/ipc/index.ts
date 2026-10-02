@@ -73,6 +73,7 @@ export const IPC_CHANNELS = {
     listBacklinks: "markdown:listBacklinks",
     exportFolder: "markdown:exportFolder",
     importFolder: "markdown:importFolder",
+    cancelImport: "markdown:cancelImport",
   },
   messages: {
     listByChat: "messages:listByChat",
@@ -642,6 +643,7 @@ export interface IpcApi {
   listNoteBacklinks: (itemId: string) => Promise<NoteBacklink[]>;
   exportMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderExportResult>;
   importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
+  cancelMarkdownNotesImport: () => Promise<void>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   testProviderCredentials: (

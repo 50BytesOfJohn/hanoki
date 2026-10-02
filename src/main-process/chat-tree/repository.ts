@@ -168,6 +168,20 @@ function normalizeTerminalData(value: unknown): TerminalItemData {
   };
 }
 
+function normalizeImportRelativePath(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  if (!trimmed) return null;
+  const segments = trimmed.split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    return null;
+  }
+  return trimmed;
+}
+
 function normalizeMarkdownData(value: unknown): MarkdownItemData {
   const data = normalizeJsonObject(value);
   return {
@@ -1184,6 +1198,7 @@ export function createMarkdown(input: {
   workspaceId: string;
   title: string;
   folderId: string | null;
+  importRelativePath?: string | null;
 }): MarkdownRow {
   requireWorkspaceExists(input.workspaceId);
   if (input.folderId !== null) {
@@ -1202,6 +1217,7 @@ export function createMarkdown(input: {
       folderId: input.folderId,
       type: "markdown",
       title: input.title,
+      importRelativePath: normalizeImportRelativePath(input.importRelativePath),
       data: { markdown: "" },
     })
     .run();

@@ -1,4 +1,5 @@
 import type { GlobalChatSettings, ItemType } from "../ipc";
+import type { NotesFolderImportProgress } from "../markdown/folder-io";
 
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
 export const SYSTEM_STATE_CHANNEL = "system:getState" as const;
@@ -44,6 +45,11 @@ export interface MarkdownBodiesRewrittenEvent {
   type: "markdown:bodies-rewritten";
   workspaceId: string;
   itemIds: string[];
+}
+
+export interface NotesFolderImportProgressEvent extends NotesFolderImportProgress {
+  type: "markdown:import-progress";
+  workspaceId: string;
 }
 
 /** Emitted when the chat tree changes outside the renderer, e.g. Hanoki assistant tools. */
@@ -99,6 +105,7 @@ export type SystemEvent =
   | GlobalChatSettingsUpdatedEvent
   | ItemTitleUpdatedEvent
   | MarkdownBodiesRewrittenEvent
+  | NotesFolderImportProgressEvent
   | ChatTreeChangedEvent
   | ChatMessagesChangedEvent
   | ChatGenerationRequestedEvent

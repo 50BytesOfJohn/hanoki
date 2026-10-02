@@ -50,7 +50,12 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(sqlite)).toBe(3);
+    expect(migrationCount(sqlite)).toBe(4);
+    expect(
+      sqlite
+        .prepare("SELECT name FROM pragma_table_info('items') WHERE name = 'import_relative_path'")
+        .get(),
+    ).toEqual({ name: "import_relative_path" });
     expect(
       sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'note_links'")
@@ -105,7 +110,10 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(migrated)).toBe(3);
+    expect(migrationCount(migrated)).toBe(4);
+    expect(
+      migrated.prepare("SELECT import_relative_path FROM items WHERE id = 'chat'").get(),
+    ).toEqual({ import_relative_path: null });
     expect(migrated.prepare("SELECT type FROM items WHERE id = 'chat'").get()).toEqual({
       type: "chat",
     });

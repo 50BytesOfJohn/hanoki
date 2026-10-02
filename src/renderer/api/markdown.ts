@@ -10,4 +10,5 @@ export const markdownApi = {
   listBacklinks: (itemId: string) => window.electronAPI.listNoteBacklinks(itemId),
   exportFolder: (workspaceId: string) => window.electronAPI.exportMarkdownNotesFolder(workspaceId),
   importFolder: (workspaceId: string) => window.electronAPI.importMarkdownNotesFolder(workspaceId),
+  cancelImport: () => window.electronAPI.cancelMarkdownNotesImport(),
 };

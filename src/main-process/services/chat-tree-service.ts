@@ -92,7 +92,9 @@ export interface ChatTreeService {
     workspaceId: string;
     title: string;
     folderId: string | null;
+    importRelativePath?: string | null;
   }): MarkdownInfo;
+  listChildFolders(workspaceId: string, parentId: string | null): { id: string; name: string }[];
   queueMarkdownContent(id: string, markdown: string): void;
   flushMarkdownContent(id: string): MarkdownInfo;
   flushAllMarkdownContent(): void;
@@ -621,6 +623,13 @@ export function createChatTreeService(): ChatTreeService {
 
     createMarkdown(input): MarkdownInfo {
       return toMarkdownInfo(createMarkdown(input));
+    },
+
+    listChildFolders(workspaceId: string, parentId: string | null): { id: string; name: string }[] {
+      return getChatTreeChildren(workspaceId, parentId).folders.map((folder) => ({
+        id: folder.id,
+        name: folder.name,
+      }));
     },
 
     queueMarkdownContent(id: string, markdown: string): void {

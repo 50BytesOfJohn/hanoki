@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
@@ -40,6 +40,7 @@ import {
   updateChatSettings,
   updateItemTitle,
 } from "./repository";
+import { importMarkdownNotesFromDirectory } from "../notes-folder-io/import-notes";
 import {
   listMarkdownTitleOptions,
   listNoteBacklinks,
@@ -89,6 +90,7 @@ beforeAll(() => {
       folder_id text references folders(id) on delete set null,
       type text not null,
       title text not null,
+      import_relative_path text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
@@ -1242,4 +1244,203 @@ describe("note links", () => {
     expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
   });
+
+  it("resolves path and heading links inside one import root", () => {
+    const workspace = createWorkspace({ id: "links-path", name: "Path" });
+    const imported = createFolder({
+      workspaceId: workspace.id,
+      name: "Imported",
+      parentId: null,
+    });
+    const wrap = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault",
+      parentId: imported.id,
+    });
+    const projects = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrap.id,
+    });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+    });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projects.id,
+      importRelativePath: "Projects/Alpha",
+    });
+    const beta = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Beta",
+      folderId: projects.id,
+    });
+    const archive = createFolder({
+      workspaceId: workspace.id,
+      name: "Archive",
+      parentId: wrap.id,
+    });
+    const drafts = createFolder({
+      workspaceId: workspace.id,
+      name: "Drafts",
+      parentId: wrap.id,
+    });
+    const olderScene = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: archive.id,
+      importRelativePath: "Archive/Scene",
+    });
+    const newerScene = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: drafts.id,
+      importRelativePath: "Drafts/Scene",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: wrap.id,
+    });
+    const body = [
+      "[[Projects/Alpha]]",
+      "[[Projects/Alpha.md]]",
+      "[[Projects/Alpha#Heading]]",
+      "[[projects/alpha]]",
+      "[[Projects/Beta]]",
+      "[[Alpha#Intro]]",
+      "[[Scene]]",
+      "[[Archive/Scene|old]]",
+      "[[Drafts/Scene#Later]]",
+    ].join("\n");
+    updateMarkdownContent(source.id, body);
+
+    const outsider = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Outsider",
+      folderId: null,
+    });
+    updateMarkdownContent(outsider.id, "[[Projects/Alpha]]");
+
+    expect(markdownOf(source.id)).toBe(body);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha.md")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha#Heading")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "projects/alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Beta")).toBe(beta.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(resident.id);
+    expect(linkedTo(workspace.id, source.id, "Scene")).toBe(olderScene.id);
+    expect(linkedTo(workspace.id, source.id, "Archive/Scene")).toBe(olderScene.id);
+    expect(linkedTo(workspace.id, source.id, "Drafts/Scene#Later")).toBe(newerScene.id);
+    expect(linkedTo(workspace.id, outsider.id, "Projects/Alpha")).toBeNull();
+    expect(listNoteBacklinks(newerScene.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(olderScene.id).map((link) => link.itemId)).toContain(source.id);
+  });
+
+  it("resolves a golden vault after import rebuild, scoped to each wrap", async () => {
+    const workspace = createWorkspace({ id: "links-vault", name: "Vault import" });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+    });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-golden-vault-"));
+    try {
+      mkdirSync(join(root, "Projects"), { recursive: true });
+      mkdirSync(join(root, "Archive"), { recursive: true });
+      mkdirSync(join(root, "Drafts"), { recursive: true });
+      writeFileSync(
+        join(root, "Projects", "Alpha.md"),
+        "---\ntitle: Alpha\n---\n[[Archive/Scene]]\n[[Drafts/Scene#Later]]\n",
+      );
+      writeFileSync(
+        join(root, "Archive", "Scene.md"),
+        "[[Projects/Alpha|the alpha]]\n[[Projects/Alpha#Heading]]\n",
+      );
+      writeFileSync(join(root, "Drafts", "Scene.md"), "[[Scene]]\n[[Projects/Alpha.md]]\n");
+      writeFileSync(join(root, "Loose.md"), "[[Alpha#Intro]]\n[[Loose|me]]\n");
+
+      const chatTree = createChatTreeService();
+      const first = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root);
+      expect(first.wrapFolderPath.startsWith("Imported/")).toBe(true);
+      expect(first.noteCount).toBe(4);
+
+      const notes = markdownRows(workspace.id);
+      const alpha = notes.find((note) => note.importRelativePath === "Projects/Alpha");
+      const archive = notes.find((note) => note.importRelativePath === "Archive/Scene");
+      const drafts = notes.find((note) => note.importRelativePath === "Drafts/Scene");
+      const loose = notes.find((note) => note.importRelativePath === "Loose");
+      expect(alpha?.markdown).toBe(
+        "---\ntitle: Alpha\n---\n[[Archive/Scene]]\n[[Drafts/Scene#Later]]\n",
+      );
+      expect(alpha && archive && drafts && loose).toBeTruthy();
+      if (!alpha || !archive || !drafts || !loose) return;
+
+      expect(linkedTo(workspace.id, alpha.id, "Archive/Scene")).toBe(archive.id);
+      expect(linkedTo(workspace.id, alpha.id, "Drafts/Scene#Later")).toBe(drafts.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha#Heading")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, drafts.id, "Scene")).toBe(archive.id);
+      expect(linkedTo(workspace.id, drafts.id, "Projects/Alpha.md")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, loose.id, "Alpha#Intro")).toBe(resident.id);
+      expect(linkedTo(workspace.id, loose.id, "Loose")).toBe(loose.id);
+      expect(markdownOf(archive.id)).toBe(
+        "[[Projects/Alpha|the alpha]]\n[[Projects/Alpha#Heading]]\n",
+      );
+
+      const second = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root);
+      expect(second.wrapFolderPath).not.toBe(first.wrapFolderPath);
+      const again = markdownRows(workspace.id).filter(
+        (note) => note.importRelativePath === "Projects/Alpha" && note.id !== alpha.id,
+      );
+      expect(again).toHaveLength(1);
+      const secondAlpha = again[0];
+      const secondArchive = markdownRows(workspace.id).find(
+        (note) => note.importRelativePath === "Archive/Scene" && note.id !== archive.id,
+      );
+      expect(secondAlpha && secondArchive).toBeTruthy();
+      if (!secondAlpha || !secondArchive) return;
+      expect(linkedTo(workspace.id, secondArchive.id, "Projects/Alpha")).toBe(secondAlpha.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha")).toBe(alpha.id);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
+
+function linkedTo(workspaceId: string, fromItemId: string, targetText: string): string | null {
+  const row = getAppDatabase()
+    .select({ toItemId: noteLinks.toItemId })
+    .from(noteLinks)
+    .where(
+      and(
+        eq(noteLinks.workspaceId, workspaceId),
+        eq(noteLinks.fromItemId, fromItemId),
+        eq(noteLinks.targetText, targetText),
+      ),
+    )
+    .get();
+  return row?.toItemId ?? null;
+}
+
+function markdownRows(workspaceId: string) {
+  return getAppDatabase()
+    .select({
+      id: items.id,
+      title: items.title,
+      importRelativePath: items.importRelativePath,
+      data: items.data,
+    })
+    .from(items)
+    .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
+    .all()
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      importRelativePath: row.importRelativePath,
+      markdown: "markdown" in row.data ? row.data.markdown : "",
+    }));
+}

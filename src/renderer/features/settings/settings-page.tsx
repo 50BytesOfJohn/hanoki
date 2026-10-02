@@ -357,6 +357,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
         control={
           <Button
             type="button"
+            variant="outline"
             size="sm"
             disabled={isBusy}
             onClick={() => void exportNotes.mutateAsync({ workspaceId })}
@@ -372,7 +373,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
       />
       <SettingsRow
         title="Import notes"
-        description="Create new markdown notes from a folder of .md files. Re-importing creates duplicates (new items); existing notes are not overwritten or synced."
+        description="One-time copy into Imported/<folder name>. A duplicate path is skipped, including names that differ only by letter case. Not a live sync."
         control={
           <Button
             type="button"

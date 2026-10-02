@@ -28,6 +28,7 @@ beforeAll(() => {
       folder_id text,
       type text not null,
       title text not null,
+      import_relative_path text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
