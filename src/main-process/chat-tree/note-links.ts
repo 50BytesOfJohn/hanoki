@@ -328,9 +328,7 @@ function resolveTarget(
   const scopes: ReadonlyArray<readonly ResolveNote[]> = sourceRootId
     ? [
         index.notes.filter((note) => note.importRootId === sourceRootId),
-        index.notes.filter(
-          (note) => note.importRootId === null || note.importRootId === sourceRootId,
-        ),
+        index.notes.filter((note) => note.importRootId === null),
       ]
     : [index.notes];
   for (const scope of scopes) {

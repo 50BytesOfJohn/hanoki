@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { getAppDatabase } from "../db/database";
+import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { models } from "../db/schema";
 
 export type ModelTableRow = typeof models.$inferSelect;
@@ -97,13 +98,13 @@ export function updateModelsByProviderId(
     return { matchedCount: existingRows.length, updatedCount: 0 };
   }
 
-  db.update(models)
-    .set({
-      ...updates,
-      updatedAt: Date.now(),
-    })
-    .where(inArray(models.id, rowIdsToUpdate))
-    .run();
+  const values = {
+    ...updates,
+    updatedAt: Date.now(),
+  };
+  eachSqlIdChunk(rowIdsToUpdate, Object.keys(values).length, (chunk) => {
+    db.update(models).set(values).where(inArray(models.id, chunk)).run();
+  });
 
   return {
     matchedCount: existingRows.length,

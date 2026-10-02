@@ -7,7 +7,7 @@ import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
 import { getAppDatabase } from "../db/database";
-import { sqliteMaxVariableNumber } from "../db/sqlite-max-variable-number";
+import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
 import { getWorkspaceById } from "../workspaces/repository";
@@ -167,18 +167,6 @@ function normalizeTerminalData(value: unknown): TerminalItemData {
         ? data.scrollbackVersion
         : 0,
   };
-}
-
-function eachSqlIdChunk(
-  ids: readonly string[],
-  extraBound: number,
-  run: (chunk: string[]) => void,
-): void {
-  if (ids.length === 0) return;
-  const size = Math.max(1, sqliteMaxVariableNumber() - extraBound);
-  for (let offset = 0; offset < ids.length; offset += size) {
-    run(ids.slice(offset, offset + size));
-  }
 }
 
 function idsInChunks(

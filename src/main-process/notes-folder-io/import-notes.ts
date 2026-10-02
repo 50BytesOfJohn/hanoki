@@ -46,6 +46,7 @@ export interface ImportMarkdownNotesOptions {
   now?: () => Date;
   isCanceled?: () => boolean;
   onProgress?: (progress: NotesFolderImportProgress) => void;
+  onYield?: () => Promise<void> | void;
 }
 
 const canceledSenders = new Set<number>();
@@ -112,6 +113,12 @@ export async function importMarkdownNotesFromDirectory(
     .map((entry) => entry.reason ?? entry.relativePath);
 
   beginMarkdownImport();
+  let ended = false;
+  const finishImport = () => {
+    if (ended) return;
+    ended = true;
+    endMarkdownImport();
+  };
   try {
     const { parentId, createdParent, wrapId, wrapName } = createWrapRoot(
       chatTree,
@@ -128,6 +135,7 @@ export async function importMarkdownNotesFromDirectory(
         await new Promise((resolve) => {
           setImmediate(resolve);
         });
+        await options?.onYield?.();
       }
       if (options?.isCanceled?.()) {
         canceled = true;
@@ -178,11 +186,14 @@ export async function importMarkdownNotesFromDirectory(
       chatTree.rebuildNoteLinks?.(workspaceId);
     } catch (error) {
       setItemTitles(parked);
-      const reason = error instanceof Error ? error.message : "Note links could not be rebuilt.";
-      warnings.push(`Note links could not be rebuilt: ${reason}`);
+      warnings.push(
+        error instanceof Error
+          ? `Note links could not be rebuilt: ${error.message}`
+          : "Note links could not be rebuilt.",
+      );
       parked.length = 0;
     }
-    endMarkdownImport();
+    finishImport();
     for (const row of parked) updateItemTitle(row.id, row.title);
 
     const skippedDuplicatePathCount = duplicatePaths.length;
@@ -204,7 +215,7 @@ export async function importMarkdownNotesFromDirectory(
       warnings,
     };
   } finally {
-    endMarkdownImport();
+    finishImport();
   }
 }
 

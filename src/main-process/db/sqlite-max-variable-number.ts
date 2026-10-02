@@ -18,3 +18,15 @@ export function sqliteMaxVariableNumber(): number {
   sqliteMaxVariableNumberCache = SQLITE_MAX_VARIABLE_NUMBER_FALLBACK;
   return sqliteMaxVariableNumberCache;
 }
+
+export function eachSqlIdChunk(
+  ids: readonly string[],
+  extraBound: number,
+  run: (chunk: string[]) => void,
+): void {
+  if (ids.length === 0) return;
+  const size = Math.max(1, sqliteMaxVariableNumber() - extraBound);
+  for (let offset = 0; offset < ids.length; offset += size) {
+    run(ids.slice(offset, offset + size));
+  }
+}

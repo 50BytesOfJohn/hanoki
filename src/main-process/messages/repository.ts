@@ -1,6 +1,7 @@
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { getAppDatabase } from "../db/database";
+import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { messages } from "../db/schema";
 
 export type MessageTableRow = typeof messages.$inferSelect;
@@ -206,9 +207,9 @@ export function deleteMessageSubtree(
     }
   }
 
-  db.delete(messages)
-    .where(inArray(messages.id, [...deletedIds]))
-    .run();
+  eachSqlIdChunk([...deletedIds], 0, (chunk) => {
+    db.delete(messages).where(inArray(messages.id, chunk)).run();
+  });
 
   return { chatId: target.chatId, parentId: target.parentId, deletedIds };
 }

@@ -1642,6 +1642,91 @@ describe("note links", () => {
     ).toBe(wrapA.id);
   });
 
+  it("prefers the same import over an older resident for a bare title", () => {
+    const workspace = createWorkspace({ id: "links-same-root", name: "Same root" });
+    const resident = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const imported = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Alpha]]\n[[Alpha#Intro]]");
+
+    expect(linkedTo(workspace.id, source.id, "Alpha")).toBe(imported.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(imported.id);
+    expect(listNoteBacklinks(resident.id)).toEqual([]);
+  });
+
+  it("uses a resident note when the import has no title match", () => {
+    const workspace = createWorkspace({
+      id: "links-resident-fallback",
+      name: "Resident fallback",
+    });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Only Resident",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Only Resident]]\n[[Only Resident#H]]");
+
+    expect(linkedTo(workspace.id, source.id, "Only Resident")).toBe(resident.id);
+    expect(linkedTo(workspace.id, source.id, "Only Resident#H")).toBe(resident.id);
+  });
+
+  it("leaves a bare link unresolved when the only match is another import", () => {
+    const workspace = createWorkspace({ id: "links-other-import", name: "Other import" });
+    createMarkdown({
+      workspaceId: workspace.id,
+      title: "Foreign",
+      folderId: null,
+      importRootId: "batch-b",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Foreign]]\n[[Foreign#H]]");
+
+    expect(linkedTo(workspace.id, source.id, "Foreign")).toBeNull();
+    expect(linkedTo(workspace.id, source.id, "Foreign#H")).toBeNull();
+  });
+
+  it("resolves a resident note's bare link by the oldest id", () => {
+    const workspace = createWorkspace({ id: "links-resident-global", name: "Resident global" });
+    const older = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Source",
+      folderId: null,
+    });
+    updateMarkdownContent(source.id, "[[Alpha]]\n[[Alpha#Intro]]");
+
+    expect(linkedTo(workspace.id, source.id, "Alpha")).toBe(older.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(older.id);
+    expect(listNoteBacklinks(newer.id)).toEqual([]);
+  });
+
   it("skips per-note link indexing when asked and resolves on rebuild", () => {
     const workspace = createWorkspace({ id: "links-skip-index", name: "Skip index" });
     const alpha = createMarkdown({
@@ -1753,6 +1838,71 @@ describe("note links", () => {
       expect(source.importRootId).toBeTruthy();
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a rename during a smaller import that overlaps a larger one", async () => {
+    const workspace = createWorkspace({ id: "links-overlap-import", name: "Overlap" });
+    const largeRoot = mkdtempSync(join(tmpdir(), "hanoki-import-large-"));
+    const smallRoot = mkdtempSync(join(tmpdir(), "hanoki-import-small-"));
+    try {
+      for (let index = 0; index < 50; index += 1) {
+        writeFileSync(join(largeRoot, `L${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+      writeFileSync(
+        join(smallRoot, "A-source.md"),
+        "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n",
+      );
+      writeFileSync(join(smallRoot, "C# tips.md"), "tips\n");
+      writeFileSync(join(smallRoot, "C.md"), "c\n");
+      for (let index = 0; index < 37; index += 1) {
+        writeFileSync(join(smallRoot, `S${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let scheduled = false;
+      const runSmall = () =>
+        importMarkdownNotesFromDirectory(chatTree, workspace.id, smallRoot, {
+          onProgress: () => {
+            if (scheduled) return;
+            scheduled = true;
+            setImmediate(() => {
+              const note = getAppDatabase()
+                .select({ id: items.id })
+                .from(items)
+                .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "C")))
+                .get();
+              if (!note) throw new Error("C was not imported before the yield.");
+              updateItemTitle(note.id, "D");
+            });
+          },
+        });
+
+      let held = false;
+      const large = await importMarkdownNotesFromDirectory(chatTree, workspace.id, largeRoot, {
+        onYield: async () => {
+          if (held) return;
+          held = true;
+          const small = await runSmall();
+          expect(small.noteCount).toBe(40);
+        },
+      });
+      expect(large.noteCount).toBe(50);
+      expect(held).toBe(true);
+
+      const notes = markdownRows(workspace.id);
+      const source = notes.find((note) => note.title === "A-source");
+      const tips = notes.find((note) => note.title === "C# tips");
+      const renamed = notes.find((note) => note.title === "D");
+      expect(source?.markdown).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n");
+      expect(tips && renamed && source).toBeTruthy();
+      if (!tips || !renamed || !source) return;
+      expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+      expect(linkedTo(workspace.id, source.id, "D")).toBe(renamed.id);
+      expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(renamed.id);
+    } finally {
+      rmSync(largeRoot, { recursive: true, force: true });
+      rmSync(smallRoot, { recursive: true, force: true });
     }
   });
 

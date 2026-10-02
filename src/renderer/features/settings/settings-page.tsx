@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { useExportMarkdownNotesFolder, useImportMarkdownNotesFolder } from "@/mutations/markdown";
+import { useNotesImportRunning } from "@/features/settings/notes-folder-import-dialog";
 import { useUpdateGlobalChatSettings } from "@/mutations/settings";
 import { useUpdateWorkspace } from "@/mutations/workspaces";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
@@ -348,7 +349,8 @@ function WorkspaceChatTreeSortRows({ workspaceId }: { workspaceId: string }) {
 function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
   const exportNotes = useExportMarkdownNotesFolder();
   const importNotes = useImportMarkdownNotesFolder();
-  const isBusy = exportNotes.isPending || importNotes.isPending;
+  const notesImportRunning = useNotesImportRunning();
+  const isBusy = exportNotes.isPending || importNotes.isPending || notesImportRunning;
 
   return (
     <>

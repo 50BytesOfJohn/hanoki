@@ -348,6 +348,25 @@ describe("importMarkdownNotesFromDirectory", () => {
     );
   });
 
+  it("does not repeat the rebuild warning when the failure is not an Error", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(
+      {
+        ...tree.chatTree,
+        rebuildNoteLinks() {
+          throw "database is locked";
+        },
+      },
+      "workspace-1",
+      root,
+    );
+
+    expect(result.warnings).toEqual(["Note links could not be rebuilt."]);
+  });
+
   it("counts invalid UTF-8 as a failure and ignores .trash", async () => {
     const root = await makeTempDir();
     await mkdir(join(root, ".trash"), { recursive: true });

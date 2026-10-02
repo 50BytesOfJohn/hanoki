@@ -60,6 +60,15 @@ export const notesImportUi = {
   },
 };
 
+export function useNotesImportRunning(): boolean {
+  const ui = useSyncExternalStore(
+    notesImportUi.subscribe,
+    notesImportUi.getSnapshot,
+    notesImportUi.getSnapshot,
+  );
+  return ui.phase === "running";
+}
+
 export function NotesFolderImportDialog() {
   const ui = useSyncExternalStore(
     notesImportUi.subscribe,

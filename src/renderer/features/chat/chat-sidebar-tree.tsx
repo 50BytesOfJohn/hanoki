@@ -99,6 +99,10 @@ import {
   useExportMarkdownNotesFolder,
   useImportMarkdownNotesFolder,
 } from "@/mutations/markdown";
+import {
+  notesImportUi,
+  useNotesImportRunning,
+} from "@/features/settings/notes-folder-import-dialog";
 
 import type {
   ChatInfo,
@@ -180,6 +184,7 @@ function ChatTreeItemContextMenu({
   itemKind: "folder" | ItemType;
   onAction: (action: ChatTreeContextMenuAction) => void;
 }) {
+  const notesImportRunning = useNotesImportRunning();
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
@@ -206,7 +211,10 @@ function ChatTreeItemContextMenu({
               <HugeiconsIcon icon={FileExportIcon} />
               Export Workspace Notes…
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("import-markdown-notes")}>
+            <ContextMenuItem
+              disabled={notesImportRunning}
+              onClick={() => onAction("import-markdown-notes")}
+            >
               <HugeiconsIcon icon={FileImportIcon} />
               Import Workspace Notes…
             </ContextMenuItem>
@@ -319,7 +327,8 @@ function ChatSidebarViewModeMenu({
     useChatTreeSort(workspaceId);
   const exportNotes = useExportMarkdownNotesFolder();
   const importNotes = useImportMarkdownNotesFolder();
-  const notesIoBusy = exportNotes.isPending || importNotes.isPending;
+  const notesImportRunning = useNotesImportRunning();
+  const notesIoBusy = exportNotes.isPending || importNotes.isPending || notesImportRunning;
 
   return (
     <DropdownMenu>
@@ -949,6 +958,7 @@ function ChatSidebarTreeInner({
                   } else if (action === "export-markdown-notes") {
                     void exportMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "import-markdown-notes") {
+                    if (notesImportUi.getSnapshot().phase === "running") return;
                     void importMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "open-in-focused-pane" && data.kind === "item") {
                     navigateToItem(data.item);
