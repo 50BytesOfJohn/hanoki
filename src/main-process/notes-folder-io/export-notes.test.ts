@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ChatTreeSnapshot } from "@shared/ipc";
-
 import { exportMarkdownNotesToDirectory, type NotesFolderExportTree } from "./export-notes";
 
 const tempDirs: string[] = [];
@@ -19,12 +17,12 @@ describe("exportMarkdownNotesToDirectory", () => {
     tempDirs.push(dest);
     const calls: string[] = [];
     const storedBody = "raw stored  \n\n<!-- not normalized -->\n";
-    const snapshot: ChatTreeSnapshot = {
+    const snapshot = {
       workspaceId: "workspace-1",
       rootFolders: [],
       rootItems: [
         {
-          type: "markdown",
+          type: "markdown" as const,
           id: "md-1",
           workspaceId: "workspace-1",
           folderId: null,
@@ -60,12 +58,12 @@ describe("exportMarkdownNotesToDirectory", () => {
     const dest = await mkdtemp(join(tmpdir(), "hanoki-notes-export-"));
     tempDirs.push(dest);
     await writeFile(join(dest, "keep.txt"), "untouched");
-    const snapshot: ChatTreeSnapshot = {
+    const snapshot = {
       workspaceId: "workspace-1",
       rootFolders: [],
       rootItems: [
         {
-          type: "markdown",
+          type: "markdown" as const,
           id: "md-1",
           workspaceId: "workspace-1",
           folderId: null,

@@ -54,25 +54,13 @@ function memoryTree() {
       folders.push(folder);
       return folder;
     },
-    deleteFolder(id) {
-      const drop = new Set<string>();
-      const walk = (folderId: string) => {
-        drop.add(folderId);
-        for (const folder of folders) {
-          if (folder.parentId === folderId) walk(folder.id);
-        }
-      };
-      walk(id);
-      for (let index = folders.length - 1; index >= 0; index -= 1) {
-        if (drop.has(folders[index]!.id)) folders.splice(index, 1);
-      }
-      for (let index = notes.length - 1; index >= 0; index -= 1) {
-        const note = notes[index]!;
-        if (note.folderId && drop.has(note.folderId)) {
-          notes.splice(index, 1);
-          notesById.delete(note.id);
-        }
-      }
+    deleteFolderIfEmpty(id) {
+      if (folders.some((folder) => folder.parentId === id)) return false;
+      if (notes.some((note) => note.folderId === id)) return false;
+      const index = folders.findIndex((folder) => folder.id === id);
+      if (index === -1) return false;
+      folders.splice(index, 1);
+      return true;
     },
     createMarkdown({ workspaceId, title, folderId, importRelativePath }) {
       const item: StoredNote = {
@@ -341,7 +329,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     const result = await importMarkdownNotesFromDirectory(
       {
         ...tree.chatTree,
-        rebuildNoteLinks() {
+        rebuildImportedNoteLinks() {
           throw new Error("database is locked");
         },
       },
@@ -365,7 +353,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     const result = await importMarkdownNotesFromDirectory(
       {
         ...tree.chatTree,
-        rebuildNoteLinks() {
+        rebuildImportedNoteLinks() {
           throw "database is locked";
         },
       },

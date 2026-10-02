@@ -106,7 +106,7 @@ import {
 
 import type {
   ChatInfo,
-  ItemInfo,
+  ChatTreeItem,
   ItemType,
   ChatSidebarViewMode,
   ChatTreeFolderListItem,
@@ -140,7 +140,7 @@ import { getFocusedPane } from "../workspace/store/layout-tree";
 
 type ChatTreeNodeData =
   | { kind: "folder"; folder: ChatTreeFolderListItem }
-  | { kind: "item"; item: ItemInfo }
+  | { kind: "item"; item: ChatTreeItem }
   | { kind: "root" }
   | { kind: "loading" };
 
@@ -773,14 +773,14 @@ function ChatSidebarTreeInner({
   );
 
   const openItemInTab = React.useCallback(
-    (item: ItemInfo, options?: { activate?: boolean }) => {
+    (item: ChatTreeItem, options?: { activate?: boolean }) => {
       openTab({ type: item.type, itemId: item.id }, options);
     },
     [openTab],
   );
 
   const navigateToItem = React.useCallback(
-    (item: ItemInfo) => {
+    (item: ChatTreeItem) => {
       if (item.type === "chat") setCurrentChat(item.id);
       else useWorkspaceStore.getState().openItemInFocusedPane(item.id, item.type);
     },
@@ -788,7 +788,7 @@ function ChatSidebarTreeInner({
   );
 
   const openItemBeside = React.useCallback(
-    (item: ItemInfo, direction: "left" | "right" | "top" | "bottom") => {
+    (item: ChatTreeItem, direction: "left" | "right" | "top" | "bottom") => {
       const tab = tabs.find((candidate) => candidate.id === activeTabId);
       if (!tab) {
         openTab({ type: item.type, itemId: item.id });
@@ -1141,7 +1141,7 @@ function ChatSidebarTreeInner({
 export function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
   const chats: ChatInfo[] = [];
 
-  const walk = (folders: ChatTreeFolderNode[], folderItems: ItemInfo[]) => {
+  const walk = (folders: ChatTreeFolderNode[], folderItems: ChatTreeItem[]) => {
     chats.push(...folderItems.filter((item): item is ChatInfo => item.type === "chat"));
     for (const folder of folders) {
       walk(folder.folders, folder.items);
@@ -1478,7 +1478,7 @@ function ChatActivityListItem({
   );
 }
 
-function ChatTreeItemIcon({ item }: { item: ItemInfo }) {
+function ChatTreeItemIcon({ item }: { item: ChatTreeItem }) {
   const status = useChatStatus(item.type === "chat" ? item.id : "");
   const isActive = status === "streaming" || status === "submitted";
 

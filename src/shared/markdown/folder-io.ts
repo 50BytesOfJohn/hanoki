@@ -23,6 +23,7 @@ export interface NotesFolderImportProgress {
   index: number;
   total: number;
   relativePath: string;
+  step?: "linking";
 }
 
 export type NotesFolderImportResult =

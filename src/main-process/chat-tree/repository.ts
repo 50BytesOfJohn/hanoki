@@ -861,6 +861,22 @@ export function moveFolder(id: string, parentId: string | null): FolderRow {
   });
 }
 
+export function deleteFolderIfEmpty(id: string): boolean {
+  const db = getAppDatabase();
+  const folder = db.select({ id: folders.id }).from(folders).where(eq(folders.id, id)).get();
+  if (!folder) return false;
+  const childFolder = db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(eq(folders.parentId, id))
+    .get();
+  if (childFolder) return false;
+  const childItem = db.select({ id: items.id }).from(items).where(eq(items.folderId, id)).get();
+  if (childItem) return false;
+  db.delete(folders).where(eq(folders.id, id)).run();
+  return true;
+}
+
 export function deleteFolderRecursive(id: string): DeleteFolderRecursiveResult {
   return getAppDatabase().transaction((tx) => {
     const folder = tx.select().from(folders).where(eq(folders.id, id)).get();

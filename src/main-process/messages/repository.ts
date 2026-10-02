@@ -207,8 +207,10 @@ export function deleteMessageSubtree(
     }
   }
 
-  eachSqlIdChunk([...deletedIds], 0, (chunk) => {
-    db.delete(messages).where(inArray(messages.id, chunk)).run();
+  db.transaction((tx) => {
+    eachSqlIdChunk([...deletedIds], 0, (chunk) => {
+      tx.delete(messages).where(inArray(messages.id, chunk)).run();
+    });
   });
 
   return { chatId: target.chatId, parentId: target.parentId, deletedIds };

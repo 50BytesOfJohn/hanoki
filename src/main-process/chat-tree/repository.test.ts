@@ -1,10 +1,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
+import {
+  findWikilinks,
+  normalizeWikilinkTitle,
+  splitWikilinkFragment,
+} from "@shared/markdown/wikilink";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
 import { sqliteMaxVariableNumber } from "../db/sqlite-max-variable-number";
@@ -50,6 +56,7 @@ import {
   listMarkdownTitleOptions,
   listNoteBacklinks,
   listOutgoingNoteLinks,
+  rebuildImportedNoteLinks,
   rebuildWorkspaceNoteLinks,
 } from "./note-links";
 
@@ -2050,7 +2057,249 @@ describe("note links", () => {
     expect(getItemById(ids[0]!)).toBeNull();
     expect(getItemById(ids[count - 1]!)).toBeNull();
   }, 180_000);
+
+  it("matches the scan resolver on a mixed import and resident fixture", () => {
+    const workspace = createWorkspace({ id: "resolve-mixed", name: "Resolve mixed" });
+    const db = getAppDatabase();
+    const notes = [
+      { id: "a-resident", title: "Alpha", importRootId: null, path: null, body: "" },
+      { id: "b-resident", title: "Alpha", importRootId: null, path: null, body: "[[Beta]]" },
+      {
+        id: "c-root",
+        title: "Alpha",
+        importRootId: "root-r",
+        path: "Projects/Alpha",
+        body: "",
+      },
+      { id: "d-root", title: "Beta", importRootId: "root-r", path: "Beta", body: "[[Missing]]" },
+      { id: "e-foreign", title: "Alpha", importRootId: "root-other", path: null, body: "" },
+      {
+        id: "f-source",
+        title: "Source",
+        importRootId: "root-r",
+        path: "Source",
+        body: "[[Alpha]]\n[[Alpha#Heading]]\n[[Projects/Alpha]]\n[[Beta]]\n[[Missing]]\n",
+      },
+      {
+        id: "g-home",
+        title: "Home",
+        importRootId: null,
+        path: null,
+        body: "[[Alpha]]",
+      },
+    ];
+    for (const note of notes) {
+      db.insert(items)
+        .values({
+          id: note.id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: note.title,
+          importRelativePath: note.path,
+          importRootId: note.importRootId,
+          data: { markdown: note.body },
+        })
+        .run();
+    }
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    for (const note of notes) {
+      for (const link of findWikilinks(note.body)) {
+        expect(linkedTo(workspace.id, note.id, link.target.trim())).toBe(
+          referenceResolveTarget(notes, note.importRootId, link.target),
+        );
+      }
+    }
+    expect(linkedTo(workspace.id, "g-home", "Alpha")).toBe("a-resident");
+    expect(linkedTo(workspace.id, "f-source", "Alpha")).toBe("c-root");
+    expect(linkedTo(workspace.id, "f-source", "Projects/Alpha")).toBe("c-root");
+    expect(linkedTo(workspace.id, "f-source", "Missing")).toBeNull();
+  });
+
+  it("scopes an import rebuild to that root and leaves the same edges as a full rebuild", async () => {
+    const workspace = createWorkspace({ id: "resolve-scoped", name: "Resolve scoped" });
+    const db = getAppDatabase();
+    db.insert(items)
+      .values({
+        id: "scope-resident",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Home",
+        data: { markdown: "[[Fresh]]" },
+      })
+      .run();
+    db.insert(items)
+      .values({
+        id: "scope-old",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Old",
+        importRootId: "root-old",
+        data: { markdown: "[[Home]]\n[[Later]]" },
+      })
+      .run();
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    db.insert(items)
+      .values({
+        id: "scope-fresh",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Fresh",
+        importRootId: "root-new",
+        importRelativePath: "Fresh",
+        data: { markdown: "[[Home]]\n[[Old]]" },
+      })
+      .run();
+    await rebuildImportedNoteLinks(workspace.id, "root-new");
+    const scoped = edgeRows(workspace.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(edgeRows(workspace.id)).toEqual(scoped);
+    expect(linkedTo(workspace.id, "scope-resident", "Fresh")).toBe("scope-fresh");
+    expect(linkedTo(workspace.id, "scope-old", "Home")).toBe("scope-resident");
+    expect(linkedTo(workspace.id, "scope-old", "Later")).toBeNull();
+  });
+
+  it("rewrites 2000 inbound links from one index", () => {
+    const workspace = createWorkspace({ id: "rename-2k", name: "Rename 2k" });
+    const target = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Target",
+      folderId: null,
+      skipLinkIndex: true,
+    });
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, folder_id, type, title, data, created_at, updated_at) VALUES (?, ?, NULL, 'markdown', ?, ?, ?, ?)",
+    );
+    sqlite.exec("BEGIN");
+    for (let index = 0; index < 2000; index += 1) {
+      insert.run(
+        `src-${String(index).padStart(4, "0")}`,
+        workspace.id,
+        `Source ${index}`,
+        JSON.stringify({ markdown: "[[Target]]" }),
+        index + 1,
+        index + 1,
+      );
+    }
+    sqlite.exec("COMMIT");
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    const start = performance.now();
+    updateItemTitle(target.id, "Renamed");
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(1000);
+    const sample = getItemById("src-0000");
+    expect(sample?.type === "markdown" ? sample.data.markdown : "").toBe("[[Renamed]]");
+  }, 30_000);
+
+  it("rebuilds 20k notes and 30k links in under 5s", () => {
+    const workspace = createWorkspace({ id: "resolve-20k", name: "Resolve 20k" });
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, folder_id, type, title, import_relative_path, import_root_id, data, created_at, updated_at) VALUES (?, ?, NULL, 'markdown', ?, ?, 'root-a', ?, ?, ?)",
+    );
+    sqlite.exec("BEGIN");
+    for (let index = 0; index < 20_000; index += 1) {
+      const target = index === 0 ? 1 : index - 1;
+      const markdown =
+        index < 10_000 ? `[[Note ${target}]]\n[[Also ${target}]]\n` : `[[Note ${target}]]\n`;
+      insert.run(
+        `n-${String(index).padStart(6, "0")}`,
+        workspace.id,
+        `Note ${index}`,
+        `Notes/Note ${index}`,
+        JSON.stringify({ markdown }),
+        index + 1,
+        index + 1,
+      );
+    }
+    sqlite.exec("COMMIT");
+
+    const start = performance.now();
+    rebuildWorkspaceNoteLinks(workspace.id);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(5_000);
+    expect(countNoteLinks(workspace.id)).toBe(30_000);
+  }, 60_000);
 });
+
+function edgeRows(workspaceId: string) {
+  return getAppDatabase()
+    .select({
+      fromItemId: noteLinks.fromItemId,
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+      toItemId: noteLinks.toItemId,
+    })
+    .from(noteLinks)
+    .where(eq(noteLinks.workspaceId, workspaceId))
+    .all()
+    .sort(
+      (left, right) =>
+        left.fromItemId.localeCompare(right.fromItemId) ||
+        left.targetText.localeCompare(right.targetText) ||
+        left.alias.localeCompare(right.alias),
+    );
+}
+
+function referenceResolveTarget(
+  notes: readonly {
+    id: string;
+    title: string;
+    importRootId: string | null;
+    path: string | null;
+  }[],
+  sourceRootId: string | null,
+  target: string,
+): string | null {
+  const fullKey = normalizeWikilinkTitle(target.trim());
+  if (fullKey.length === 0) return null;
+  const lookup = splitWikilinkFragment(target).lookup;
+  const strippedKey = normalizeWikilinkTitle(lookup);
+  const pathKey = lookup.includes("/") ? lookup.replace(/\.md$/i, "") : null;
+  const oldest = (matches: readonly { id: string }[]) =>
+    matches.reduce<{ id: string } | null>(
+      (current, note) => (!current || note.id < current.id ? note : current),
+      null,
+    )?.id ?? null;
+
+  if (pathKey && sourceRootId) {
+    const wanted = normalizeWikilinkTitle(pathKey);
+    const scoped = notes.filter((note) => note.importRootId === sourceRootId);
+    const pathHit = oldest(
+      scoped.filter(
+        (note) =>
+          note.path !== null && normalizeWikilinkTitle(note.path.replace(/\.md$/i, "")) === wanted,
+      ),
+    );
+    if (pathHit) return pathHit;
+  }
+
+  const scopes = sourceRootId
+    ? [
+        notes.filter((note) => note.importRootId === sourceRootId),
+        notes.filter((note) => note.importRootId === null),
+      ]
+    : [notes];
+  for (const scope of scopes) {
+    const exact = oldest(scope.filter((note) => normalizeWikilinkTitle(note.title) === fullKey));
+    if (exact) return exact;
+    if (strippedKey !== fullKey && strippedKey.length > 0) {
+      const stripped = oldest(
+        scope.filter((note) => normalizeWikilinkTitle(note.title) === strippedKey),
+      );
+      if (stripped) return stripped;
+    }
+  }
+  return null;
+}
 
 function linksPastVariableLimit(): number {
   return Math.max(5000, Math.floor(sqliteVariableLimit() / 5) + 1);

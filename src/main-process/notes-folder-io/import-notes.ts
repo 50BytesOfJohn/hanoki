@@ -39,8 +39,12 @@ export type NotesFolderImportTree = Pick<
   | "flushMarkdownContent"
   | "listChildFolders"
 > & {
-  rebuildNoteLinks?: (workspaceId: string) => void;
-  deleteFolder?: (id: string) => void;
+  rebuildImportedNoteLinks?: (
+    workspaceId: string,
+    importRootId: string,
+    options?: { onYield?: () => Promise<void> },
+  ) => void | Promise<void>;
+  deleteFolderIfEmpty?: (id: string) => boolean;
 };
 
 export interface ImportMarkdownNotesOptions {
@@ -186,20 +190,43 @@ export async function importMarkdownNotesFromDirectory(
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Could not be imported.";
         failures.push({ relativePath: file.relativePath, reason });
-        warnings.push(`${file.relativePath} could not be imported: ${reason}`);
       }
     }
 
     publishProgress(true);
 
-    const removedEmptyWrap = noteCount === 0;
-    if (removedEmptyWrap) {
-      removeEmptyWrap(chatTree, workspaceId, parentId, createdParent, wrapId);
-    }
+    const removedEmptyWrap = removeEmptyWrap(
+      chatTree,
+      workspaceId,
+      parentId,
+      createdParent,
+      wrapId,
+      noteCount === 0,
+    );
 
     const parked = rewindImportRenames();
     try {
-      chatTree.rebuildNoteLinks?.(workspaceId);
+      if (noteCount > 0) {
+        latestProgress = {
+          folderPath: source,
+          index: noteCount,
+          total: kept.length,
+          relativePath: "",
+          step: "linking",
+        };
+        publishProgress(true);
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+        await chatTree.rebuildImportedNoteLinks?.(workspaceId, wrapId, {
+          onYield: async () => {
+            await new Promise((resolve) => {
+              setImmediate(resolve);
+            });
+            if (options?.isCanceled?.()) canceled = true;
+          },
+        });
+      }
     } catch (error) {
       setItemTitles(parked);
       warnings.push(
@@ -276,12 +303,14 @@ function removeEmptyWrap(
   parentId: string,
   createdParent: boolean,
   wrapId: string,
-): void {
-  if (!chatTree.deleteFolder) return;
-  chatTree.deleteFolder(wrapId);
-  if (!createdParent) return;
-  if (chatTree.listChildFolders(workspaceId, parentId).length > 0) return;
-  chatTree.deleteFolder(parentId);
+  nothingCopied: boolean,
+): boolean {
+  if (!nothingCopied || !chatTree.deleteFolderIfEmpty?.(wrapId)) return false;
+  if (createdParent) {
+    const parentStillHasChildren = chatTree.listChildFolders(workspaceId, parentId).length > 0;
+    if (!parentStillHasChildren) chatTree.deleteFolderIfEmpty(parentId);
+  }
+  return true;
 }
 
 function uniqueChildName(existingNames: readonly string[], preferred: string, now: Date): string {

@@ -3,6 +3,7 @@ import {
   createMarkdown,
   cloneChat as cloneChatInRepo,
   createFolder,
+  deleteFolderIfEmpty as deleteFolderIfEmptyInRepo,
   deleteChatTreeItems as deleteChatTreeItemsInRepo,
   deleteChat,
   deleteItem as deleteItemInRepo,
@@ -36,6 +37,7 @@ import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
   ChatInfo,
+  ChatTreeItem,
   ItemInfo,
   ItemLayoutNode,
   ItemPaneState,
@@ -59,6 +61,7 @@ import {
   listMarkdownTitleOptions,
   listNoteBacklinks as listNoteBacklinksInRepo,
   listOutgoingNoteLinks as listOutgoingNoteLinksInRepo,
+  rebuildImportedNoteLinks as rebuildImportedNoteLinksInRepo,
   rebuildWorkspaceNoteLinks,
 } from "../chat-tree/note-links";
 import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/repository";
@@ -78,8 +81,11 @@ interface PendingMarkdownSave {
 export interface ChatTreeService {
   getItem(id: string): ItemInfo;
   getChat(id: string): ChatInfo;
-  getChatTree(workspaceId: string): ChatTreeSnapshot;
-  getChatTreeChildren(workspaceId: string, parentFolderId: string | null): ChatTreeChildrenSlice;
+  getChatTree(workspaceId: string): ChatTreeSnapshotRecord;
+  getChatTreeChildren(
+    workspaceId: string,
+    parentFolderId: string | null,
+  ): ChatTreeChildrenSliceRecord;
   getChatTreeUiState(workspaceId: string): ChatTreeUiState;
   setChatTreeUiState(workspaceId: string, expandedFolderIds: string[]): ChatTreeUiState;
   getTabsUiState(workspaceId: string): TabsUiState;
@@ -88,6 +94,7 @@ export interface ChatTreeService {
   updateFolderName(id: string, name: string): FolderInfo;
   moveFolder(id: string, parentId: string | null): FolderInfo;
   deleteFolder(id: string): void;
+  deleteFolderIfEmpty(id: string): boolean;
   deleteChatTreeItems(workspaceId: string, items: ChatTreeItemRef[]): DeleteChatTreeItemsResult;
   createChat(input: { workspaceId: string; title: string; folderId: string | null }): ChatInfo;
   createMarkdown(input: {
@@ -106,6 +113,11 @@ export interface ChatTreeService {
   listNoteBacklinks(itemId: string): NoteBacklink[];
   listOutgoingNoteLinks(itemId: string): NoteOutgoingLink[];
   rebuildNoteLinks(workspaceId: string): void;
+  rebuildImportedNoteLinks(
+    workspaceId: string,
+    importRootId: string,
+    options?: { onYield?: () => Promise<void> },
+  ): Promise<void>;
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -142,6 +154,41 @@ function toChatInfo(chat: ChatRow): ChatInfo {
   };
 }
 
+function toChatTreeItem(item: ItemRow): ChatTreeItem {
+  if (item.type === "markdown") {
+    const { data: _data, ...rest } = toMarkdownInfo(item);
+    return rest;
+  }
+  return toItemInfo(item);
+}
+
+export function toSharedChatTreeSnapshot(snapshot: ChatTreeSnapshotRecord): ChatTreeSnapshot {
+  return {
+    workspaceId: snapshot.workspaceId,
+    rootFolders: snapshot.rootFolders.map(toSharedFolderNode),
+    rootItems: snapshot.rootItems.map(toChatTreeItem),
+  };
+}
+
+export function toSharedChatTreeChildren(
+  slice: ChatTreeChildrenSliceRecord,
+): ChatTreeChildrenSlice {
+  return {
+    workspaceId: slice.workspaceId,
+    parentFolderId: slice.parentFolderId,
+    folders: slice.folders.map(toChatTreeFolderListItem),
+    items: slice.items.map(toChatTreeItem),
+  };
+}
+
+function toSharedFolderNode(node: ChatTreeFolderNodeRecord): ChatTreeFolderNode {
+  return {
+    ...toFolderInfo(node),
+    folders: node.folders.map(toSharedFolderNode),
+    items: node.items.map(toChatTreeItem),
+  };
+}
+
 function toItemInfo(item: ItemRow): ItemInfo {
   if (item.type === "chat") return toChatInfo(item);
   if (item.type === "markdown") return toMarkdownInfo(item);
@@ -174,36 +221,11 @@ function toMarkdownInfo(item: MarkdownRow): MarkdownInfo {
   };
 }
 
-function toChatTreeFolderNode(node: ChatTreeFolderNodeRecord): ChatTreeFolderNode {
-  return {
-    ...toFolderInfo(node),
-    folders: node.folders.map(toChatTreeFolderNode),
-    items: node.items.map(toItemInfo),
-  };
-}
-
-function toChatTreeSnapshot(snapshot: ChatTreeSnapshotRecord): ChatTreeSnapshot {
-  return {
-    workspaceId: snapshot.workspaceId,
-    rootFolders: snapshot.rootFolders.map(toChatTreeFolderNode),
-    rootItems: snapshot.rootItems.map(toItemInfo),
-  };
-}
-
 function toChatTreeFolderListItem(folder: ChatTreeFolderListItemRecord): ChatTreeFolderListItem {
   return {
     ...toFolderInfo(folder),
     childFolderCount: folder.childFolderCount,
     childItemCount: folder.childItemCount,
-  };
-}
-
-function toChatTreeChildrenSlice(slice: ChatTreeChildrenSliceRecord): ChatTreeChildrenSlice {
-  return {
-    workspaceId: slice.workspaceId,
-    parentFolderId: slice.parentFolderId,
-    folders: slice.folders.map(toChatTreeFolderListItem),
-    items: slice.items.map(toItemInfo),
   };
 }
 
@@ -571,12 +593,15 @@ export function createChatTreeService(): ChatTreeService {
       return toChatInfo(chat);
     },
 
-    getChatTree(workspaceId: string): ChatTreeSnapshot {
-      return toChatTreeSnapshot(getChatTree(workspaceId));
+    getChatTree(workspaceId: string): ChatTreeSnapshotRecord {
+      return getChatTree(workspaceId);
     },
 
-    getChatTreeChildren(workspaceId: string, parentFolderId: string | null): ChatTreeChildrenSlice {
-      return toChatTreeChildrenSlice(getChatTreeChildren(workspaceId, parentFolderId));
+    getChatTreeChildren(
+      workspaceId: string,
+      parentFolderId: string | null,
+    ): ChatTreeChildrenSliceRecord {
+      return getChatTreeChildren(workspaceId, parentFolderId);
     },
 
     getChatTreeUiState(workspaceId: string): ChatTreeUiState {
@@ -605,6 +630,10 @@ export function createChatTreeService(): ChatTreeService {
 
     moveFolder(id: string, parentId: string | null): FolderInfo {
       return toFolderInfo(moveFolder(id, parentId));
+    },
+
+    deleteFolderIfEmpty(id: string): boolean {
+      return deleteFolderIfEmptyInRepo(id);
     },
 
     deleteFolder(id: string): void {
@@ -667,6 +696,11 @@ export function createChatTreeService(): ChatTreeService {
     rebuildNoteLinks(workspaceId: string): void {
       flushAllPendingMarkdownContent();
       rebuildWorkspaceNoteLinks(workspaceId);
+    },
+
+    async rebuildImportedNoteLinks(workspaceId, importRootId, options) {
+      flushAllPendingMarkdownContent();
+      await rebuildImportedNoteLinksInRepo(workspaceId, importRootId, options);
     },
 
     cloneChat(chatId: string): ChatInfo {

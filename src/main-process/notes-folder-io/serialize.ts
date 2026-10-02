@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { CHAT_TITLE_MAX_LENGTH } from "@shared/chat/chat-title";
 import { safeFileName, uniqueName } from "@shared/files/safe-file-name";
 import { FOLDER_NAME_MAX_LENGTH } from "@shared/folder/folder-name";
-import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemRow } from "../chat-tree/repository";
 import { MAX_MARKDOWN_FILE_BYTES, MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 
@@ -190,7 +190,7 @@ function walkFolder(
 }
 
 function writeMarkdownItems(
-  items: readonly ItemInfo[],
+  items: readonly ItemRow[],
   parentRelativePath: string,
   siblingNames: Set<string>,
   files: NotesFolderExportFile[],
@@ -218,7 +218,7 @@ function countNonMarkdownInFolder(folder: ChatTreeFolderNode): number {
   return count;
 }
 
-function countNonMarkdownItems(items: readonly ItemInfo[]): number {
+function countNonMarkdownItems(items: readonly ItemRow[]): number {
   let count = 0;
   for (const item of items) {
     if (item.type !== "markdown") count += 1;

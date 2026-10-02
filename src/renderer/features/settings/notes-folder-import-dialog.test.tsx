@@ -106,6 +106,23 @@ describe("NotesFolderImportDialog", () => {
     expect(screen.queryByText("Notes imported")).toBeNull();
   });
 
+  it("shows Linking notes after the copy counter", () => {
+    notesImportUi.begin();
+    notesImportUi.progress({
+      type: "markdown:import-progress",
+      workspaceId: "workspace-1",
+      folderPath: "/vault",
+      index: 20,
+      total: 20,
+      relativePath: "",
+      step: "linking",
+    });
+    render(<NotesFolderImportDialog />);
+
+    expect(screen.getByText("Linking notes…")).toBeTruthy();
+    expect(screen.queryByText("Importing… 20 of 20")).toBeNull();
+  });
+
   it("titles an empty import and keeps the ignored counts", async () => {
     showRunningDialog();
 

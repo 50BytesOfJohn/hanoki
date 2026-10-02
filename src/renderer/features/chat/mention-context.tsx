@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { AttachedItemKind } from "@shared/chat/attached-items";
-import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import type { ChatTreeFolderNode, ChatTreeItem, ChatTreeSnapshot } from "@shared/ipc";
 import {
   CHAT_TOOL_LABELS,
   HANOKI_TOOL_ID,
@@ -132,7 +132,7 @@ export function flattenMentionCatalog(snapshot: ChatTreeSnapshot): MentionCatalo
   const notes: MentionCatalogItem[] = [];
   const chats: MentionCatalogItem[] = [];
 
-  const walk = (folders: ChatTreeFolderNode[], items: ItemInfo[]) => {
+  const walk = (folders: ChatTreeFolderNode[], items: ChatTreeItem[]) => {
     for (const item of items) {
       if (item.type === "markdown") {
         notes.push({ kind: "note", itemId: item.id, title: item.title });

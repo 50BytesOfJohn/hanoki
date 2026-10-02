@@ -109,6 +109,26 @@ export function NotesFolderImportDialog() {
     return () => cancelAnimationFrame(frame);
   }, [ui.phase]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const snap = notesImportUi.getSnapshot();
+      if (snap.phase === "running") {
+        event.preventDefault();
+        event.stopPropagation();
+        void cancelImport();
+        return;
+      }
+      if (snap.phase === "summary" && summaryCloseArmed.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        notesImportUi.reset();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   const progress = ui.phase === "running" ? ui.progress : null;
   const open = ui.phase === "summary" || progress !== null;
 
@@ -118,11 +138,18 @@ export function NotesFolderImportDialog() {
       disablePointerDismissal
       onOpenChange={(nextOpen, details) => {
         if (nextOpen) return;
-        if (ui.phase === "running") {
+        const snap = notesImportUi.getSnapshot();
+        if (snap.phase === "running") {
           void cancelImport();
           return;
         }
-        if (details.reason === "escape-key" && summaryCloseArmed.current) notesImportUi.reset();
+        if (
+          snap.phase === "summary" &&
+          details.reason === "escape-key" &&
+          summaryCloseArmed.current
+        ) {
+          notesImportUi.reset();
+        }
       }}
     >
       <DialogContent showCloseButton={false} className="sm:max-w-md">
@@ -148,16 +175,17 @@ function ProgressBody({
   canceling: boolean;
   onCancel: () => void;
 }) {
+  const linking = progress.step === "linking";
   const percent = progress.total === 0 ? 0 : Math.round((progress.index / progress.total) * 100);
 
   return (
     <>
       <DialogHeader>
         <p className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
-          Importing
+          {linking ? "Linking" : "Importing"}
         </p>
         <DialogTitle>
-          Importing… {progress.index} of {progress.total}
+          {linking ? "Linking notes…" : `Importing… ${progress.index} of ${progress.total}`}
         </DialogTitle>
         <DialogDescription className="truncate text-[12px]" title={progress.folderPath}>
           {truncateMiddle(progress.folderPath)}
@@ -167,9 +195,11 @@ function ProgressBody({
       <div className="h-1 overflow-hidden rounded-full bg-hover">
         <div className="h-full bg-foreground/60" style={{ width: `${percent}%` }} />
       </div>
-      <p className="truncate text-[12px] text-muted-foreground" title={progress.relativePath}>
-        {progress.relativePath}
-      </p>
+      {linking ? null : (
+        <p className="truncate text-[12px] text-muted-foreground" title={progress.relativePath}>
+          {progress.relativePath}
+        </p>
+      )}
       <div className="flex justify-end">
         <Button type="button" variant="ghost" size="sm" disabled={canceling} onClick={onCancel}>
           {canceling ? "Canceling…" : "Cancel"}

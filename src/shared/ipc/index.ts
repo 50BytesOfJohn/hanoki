@@ -329,6 +329,8 @@ export interface MarkdownInfo {
 
 export type ItemType = ChatInfo["type"] | TerminalInfo["type"] | MarkdownInfo["type"];
 export type ItemInfo = ChatInfo | TerminalInfo | MarkdownInfo;
+export type ChatTreeMarkdownInfo = Omit<MarkdownInfo, "data">;
+export type ChatTreeItem = ChatInfo | TerminalInfo | ChatTreeMarkdownInfo;
 
 export interface TerminalSessionSnapshot {
   itemId: string;
@@ -376,13 +378,13 @@ export interface ChatSettingsUpdateInput {
 
 export interface ChatTreeFolderNode extends FolderInfo {
   folders: ChatTreeFolderNode[];
-  items: ItemInfo[];
+  items: ChatTreeItem[];
 }
 
 export interface ChatTreeSnapshot {
   workspaceId: string;
   rootFolders: ChatTreeFolderNode[];
-  rootItems: ItemInfo[];
+  rootItems: ChatTreeItem[];
 }
 
 export interface ChatTreeFolderListItem extends FolderInfo {
@@ -394,7 +396,7 @@ export interface ChatTreeChildrenSlice {
   workspaceId: string;
   parentFolderId: string | null;
   folders: ChatTreeFolderListItem[];
-  items: ItemInfo[];
+  items: ChatTreeItem[];
 }
 
 export interface ChatTreeUiState {

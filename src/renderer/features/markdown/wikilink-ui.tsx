@@ -132,6 +132,7 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
 
   const edge = matchOutgoingLink(edges, targetText, alias);
   const resolvedId = edge?.toItemId ?? null;
+  const broken = Boolean(edges) && edge !== null && !resolvedId && renamedTitle === null;
   React.useEffect(() => {
     return subscribeToItemTitleUpdates((event) => {
       if (event.itemType !== "markdown" || event.itemId !== resolvedId) return;
@@ -139,7 +140,6 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
     });
   }, [resolvedId]);
 
-  const broken = Boolean(edges) && !resolvedId && renamedTitle === null;
   const label = alias ?? renamedTitle ?? edge?.title ?? targetText;
 
   return (
@@ -147,14 +147,19 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
       <button
         type="button"
         className={cn(broken && "wikilink-broken")}
-        disabled={broken || !resolvedId}
+        disabled={broken || (!resolvedId && !itemId)}
         aria-label={broken ? `Unresolved link ${label}` : `Open ${label}`}
         onMouseDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
         }}
         onClick={() => {
-          if (resolvedId) openNoteBeside(resolvedId);
+          if (resolvedId) {
+            openNoteBeside(resolvedId);
+            return;
+          }
+          if (!itemId || broken) return;
+          void openPendingWikilink(itemId, targetText, alias);
         }}
       >
         {label}
@@ -417,6 +422,24 @@ async function createLinkedNote(
       description: error instanceof Error ? error.message : "The note could not be created.",
     });
   }
+}
+
+async function openPendingWikilink(
+  itemId: string,
+  targetText: string,
+  alias: string | null,
+): Promise<void> {
+  try {
+    await markdownApi.flushContent(itemId);
+  } catch {
+    // The stored body is what the index reads.
+  }
+  const edges = await queryClient.fetchQuery({
+    queryKey: queryKeys.notes.outgoing(itemId),
+    queryFn: () => markdownApi.listOutgoing(itemId),
+  });
+  const match = matchOutgoingLink(edges, targetText, alias);
+  if (match?.toItemId) openNoteBeside(match.toItemId);
 }
 
 function openNoteBeside(itemId: string): void {
