@@ -1,12 +1,19 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
+import {
+  findWikilinks,
+  normalizeWikilinkTitle,
+  splitWikilinkFragment,
+} from "@shared/markdown/wikilink";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { sqliteMaxVariableNumber } from "../db/sqlite-max-variable-number";
 import { items, noteLinks } from "../db/schema";
 import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
 import {
@@ -33,17 +40,25 @@ import {
   getChatCurrentBranchId,
   getChatTreeChildren,
   getFolderById,
+  deleteChatTreeItems,
   deleteItem,
   getItemById,
+  listWorkspaceItemIds,
   moveChatTreeItems,
+  moveItem,
   searchWorkspaceChats,
   updateChatSettings,
+  updateFolderName,
   updateItemTitle,
 } from "./repository";
+import { importMarkdownNotesFromDirectory } from "../notes-folder-io/import-notes";
 import {
   listMarkdownTitleOptions,
   listNoteBacklinks,
+  listOutgoingNoteLinks,
+  rebuildImportedNoteLinks,
   rebuildWorkspaceNoteLinks,
+  resolveOpenNoteLinks,
 } from "./note-links";
 
 const testDataDirectory = mkdtempSync(join(tmpdir(), "hanoki-move-items-"));
@@ -89,6 +104,8 @@ beforeAll(() => {
       folder_id text references folders(id) on delete set null,
       type text not null,
       title text not null,
+      import_relative_path text,
+      import_root_id text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
@@ -1242,4 +1259,1568 @@ describe("note links", () => {
     expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
   });
+
+  it("resolves path and heading links inside one import root", () => {
+    const workspace = createWorkspace({ id: "links-path", name: "Path" });
+    const imported = createFolder({
+      workspaceId: workspace.id,
+      name: "Imported",
+      parentId: null,
+    });
+    const wrap = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault",
+      parentId: imported.id,
+    });
+    const projects = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrap.id,
+    });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+    });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projects.id,
+      importRelativePath: "Projects/Alpha",
+      importRootId: wrap.id,
+    });
+    const beta = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Beta",
+      folderId: projects.id,
+      importRootId: wrap.id,
+    });
+    const archive = createFolder({
+      workspaceId: workspace.id,
+      name: "Archive",
+      parentId: wrap.id,
+    });
+    const drafts = createFolder({
+      workspaceId: workspace.id,
+      name: "Drafts",
+      parentId: wrap.id,
+    });
+    const olderScene = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: archive.id,
+      importRelativePath: "Archive/Scene",
+      importRootId: wrap.id,
+    });
+    const newerScene = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: drafts.id,
+      importRelativePath: "Drafts/Scene",
+      importRootId: wrap.id,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    const body = [
+      "[[Projects/Alpha]]",
+      "[[Projects/Alpha.md]]",
+      "[[Projects/Alpha#Heading]]",
+      "[[projects/alpha]]",
+      "[[Projects/Beta]]",
+      "[[Alpha#Intro]]",
+      "[[Scene]]",
+      "[[Archive/Scene|old]]",
+      "[[Drafts/Scene#Later]]",
+    ].join("\n");
+    updateMarkdownContent(source.id, body);
+
+    const outsider = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Outsider",
+      folderId: null,
+    });
+    updateMarkdownContent(outsider.id, "[[Projects/Alpha]]\n[[Alpha]]");
+
+    expect(markdownOf(source.id)).toBe(body);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha.md")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha#Heading")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "projects/alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Beta")).toBe(beta.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(alpha.id);
+    expect(listNoteBacklinks(resident.id).map((link) => link.itemId)).toEqual([outsider.id]);
+    expect(linkedTo(workspace.id, source.id, "Scene")).toBe(olderScene.id);
+    expect(linkedTo(workspace.id, source.id, "Archive/Scene")).toBe(olderScene.id);
+    expect(linkedTo(workspace.id, source.id, "Drafts/Scene#Later")).toBe(newerScene.id);
+    expect(linkedTo(workspace.id, outsider.id, "Projects/Alpha")).toBeNull();
+    expect(linkedTo(workspace.id, outsider.id, "Alpha")).toBe(resident.id);
+    expect(listNoteBacklinks(newerScene.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(olderScene.id).map((link) => link.itemId)).toContain(source.id);
+  });
+
+  it("resolves a golden vault after import rebuild, scoped to each wrap", async () => {
+    const workspace = createWorkspace({ id: "links-vault", name: "Vault import" });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+    });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-golden-vault-"));
+    try {
+      mkdirSync(join(root, "Projects"), { recursive: true });
+      mkdirSync(join(root, "Archive"), { recursive: true });
+      mkdirSync(join(root, "Drafts"), { recursive: true });
+      writeFileSync(
+        join(root, "Projects", "Alpha.md"),
+        "---\ntitle: Alpha\n---\n[[Archive/Scene]]\n[[Drafts/Scene#Later]]\n",
+      );
+      writeFileSync(
+        join(root, "Archive", "Scene.md"),
+        "[[Projects/Alpha|the alpha]]\n[[Projects/Alpha#Heading]]\n",
+      );
+      writeFileSync(join(root, "Drafts", "Scene.md"), "[[Scene]]\n[[Projects/Alpha.md]]\n");
+      writeFileSync(join(root, "Loose.md"), "[[Alpha#Intro]]\n[[Loose|me]]\n");
+
+      const chatTree = createChatTreeService();
+      const first = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root);
+      expect(first.wrapFolderPath.startsWith("Imported/")).toBe(true);
+      expect(first.noteCount).toBe(4);
+
+      const notes = markdownRows(workspace.id);
+      const alpha = notes.find((note) => note.importRelativePath === "Projects/Alpha");
+      const archive = notes.find((note) => note.importRelativePath === "Archive/Scene");
+      const drafts = notes.find((note) => note.importRelativePath === "Drafts/Scene");
+      const loose = notes.find((note) => note.importRelativePath === "Loose");
+      expect(alpha?.markdown).toBe(
+        "---\ntitle: Alpha\n---\n[[Archive/Scene]]\n[[Drafts/Scene#Later]]\n",
+      );
+      expect(alpha?.importRootId).toBeTruthy();
+      expect(loose?.importRootId).toBe(alpha?.importRootId);
+      expect(alpha && archive && drafts && loose).toBeTruthy();
+      if (!alpha || !archive || !drafts || !loose) return;
+
+      expect(linkedTo(workspace.id, alpha.id, "Archive/Scene")).toBe(archive.id);
+      expect(linkedTo(workspace.id, alpha.id, "Drafts/Scene#Later")).toBe(drafts.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha#Heading")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, drafts.id, "Scene")).toBe(archive.id);
+      expect(linkedTo(workspace.id, drafts.id, "Projects/Alpha.md")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, loose.id, "Alpha#Intro")).toBe(alpha.id);
+      expect(linkedTo(workspace.id, loose.id, "Loose")).toBe(loose.id);
+      expect(markdownOf(archive.id)).toBe(
+        "[[Projects/Alpha|the alpha]]\n[[Projects/Alpha#Heading]]\n",
+      );
+
+      const second = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root);
+      expect(second.wrapFolderPath).not.toBe(first.wrapFolderPath);
+      const again = markdownRows(workspace.id).filter(
+        (note) => note.importRelativePath === "Projects/Alpha" && note.id !== alpha.id,
+      );
+      expect(again).toHaveLength(1);
+      const secondAlpha = again[0];
+      expect(secondAlpha?.importRootId).toBeTruthy();
+      expect(secondAlpha?.importRootId).not.toBe(alpha.importRootId);
+      const secondArchive = markdownRows(workspace.id).find(
+        (note) => note.importRelativePath === "Archive/Scene" && note.id !== archive.id,
+      );
+      expect(secondAlpha && secondArchive).toBeTruthy();
+      if (!secondAlpha || !secondArchive) return;
+      expect(linkedTo(workspace.id, secondArchive.id, "Projects/Alpha")).toBe(secondAlpha.id);
+      expect(linkedTo(workspace.id, archive.id, "Projects/Alpha")).toBe(alpha.id);
+      const secondDrafts = markdownRows(workspace.id).find(
+        (note) => note.importRelativePath === "Drafts/Scene" && note.id !== drafts.id,
+      );
+      expect(secondDrafts).toBeTruthy();
+      if (secondDrafts) {
+        expect(linkedTo(workspace.id, secondDrafts.id, "Scene")).toBe(secondArchive.id);
+      }
+      expect(linkedTo(workspace.id, drafts.id, "Scene")).toBe(archive.id);
+      expect(listNoteBacklinks(resident.id)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves titles that contain # before stripping a fragment", () => {
+    const workspace = createWorkspace({ id: "links-hash-title", name: "Hash title" });
+    const csharp = createMarkdown({ workspaceId: workspace.id, title: "C# notes", folderId: null });
+    const issue = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Issue #12",
+      folderId: null,
+    });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    const body = "[[C# notes]]\n[[Issue #12]]\n[[C# notes|lang]]";
+    updateMarkdownContent(source.id, body);
+
+    expect(markdownOf(source.id)).toBe(body);
+    expect(linkedTo(workspace.id, source.id, "C# notes")).toBe(csharp.id);
+    expect(linkedTo(workspace.id, source.id, "Issue #12")).toBe(issue.id);
+    expect(listNoteBacklinks(csharp.id).map((link) => link.itemId)).toEqual([source.id]);
+  });
+
+  it("keeps the fragment and alias when renaming a resolved title link", () => {
+    const workspace = createWorkspace({ id: "links-hash-rename", name: "Hash rename" });
+    const alpha = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Alpha#Intro|alias]]\n[[Projects/Alpha#H]]");
+
+    updateItemTitle(alpha.id, "New");
+
+    expect(markdownOf(source.id)).toBe("[[New#Intro|alias]]\n[[Projects/Alpha#H]]");
+    expect(linkedTo(workspace.id, source.id, "New#Intro")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha#H")).toBeNull();
+  });
+
+  it("does not rewrite a different note whose title extends the renamed title with #", () => {
+    const workspace = createWorkspace({ id: "links-hash-collision", name: "Hash collision" });
+    const note = createMarkdown({ workspaceId: workspace.id, title: "C", folderId: null });
+    const tips = createMarkdown({ workspaceId: workspace.id, title: "C# tips", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]");
+
+    updateItemTitle(note.id, "D");
+
+    expect(markdownOf(source.id)).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]");
+    expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+    expect(linkedTo(workspace.id, source.id, "D")).toBe(note.id);
+    expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(note.id);
+    expect(linkedTo(workspace.id, source.id, "C")).toBeNull();
+  });
+
+  it("keeps path links on the imported note after rename and move", () => {
+    const workspace = createWorkspace({ id: "links-path-stable", name: "Path stable" });
+    const imported = createFolder({
+      workspaceId: workspace.id,
+      name: "Imported",
+      parentId: null,
+    });
+    const wrap = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault",
+      parentId: imported.id,
+    });
+    const projects = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrap.id,
+    });
+    const elsewhere = createFolder({
+      workspaceId: workspace.id,
+      name: "Elsewhere",
+      parentId: wrap.id,
+    });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projects.id,
+      importRelativePath: "Projects/Alpha",
+      importRootId: wrap.id,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    const body = "[[Projects/Alpha]]\n[[Projects/Alpha#H|alias]]";
+    updateMarkdownContent(source.id, body);
+
+    updateItemTitle(alpha.id, "Renamed");
+    moveItem(alpha.id, elsewhere.id);
+    createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projects.id,
+    });
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    expect(markdownOf(source.id)).toBe(body);
+    const moved = getItemById(alpha.id);
+    expect(moved?.type).toBe("markdown");
+    if (moved?.type !== "markdown") return;
+    expect(moved.title).toBe("Renamed");
+    expect(moved.folderId).toBe(elsewhere.id);
+    expect(
+      getAppDatabase()
+        .select({ importRelativePath: items.importRelativePath })
+        .from(items)
+        .where(eq(items.id, alpha.id))
+        .get()?.importRelativePath,
+    ).toBe("Projects/Alpha");
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, source.id, "Projects/Alpha#H")).toBe(alpha.id);
+  });
+
+  it("keeps import links on the stored root after moves and folder renames", () => {
+    const workspace = createWorkspace({ id: "links-root-id", name: "Root id" });
+    const imported = createFolder({
+      workspaceId: workspace.id,
+      name: "Imported",
+      parentId: null,
+    });
+    const wrapA = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault A",
+      parentId: imported.id,
+    });
+    const wrapB = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault B",
+      parentId: imported.id,
+    });
+    const projectsA = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrapA.id,
+    });
+    const projectsB = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrapB.id,
+    });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projectsA.id,
+      importRelativePath: "Projects/Alpha",
+      importRootId: wrapA.id,
+    });
+    const sceneA = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: projectsA.id,
+      importRelativePath: "Projects/Scene",
+      importRootId: wrapA.id,
+    });
+    const sceneB = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: projectsB.id,
+      importRelativePath: "Projects/Scene",
+      importRootId: wrapB.id,
+    });
+    const sourceA = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index A",
+      folderId: wrapA.id,
+      importRootId: wrapA.id,
+    });
+    const sourceB = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index B",
+      folderId: wrapB.id,
+      importRootId: wrapB.id,
+    });
+    updateMarkdownContent(sourceA.id, "[[Projects/Alpha]]\n[[Scene]]");
+    updateMarkdownContent(sourceB.id, "[[Projects/Alpha]]\n[[Scene]]");
+
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Scene")).toBe(sceneA.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Projects/Alpha")).toBeNull();
+
+    moveItem(alpha.id, null);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(getItemById(alpha.id)?.folderId).toBeNull();
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+
+    moveItem(alpha.id, projectsB.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Projects/Alpha")).toBeNull();
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+
+    updateFolderName(imported.id, "Library");
+    updateFolderName(wrapA.id, "Renamed vault");
+    createFolder({ workspaceId: workspace.id, name: "Mine", parentId: imported.id });
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Scene")).toBe(sceneA.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+    expect(
+      getAppDatabase()
+        .select({ importRootId: items.importRootId })
+        .from(items)
+        .where(eq(items.id, alpha.id))
+        .get()?.importRootId,
+    ).toBe(wrapA.id);
+  });
+
+  it("prefers the same import over an older resident for a bare title", () => {
+    const workspace = createWorkspace({ id: "links-same-root", name: "Same root" });
+    const resident = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const imported = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Alpha]]\n[[Alpha#Intro]]");
+
+    expect(linkedTo(workspace.id, source.id, "Alpha")).toBe(imported.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(imported.id);
+    expect(listNoteBacklinks(resident.id)).toEqual([]);
+  });
+
+  it("uses a resident note when the import has no title match", () => {
+    const workspace = createWorkspace({
+      id: "links-resident-fallback",
+      name: "Resident fallback",
+    });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Only Resident",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Only Resident]]\n[[Only Resident#H]]");
+
+    expect(linkedTo(workspace.id, source.id, "Only Resident")).toBe(resident.id);
+    expect(linkedTo(workspace.id, source.id, "Only Resident#H")).toBe(resident.id);
+  });
+
+  it("leaves a bare link unresolved when the only match is another import", () => {
+    const workspace = createWorkspace({ id: "links-other-import", name: "Other import" });
+    createMarkdown({
+      workspaceId: workspace.id,
+      title: "Foreign",
+      folderId: null,
+      importRootId: "batch-b",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Foreign]]\n[[Foreign#H]]");
+
+    expect(linkedTo(workspace.id, source.id, "Foreign")).toBeNull();
+    expect(linkedTo(workspace.id, source.id, "Foreign#H")).toBeNull();
+  });
+
+  it("resolves a resident note's bare link by the oldest id", () => {
+    const workspace = createWorkspace({ id: "links-resident-global", name: "Resident global" });
+    const older = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Source",
+      folderId: null,
+    });
+    updateMarkdownContent(source.id, "[[Alpha]]\n[[Alpha#Intro]]");
+
+    expect(linkedTo(workspace.id, source.id, "Alpha")).toBe(older.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(older.id);
+    expect(listNoteBacklinks(newer.id)).toEqual([]);
+  });
+
+  it("skips per-note link indexing when asked and resolves on rebuild", () => {
+    const workspace = createWorkspace({ id: "links-skip-index", name: "Skip index" });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      skipLinkIndex: true,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Source",
+      folderId: null,
+      skipLinkIndex: true,
+    });
+    updateMarkdownContent(source.id, "[[Alpha]]", { skipLinkIndex: true });
+
+    expect(countNoteLinks(workspace.id)).toBe(0);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(linkedTo(workspace.id, source.id, "Alpha")).toBe(alpha.id);
+  });
+
+  it("reindexes one note whose links exceed the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "links-var-one", name: "Var one" });
+    const known = createMarkdown({ workspaceId: workspace.id, title: "Known", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    const linkCount = linksPastVariableLimit();
+    const lines = ["[[Known]]"];
+    for (let index = 1; index < linkCount; index += 1) lines.push(`[[m${index}]]`);
+
+    updateMarkdownContent(source.id, lines.join("\n"));
+
+    expect(countNoteLinks(workspace.id)).toBe(linkCount);
+    expect(linkedTo(workspace.id, source.id, "Known")).toBe(known.id);
+  });
+
+  it("rebuilds a workspace whose links exceed the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "links-var-many", name: "Var many" });
+    const known = createMarkdown({ workspaceId: workspace.id, title: "Known", folderId: null });
+    const perNote = 10;
+    const edgeCount = linksPastVariableLimit();
+    const noteCount = Math.ceil(edgeCount / perNote);
+    const db = getAppDatabase();
+    for (let noteIndex = 0; noteIndex < noteCount; noteIndex += 1) {
+      const lines: string[] = [];
+      for (let linkIndex = 0; linkIndex < perNote; linkIndex += 1) {
+        lines.push(
+          noteIndex === 0 && linkIndex === 0 ? "[[Known]]" : `[[x${noteIndex}-${linkIndex}]]`,
+        );
+      }
+      db.insert(items)
+        .values({
+          id: `var-many-${noteIndex}`,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: `Note ${noteIndex}`,
+          data: { markdown: lines.join("\n") },
+        })
+        .run();
+    }
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    expect(countNoteLinks(workspace.id)).toBe(noteCount * perNote);
+    expect(linkedTo(workspace.id, "var-many-0", "Known")).toBe(known.id);
+  });
+
+  it("rewrites a rename that happens while import is yielding", async () => {
+    const workspace = createWorkspace({ id: "links-import-rename", name: "Import rename" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-import-rename-"));
+    try {
+      writeFileSync(join(root, "A-source.md"), "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n");
+      writeFileSync(join(root, "C# tips.md"), "tips\n");
+      writeFileSync(join(root, "C.md"), "c\n");
+      for (let index = 0; index < 30; index += 1) {
+        writeFileSync(join(root, `P${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let scheduled = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: () => {
+          if (scheduled) return;
+          scheduled = true;
+          setImmediate(() => {
+            const note = getAppDatabase()
+              .select({ id: items.id })
+              .from(items)
+              .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "C")))
+              .get();
+            if (!note) throw new Error("C was not imported before the yield.");
+            updateItemTitle(note.id, "D");
+          });
+        },
+      });
+
+      expect(result.noteCount).toBe(33);
+      const notes = markdownRows(workspace.id);
+      const source = notes.find((note) => note.title === "A-source");
+      const tips = notes.find((note) => note.title === "C# tips");
+      const renamed = notes.find((note) => note.title === "D");
+      expect(source?.markdown).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n");
+      expect(tips && renamed && source).toBeTruthy();
+      if (!tips || !renamed || !source) return;
+      expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+      expect(linkedTo(workspace.id, source.id, "D")).toBe(renamed.id);
+      expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(renamed.id);
+      expect(source.importRootId).toBe(renamed.importRootId);
+      expect(source.importRootId).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a rename during a smaller import that overlaps a larger one", async () => {
+    const workspace = createWorkspace({ id: "links-overlap-import", name: "Overlap" });
+    const largeRoot = mkdtempSync(join(tmpdir(), "hanoki-import-large-"));
+    const smallRoot = mkdtempSync(join(tmpdir(), "hanoki-import-small-"));
+    try {
+      for (let index = 0; index < 50; index += 1) {
+        writeFileSync(join(largeRoot, `L${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+      writeFileSync(
+        join(smallRoot, "A-source.md"),
+        "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n",
+      );
+      writeFileSync(join(smallRoot, "C# tips.md"), "tips\n");
+      writeFileSync(join(smallRoot, "C.md"), "c\n");
+      for (let index = 0; index < 37; index += 1) {
+        writeFileSync(join(smallRoot, `S${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let scheduled = false;
+      const runSmall = () =>
+        importMarkdownNotesFromDirectory(chatTree, workspace.id, smallRoot, {
+          onProgress: () => {
+            if (scheduled) return;
+            scheduled = true;
+            setImmediate(() => {
+              const note = getAppDatabase()
+                .select({ id: items.id })
+                .from(items)
+                .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "C")))
+                .get();
+              if (!note) throw new Error("C was not imported before the yield.");
+              updateItemTitle(note.id, "D");
+            });
+          },
+        });
+
+      let held = false;
+      const large = await importMarkdownNotesFromDirectory(chatTree, workspace.id, largeRoot, {
+        onYield: async () => {
+          if (held) return;
+          held = true;
+          const small = await runSmall();
+          expect(small.noteCount).toBe(40);
+        },
+      });
+      expect(large.noteCount).toBe(50);
+      expect(held).toBe(true);
+
+      const notes = markdownRows(workspace.id);
+      const source = notes.find((note) => note.title === "A-source");
+      const tips = notes.find((note) => note.title === "C# tips");
+      const renamed = notes.find((note) => note.title === "D");
+      expect(source?.markdown).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n");
+      expect(tips && renamed && source).toBeTruthy();
+      if (!tips || !renamed || !source) return;
+      expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+      expect(linkedTo(workspace.id, source.id, "D")).toBe(renamed.id);
+      expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(renamed.id);
+    } finally {
+      rmSync(largeRoot, { recursive: true, force: true });
+      rmSync(smallRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("lists a path link with a fragment on the same edge backlinks use", () => {
+    const workspace = createWorkspace({ id: "outgoing-path-fragment", name: "Outgoing path" });
+    const wrap = createFolder({ workspaceId: workspace.id, name: "Vault", parentId: null });
+    const ideas = createFolder({ workspaceId: workspace.id, name: "Ideas", parentId: wrap.id });
+    const garden = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Garden",
+      folderId: ideas.id,
+      importRelativePath: "Ideas/Garden",
+      importRootId: wrap.id,
+    });
+    const welcome = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Welcome",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    updateMarkdownContent(welcome.id, "[[Ideas/Garden#Plants]]");
+
+    expect(listOutgoingNoteLinks(welcome.id)).toEqual([
+      {
+        targetText: "Ideas/Garden#Plants",
+        alias: "",
+        toItemId: garden.id,
+        title: "Garden",
+      },
+    ]);
+    expect(listNoteBacklinks(garden.id).map((link) => link.itemId)).toEqual([welcome.id]);
+  });
+
+  it("lists a path link after the target is renamed and moved", () => {
+    const workspace = createWorkspace({ id: "outgoing-path-moved", name: "Outgoing moved" });
+    const wrap = createFolder({ workspaceId: workspace.id, name: "Vault", parentId: null });
+    const work = createFolder({ workspaceId: workspace.id, name: "Work", parentId: wrap.id });
+    const elsewhere = createFolder({
+      workspaceId: workspace.id,
+      name: "Elsewhere",
+      parentId: wrap.id,
+    });
+    const standup = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Standup",
+      folderId: work.id,
+      importRelativePath: "Work/Standup",
+      importRootId: wrap.id,
+    });
+    const retro = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Retro",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    updateMarkdownContent(retro.id, "[[Work/Standup]]");
+    updateItemTitle(standup.id, "Daily");
+    moveItem(standup.id, elsewhere.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    expect(listOutgoingNoteLinks(retro.id)).toEqual([
+      { targetText: "Work/Standup", alias: "", toItemId: standup.id, title: "Daily" },
+    ]);
+    expect(listNoteBacklinks(standup.id).map((link) => link.itemId)).toEqual([retro.id]);
+  });
+
+  it("leaves a scoped bare link unresolved when only another import has the title", () => {
+    const workspace = createWorkspace({ id: "outgoing-other-import", name: "Outgoing other" });
+    const foreign = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Shared",
+      folderId: null,
+      importRootId: "batch-b",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Shared]]");
+
+    expect(listOutgoingNoteLinks(source.id)).toEqual([
+      { targetText: "Shared", alias: "", toItemId: null, title: null },
+    ]);
+    expect(listNoteBacklinks(foreign.id)).toEqual([]);
+  });
+
+  it("resolves a resident global link to the oldest note", () => {
+    const workspace = createWorkspace({ id: "outgoing-resident", name: "Outgoing resident" });
+    const older = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Alpha]]");
+
+    expect(listOutgoingNoteLinks(source.id)).toEqual([
+      { targetText: "Alpha", alias: "", toItemId: older.id, title: "Alpha" },
+    ]);
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(newer.id)).toEqual([]);
+  });
+
+  it("moves and deletes more item ids than the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "items-var-limit", name: "Items var" });
+    const dest = createFolder({ workspaceId: workspace.id, name: "Dest", parentId: null });
+    const count = sqliteMaxVariableNumber() + 1;
+    const ids = Array.from(
+      { length: count },
+      (_, index) => `var-${String(index).padStart(6, "0")}`,
+    );
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, type, title, data, created_at, updated_at) VALUES (?, ?, 'markdown', ?, '{}', 1, 1)",
+    );
+    sqlite.exec("BEGIN");
+    try {
+      for (const id of ids) insert.run(id, workspace.id, id);
+      sqlite.exec("COMMIT");
+    } catch (error) {
+      sqlite.exec("ROLLBACK");
+      throw error;
+    }
+
+    expect(listWorkspaceItemIds(workspace.id, ids)).toEqual(ids);
+    const moved = moveChatTreeItems(
+      workspace.id,
+      ids.map((id) => ({ kind: "item", id })),
+      dest.id,
+    );
+    expect(moved.movedItems).toHaveLength(count);
+    expect(getItemById(ids[0]!)?.folderId).toBe(dest.id);
+    expect(getItemById(ids[count - 1]!)?.folderId).toBe(dest.id);
+
+    const deleted = deleteChatTreeItems(
+      workspace.id,
+      ids.map((id) => ({ kind: "item", id })),
+    );
+    expect(deleted.deletedItemIds).toHaveLength(count);
+    expect(getItemById(ids[0]!)).toBeNull();
+    expect(getItemById(ids[count - 1]!)).toBeNull();
+  }, 180_000);
+
+  it("matches the scan resolver on a mixed import and resident fixture", () => {
+    const workspace = createWorkspace({ id: "resolve-mixed", name: "Resolve mixed" });
+    const db = getAppDatabase();
+    const notes = [
+      { id: "a-resident", title: "Alpha", importRootId: null, path: null, body: "" },
+      { id: "b-resident", title: "Alpha", importRootId: null, path: null, body: "[[Beta]]" },
+      {
+        id: "c-root",
+        title: "Alpha",
+        importRootId: "root-r",
+        path: "Projects/Alpha",
+        body: "",
+      },
+      { id: "d-root", title: "Beta", importRootId: "root-r", path: "Beta", body: "[[Missing]]" },
+      { id: "e-foreign", title: "Alpha", importRootId: "root-other", path: null, body: "" },
+      {
+        id: "f-source",
+        title: "Source",
+        importRootId: "root-r",
+        path: "Source",
+        body: "[[Alpha]]\n[[Alpha#Heading]]\n[[Projects/Alpha]]\n[[Beta]]\n[[Missing]]\n",
+      },
+      {
+        id: "g-home",
+        title: "Home",
+        importRootId: null,
+        path: null,
+        body: "[[Alpha]]",
+      },
+    ];
+    for (const note of notes) {
+      db.insert(items)
+        .values({
+          id: note.id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: note.title,
+          importRelativePath: note.path,
+          importRootId: note.importRootId,
+          data: { markdown: note.body },
+        })
+        .run();
+    }
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    for (const note of notes) {
+      for (const link of findWikilinks(note.body)) {
+        expect(linkedTo(workspace.id, note.id, link.target.trim())).toBe(
+          referenceResolveTarget(notes, note.importRootId, link.target),
+        );
+      }
+    }
+    expect(linkedTo(workspace.id, "g-home", "Alpha")).toBe("a-resident");
+    expect(linkedTo(workspace.id, "f-source", "Alpha")).toBe("c-root");
+    expect(linkedTo(workspace.id, "f-source", "Projects/Alpha")).toBe("c-root");
+    expect(linkedTo(workspace.id, "f-source", "Missing")).toBeNull();
+  });
+
+  it("scopes an import rebuild to that root and leaves the same edges as a full rebuild", async () => {
+    const workspace = createWorkspace({ id: "resolve-scoped", name: "Resolve scoped" });
+    const db = getAppDatabase();
+    db.insert(items)
+      .values({
+        id: "scope-resident",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Home",
+        data: { markdown: "[[Fresh]]" },
+      })
+      .run();
+    db.insert(items)
+      .values({
+        id: "scope-old",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Old",
+        importRootId: "root-old",
+        data: { markdown: "[[Home]]\n[[Later]]" },
+      })
+      .run();
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    db.insert(items)
+      .values({
+        id: "scope-fresh",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Fresh",
+        importRootId: "root-new",
+        importRelativePath: "Fresh",
+        data: { markdown: "[[Home]]\n[[Old]]" },
+      })
+      .run();
+    await rebuildImportedNoteLinks(workspace.id, "root-new");
+    const scoped = edgeRows(workspace.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(edgeRows(workspace.id)).toEqual(scoped);
+    expect(linkedTo(workspace.id, "scope-resident", "Fresh")).toBe("scope-fresh");
+    expect(linkedTo(workspace.id, "scope-old", "Home")).toBe("scope-resident");
+    expect(linkedTo(workspace.id, "scope-old", "Later")).toBeNull();
+  });
+
+  it("rebinds a hashed title the same way a full rebuild does", async () => {
+    const workspace = createWorkspace({ id: "resolve-hash", name: "Resolve hash" });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Home",
+      folderId: null,
+    });
+    updateMarkdownContent(source.id, "[[G# tips]]");
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(resident.id);
+
+    const exact = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G# tips",
+      folderId: null,
+    });
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(exact.id);
+
+    updateMarkdownContent(source.id, "[[G# notes]]");
+    expect(linkedTo(workspace.id, source.id, "G# notes")).toBe(resident.id);
+    const renamed = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Temp",
+      folderId: null,
+    });
+    updateItemTitle(renamed.id, "G# notes");
+    expect(linkedTo(workspace.id, source.id, "G# notes")).toBe(renamed.id);
+
+    updateMarkdownContent(source.id, "[[G# later]]");
+    expect(linkedTo(workspace.id, source.id, "G# later")).toBe(resident.id);
+    getAppDatabase()
+      .insert(items)
+      .values({
+        id: "hash-imported",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "G# later",
+        importRootId: "root-hash",
+        data: { markdown: "" },
+      })
+      .run();
+    await rebuildImportedNoteLinks(workspace.id, "root-hash");
+    const scoped = edgeRows(workspace.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(edgeRows(workspace.id)).toEqual(scoped);
+    expect(linkedTo(workspace.id, source.id, "G# later")).toBe("hash-imported");
+  });
+
+  it("re-resolves only the hashed title being created", () => {
+    const workspace = createWorkspace({ id: "hash-scoped-create", name: "Hash scoped create" });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Home",
+      folderId: null,
+    });
+    updateMarkdownContent(source.id, "[[G# tips]]");
+    const db = getAppDatabase();
+    for (let index = 0; index < 200; index += 1) {
+      const id = `decoy-${String(index).padStart(3, "0")}`;
+      const title = `Hash ${index}# x`;
+      db.insert(items)
+        .values({
+          id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title,
+          data: { markdown: "" },
+        })
+        .run();
+      db.insert(noteLinks)
+        .values({
+          workspaceId: workspace.id,
+          fromItemId: source.id,
+          toItemId: resident.id,
+          targetText: title,
+          alias: "",
+        })
+        .run();
+    }
+
+    expect(resolveOpenNoteLinks(workspace.id, { title: "G# tips" })).toBe(1);
+
+    const exact = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G# tips",
+      folderId: null,
+    });
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(exact.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe(resident.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 199# x")).toBe(resident.id);
+
+    const plain = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Plain",
+      folderId: null,
+    });
+    deleteItem(plain.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe(resident.id);
+
+    resolveOpenNoteLinks(workspace.id, { hashed: true });
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe("decoy-000");
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(exact.id);
+  });
+
+  it("keeps edges when a source and a target disappear during the rebuild yield", async () => {
+    const workspace = createWorkspace({ id: "resolve-yield-delete", name: "Yield delete" });
+    const db = getAppDatabase();
+    db.insert(items)
+      .values({
+        id: "yield-keep",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Keep",
+        importRootId: "root-yield",
+        data: { markdown: "" },
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+    db.insert(items)
+      .values({
+        id: "yield-target",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Target",
+        importRootId: "root-yield",
+        data: { markdown: "" },
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+    insertImportedNotes(workspace.id, 2001, "[[Target]]\n[[Keep]]", "root-yield");
+
+    let yielded = false;
+    await rebuildImportedNoteLinks(workspace.id, "root-yield", {
+      onYield: async () => {
+        if (yielded) return;
+        yielded = true;
+        deleteItem("yield-src-0000");
+        deleteItem("yield-target");
+      },
+    });
+
+    expect(yielded).toBe(true);
+    expect(countNoteLinks(workspace.id)).toBe(4000);
+    expect(linkedTo(workspace.id, "yield-src-0001", "Keep")).toBe("yield-keep");
+    expect(linkedTo(workspace.id, "yield-src-0001", "Target")).toBeNull();
+    expect(linkedTo(workspace.id, "yield-src-0000", "Keep")).toBeNull();
+  });
+
+  it("keeps an edit made during the rebuild yield", async () => {
+    const workspace = createWorkspace({ id: "resolve-yield-edit", name: "Yield edit" });
+    const db = getAppDatabase();
+    db.insert(items)
+      .values({
+        id: "edit-keep",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Keep",
+        importRootId: "root-edit",
+        data: { markdown: "" },
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+    db.insert(items)
+      .values({
+        id: "edit-target",
+        workspaceId: workspace.id,
+        folderId: null,
+        type: "markdown",
+        title: "Target",
+        importRootId: "root-edit",
+        data: { markdown: "" },
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+    insertImportedNotes(workspace.id, 2001, "[[Target]]", "root-edit", "edit-src");
+
+    let yielded = false;
+    await rebuildImportedNoteLinks(workspace.id, "root-edit", {
+      onYield: async () => {
+        if (yielded) return;
+        yielded = true;
+        updateMarkdownContent("edit-src-0000", "[[Keep]]");
+      },
+    });
+
+    expect(yielded).toBe(true);
+    expect(linkedTo(workspace.id, "edit-src-0000", "Keep")).toBe("edit-keep");
+    expect(linkedTo(workspace.id, "edit-src-0000", "Target")).toBeNull();
+    expect(linkedTo(workspace.id, "edit-src-0001", "Target")).toBe("edit-target");
+  });
+
+  it("rewrites a rename that happens at the first linking yield", async () => {
+    const workspace = createWorkspace({ id: "links-linking-rename", name: "Linking rename" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-linking-rename-"));
+    try {
+      writeFileSync(join(root, "C.md"), "c\n");
+      for (let index = 0; index < 2000; index += 1) {
+        writeFileSync(join(root, `N${String(index).padStart(4, "0")}.md`), "[[C]]\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let linking = false;
+      let renamed = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: (progress) => {
+          if (progress.step === "linking") linking = true;
+        },
+        onYield: () => {
+          if (!linking || renamed) return;
+          renamed = true;
+          const note = getAppDatabase()
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "C")))
+            .get();
+          if (!note) throw new Error("C was not imported before the linking yield.");
+          updateItemTitle(note.id, "Renamed");
+        },
+      });
+
+      expect(result.noteCount).toBe(2001);
+      expect(renamed).toBe(true);
+      const notes = markdownRows(workspace.id);
+      const sources = notes.filter((note) => note.title !== "Renamed");
+      expect(sources).toHaveLength(2000);
+      for (const note of sources) expect(note.markdown).toBe("[[Renamed]]\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("keeps a renamed batch note's outgoing links", async () => {
+    const workspace = createWorkspace({ id: "resolve-yield-rename-out", name: "Yield rename out" });
+    const db = getAppDatabase();
+    for (const note of [
+      { id: "out-keep", title: "Keep" },
+      { id: "out-also", title: "Also" },
+    ]) {
+      db.insert(items)
+        .values({
+          id: note.id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: note.title,
+          importRootId: "root-out",
+          data: { markdown: "" },
+          createdAt: 1,
+          updatedAt: 1,
+        })
+        .run();
+    }
+    insertImportedNotes(workspace.id, 2001, "[[Keep]]\n[[Also]]", "root-out", "out-src");
+
+    let yielded = false;
+    await rebuildImportedNoteLinks(workspace.id, "root-out", {
+      onYield: async () => {
+        if (yielded) return;
+        yielded = true;
+        updateItemTitle("out-src-0000", "Renamed");
+      },
+    });
+
+    expect(yielded).toBe(true);
+    expect(linkedTo(workspace.id, "out-src-0000", "Keep")).toBe("out-keep");
+    expect(linkedTo(workspace.id, "out-src-0000", "Also")).toBe("out-also");
+    const scoped = edgeRows(workspace.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(edgeRows(workspace.id)).toEqual(scoped);
+  });
+
+  it("rewrites a rename that lands between linking progress and the index load", async () => {
+    const workspace = createWorkspace({ id: "links-linking-immediate", name: "Linking immediate" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-linking-immediate-"));
+    try {
+      writeFileSync(join(root, "Target.md"), "t\n");
+      writeFileSync(join(root, "A.md"), "[[Target]]\n");
+      writeFileSync(join(root, "B.md"), "[[Target]]\n");
+
+      const chatTree = createChatTreeService();
+      let queued = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: (progress) => {
+          if (progress.step !== "linking" || queued) return;
+          queued = true;
+          setImmediate(() => {
+            const note = getAppDatabase()
+              .select({ id: items.id })
+              .from(items)
+              .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Target")))
+              .get();
+            if (!note) throw new Error("Target was not imported before linking.");
+            updateItemTitle(note.id, "Moved");
+          });
+        },
+      });
+
+      expect(result.status).toBe("imported");
+      expect(queued).toBe(true);
+      const notes = markdownRows(workspace.id);
+      const sources = notes.filter((note) => note.title !== "Moved");
+      expect(sources).toHaveLength(2);
+      for (const note of sources) expect(note.markdown).toBe("[[Moved]]\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("imports when a renamed note is deleted before replay", async () => {
+    const workspace = createWorkspace({ id: "links-rename-delete", name: "Rename delete" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-rename-delete-"));
+    try {
+      writeFileSync(join(root, "Other.md"), "o\n");
+      writeFileSync(join(root, "Source.md"), "[[Victim]]\n[[Other]]\n");
+      writeFileSync(join(root, "Victim.md"), "v\n");
+      for (let index = 0; index < 30; index += 1) {
+        writeFileSync(join(root, `Z${String(index).padStart(2, "0")}.md`), "z\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let acted = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onYield: () => {
+          if (acted) return;
+          const db = getAppDatabase();
+          const victim = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Victim")))
+            .get();
+          const other = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Other")))
+            .get();
+          if (!victim || !other) return;
+          acted = true;
+          updateItemTitle(victim.id, "Gone");
+          deleteItem(victim.id);
+          updateItemTitle(other.id, "Moved");
+        },
+      });
+
+      expect(result.status).toBe("imported");
+      expect(acted).toBe(true);
+      const source = markdownRows(workspace.id).find((note) => note.title === "Source");
+      expect(source?.markdown).toBe("[[Victim]]\n[[Moved]]\n");
+      expect(getItemById(source?.id ?? "")).not.toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replays a rename chain split across the rewind as its final title", async () => {
+    const workspace = createWorkspace({ id: "links-rename-chain", name: "Rename chain" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-rename-chain-"));
+    try {
+      writeFileSync(join(root, "Beta.md"), "beta\n");
+      writeFileSync(join(root, "M-alpha.md"), "alpha\n");
+      for (let index = 0; index < 1999; index += 1) {
+        writeFileSync(join(root, `N${String(index).padStart(4, "0")}.md`), "[[M-alpha]]\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let linking = false;
+      let renamedToBeta = false;
+      let renamedToGamma = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: (progress) => {
+          if (progress.step === "linking") linking = true;
+        },
+        onYield: () => {
+          const db = getAppDatabase();
+          const alpha = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "M-alpha")))
+            .get();
+          if (!linking) {
+            if (renamedToBeta || !alpha) return;
+            updateItemTitle(alpha.id, "Beta");
+            renamedToBeta = true;
+            return;
+          }
+          if (renamedToGamma) return;
+          if (!alpha) throw new Error("M-alpha was not restored before the linking yield.");
+          updateItemTitle(alpha.id, "Gamma");
+          renamedToGamma = true;
+        },
+      });
+
+      expect(result.noteCount).toBe(2001);
+      expect(renamedToBeta).toBe(true);
+      expect(renamedToGamma).toBe(true);
+      const notes = markdownRows(workspace.id);
+      const gamma = notes.find((note) => note.title === "Gamma");
+      const beta = notes.find((note) => note.title === "Beta");
+      const source = notes.find((note) => note.title === "N0000");
+      expect(gamma?.id).toBeTruthy();
+      expect(beta?.id).toBeTruthy();
+      expect(source?.markdown).toBe("[[Gamma]]\n");
+      expect(linkedTo(workspace.id, source?.id ?? "", "Gamma")).toBe(gamma?.id);
+      expect(linkedTo(workspace.id, source?.id ?? "", "Beta")).toBeNull();
+      const sources = notes.filter((note) => note.title.startsWith("N"));
+      expect(sources).toHaveLength(1999);
+      for (const note of sources) expect(note.markdown).toBe("[[Gamma]]\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("rewrites 2000 inbound links from one index", () => {
+    const workspace = createWorkspace({ id: "rename-2k", name: "Rename 2k" });
+    const target = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Target",
+      folderId: null,
+      skipLinkIndex: true,
+    });
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, folder_id, type, title, data, created_at, updated_at) VALUES (?, ?, NULL, 'markdown', ?, ?, ?, ?)",
+    );
+    sqlite.exec("BEGIN");
+    for (let index = 0; index < 2000; index += 1) {
+      insert.run(
+        `src-${String(index).padStart(4, "0")}`,
+        workspace.id,
+        `Source ${index}`,
+        JSON.stringify({ markdown: "[[Target]]" }),
+        index + 1,
+        index + 1,
+      );
+    }
+    sqlite.exec("COMMIT");
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    const start = performance.now();
+    updateItemTitle(target.id, "Renamed");
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(1000);
+    const sample = getItemById("src-0000");
+    expect(sample?.type === "markdown" ? sample.data.markdown : "").toBe("[[Renamed]]");
+  }, 30_000);
+
+  it("rebuilds 20k notes and 30k links in under 5s", () => {
+    const workspace = createWorkspace({ id: "resolve-20k", name: "Resolve 20k" });
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, folder_id, type, title, import_relative_path, import_root_id, data, created_at, updated_at) VALUES (?, ?, NULL, 'markdown', ?, ?, 'root-a', ?, ?, ?)",
+    );
+    sqlite.exec("BEGIN");
+    for (let index = 0; index < 20_000; index += 1) {
+      const target = index === 0 ? 1 : index - 1;
+      const markdown =
+        index < 10_000 ? `[[Note ${target}]]\n[[Also ${target}]]\n` : `[[Note ${target}]]\n`;
+      insert.run(
+        `n-${String(index).padStart(6, "0")}`,
+        workspace.id,
+        `Note ${index}`,
+        `Notes/Note ${index}`,
+        JSON.stringify({ markdown }),
+        index + 1,
+        index + 1,
+      );
+    }
+    sqlite.exec("COMMIT");
+
+    const start = performance.now();
+    rebuildWorkspaceNoteLinks(workspace.id);
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(5_000);
+    expect(countNoteLinks(workspace.id)).toBe(30_000);
+  }, 60_000);
 });
+
+function insertImportedNotes(
+  workspaceId: string,
+  count: number,
+  body: string,
+  rootId: string,
+  idPrefix = "yield-src",
+): void {
+  const sqlite = getAppDatabase().$client;
+  const insert = sqlite.prepare(
+    "INSERT INTO items (id, workspace_id, folder_id, type, title, import_root_id, data, created_at, updated_at) VALUES (?, ?, NULL, 'markdown', ?, ?, ?, ?, ?)",
+  );
+  sqlite.exec("BEGIN");
+  try {
+    for (let index = 0; index < count; index += 1) {
+      const stamp = index + 1;
+      insert.run(
+        `${idPrefix}-${String(index).padStart(4, "0")}`,
+        workspaceId,
+        `Note ${index}`,
+        rootId,
+        JSON.stringify({ markdown: body }),
+        stamp,
+        stamp,
+      );
+    }
+    sqlite.exec("COMMIT");
+  } catch (error) {
+    sqlite.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function edgeRows(workspaceId: string) {
+  return getAppDatabase()
+    .select({
+      fromItemId: noteLinks.fromItemId,
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+      toItemId: noteLinks.toItemId,
+    })
+    .from(noteLinks)
+    .where(eq(noteLinks.workspaceId, workspaceId))
+    .all()
+    .sort(
+      (left, right) =>
+        left.fromItemId.localeCompare(right.fromItemId) ||
+        left.targetText.localeCompare(right.targetText) ||
+        left.alias.localeCompare(right.alias),
+    );
+}
+
+function referenceResolveTarget(
+  notes: readonly {
+    id: string;
+    title: string;
+    importRootId: string | null;
+    path: string | null;
+  }[],
+  sourceRootId: string | null,
+  target: string,
+): string | null {
+  const fullKey = normalizeWikilinkTitle(target.trim());
+  if (fullKey.length === 0) return null;
+  const lookup = splitWikilinkFragment(target).lookup;
+  const strippedKey = normalizeWikilinkTitle(lookup);
+  const pathKey = lookup.includes("/") ? lookup.replace(/\.md$/i, "") : null;
+  const oldest = (matches: readonly { id: string }[]) =>
+    matches.reduce<{ id: string } | null>(
+      (current, note) => (!current || note.id < current.id ? note : current),
+      null,
+    )?.id ?? null;
+
+  if (pathKey && sourceRootId) {
+    const wanted = normalizeWikilinkTitle(pathKey);
+    const scoped = notes.filter((note) => note.importRootId === sourceRootId);
+    const pathHit = oldest(
+      scoped.filter(
+        (note) =>
+          note.path !== null && normalizeWikilinkTitle(note.path.replace(/\.md$/i, "")) === wanted,
+      ),
+    );
+    if (pathHit) return pathHit;
+  }
+
+  const scopes = sourceRootId
+    ? [
+        notes.filter((note) => note.importRootId === sourceRootId),
+        notes.filter((note) => note.importRootId === null),
+      ]
+    : [notes];
+  for (const scope of scopes) {
+    const exact = oldest(scope.filter((note) => normalizeWikilinkTitle(note.title) === fullKey));
+    if (exact) return exact;
+    if (strippedKey !== fullKey && strippedKey.length > 0) {
+      const stripped = oldest(
+        scope.filter((note) => normalizeWikilinkTitle(note.title) === strippedKey),
+      );
+      if (stripped) return stripped;
+    }
+  }
+  return null;
+}
+
+function linksPastVariableLimit(): number {
+  return Math.max(5000, Math.floor(sqliteVariableLimit() / 5) + 1);
+}
+
+function sqliteVariableLimit(): number {
+  const sqlite = getAppDatabase().$client;
+  const query = sqlite.prepare("SELECT sqlite_compileoption_get(?) AS opt");
+  for (let index = 0; ; index += 1) {
+    const row = query.get(index) as { opt: string | null } | undefined;
+    if (!row?.opt) break;
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.opt);
+    const parsed = match?.[1] ? Number(match[1]) : Number.NaN;
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return 999;
+}
+
+function countNoteLinks(workspaceId: string): number {
+  const rows = getAppDatabase()
+    .select({ fromItemId: noteLinks.fromItemId })
+    .from(noteLinks)
+    .where(eq(noteLinks.workspaceId, workspaceId))
+    .all();
+  return rows.length;
+}
+
+function linkedTo(workspaceId: string, fromItemId: string, targetText: string): string | null {
+  const row = getAppDatabase()
+    .select({ toItemId: noteLinks.toItemId })
+    .from(noteLinks)
+    .where(
+      and(
+        eq(noteLinks.workspaceId, workspaceId),
+        eq(noteLinks.fromItemId, fromItemId),
+        eq(noteLinks.targetText, targetText),
+      ),
+    )
+    .get();
+  return row?.toItemId ?? null;
+}
+
+function markdownRows(workspaceId: string) {
+  return getAppDatabase()
+    .select({
+      id: items.id,
+      title: items.title,
+      importRelativePath: items.importRelativePath,
+      importRootId: items.importRootId,
+      data: items.data,
+    })
+    .from(items)
+    .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
+    .all()
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      importRelativePath: row.importRelativePath,
+      importRootId: row.importRootId,
+      markdown: "markdown" in row.data ? row.data.markdown : "",
+    }));
+}

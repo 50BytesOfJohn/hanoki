@@ -8,8 +8,10 @@ type MarkdownApi = Pick<
   | "flushMarkdownContent"
   | "listMarkdownTitles"
   | "listNoteBacklinks"
+  | "listOutgoingNoteLinks"
   | "exportMarkdownNotesFolder"
   | "importMarkdownNotesFolder"
+  | "cancelMarkdownNotesImport"
 >;
 
 export function createMarkdownApi(): MarkdownApi {
@@ -21,9 +23,11 @@ export function createMarkdownApi(): MarkdownApi {
     flushMarkdownContent: (id) => invokeIpc(IPC_CHANNELS.markdown.flushContent, id),
     listMarkdownTitles: (workspaceId) => invokeIpc(IPC_CHANNELS.markdown.listTitles, workspaceId),
     listNoteBacklinks: (itemId) => invokeIpc(IPC_CHANNELS.markdown.listBacklinks, itemId),
+    listOutgoingNoteLinks: (itemId) => invokeIpc(IPC_CHANNELS.markdown.listOutgoing, itemId),
     exportMarkdownNotesFolder: (workspaceId) =>
       invokeIpc(IPC_CHANNELS.markdown.exportFolder, workspaceId),
     importMarkdownNotesFolder: (workspaceId) =>
       invokeIpc(IPC_CHANNELS.markdown.importFolder, workspaceId),
+    cancelMarkdownNotesImport: () => invokeIpc(IPC_CHANNELS.markdown.cancelImport),
   };
 }

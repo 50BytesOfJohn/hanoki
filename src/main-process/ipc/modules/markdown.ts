@@ -6,6 +6,7 @@ import {
   type MarkdownInfo,
   type MarkdownTitleOption,
   type NoteBacklink,
+  type NoteOutgoingLink,
 } from "@shared/ipc";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "@shared/markdown/folder-io";
@@ -15,7 +16,10 @@ import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
 import { exportMarkdownNotesFolder } from "../../notes-folder-io/export-notes";
-import { importMarkdownNotesFolder } from "../../notes-folder-io/import-notes";
+import {
+  importMarkdownNotesFolder,
+  requestMarkdownNotesImportCancel,
+} from "../../notes-folder-io/import-notes";
 
 const markdownContentSchema = type(`string <= ${MAX_MARKDOWN_LENGTH}`);
 type UntrustedIpcValue = Parameters<typeof parseChatId>[0];
@@ -115,6 +119,14 @@ export function registerMarkdownIpcModule(
     },
     handler: ({ services }, _event, itemId) => services.chatTree.listNoteBacklinks(itemId),
   });
+  registerInvokeHandler<[string], NoteOutgoingLink[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.listOutgoing,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseMarkdownId(args[0])];
+    },
+    handler: ({ services }, _event, itemId) => services.chatTree.listOutgoingNoteLinks(itemId),
+  });
   registerInvokeHandler<[string], NotesFolderExportResult>(context, registeredChannels, {
     channel: IPC_CHANNELS.markdown.exportFolder,
     parseArgs: (args) => {
@@ -132,5 +144,15 @@ export function registerMarkdownIpcModule(
     },
     handler: ({ services }, event, workspaceId) =>
       importMarkdownNotesFolder({ services, sender: event.sender, workspaceId }),
+  });
+  registerInvokeHandler<[], void>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.cancelImport,
+    parseArgs: (args) => {
+      count(args, 0);
+      return [];
+    },
+    handler: (_context, event) => {
+      requestMarkdownNotesImportCancel(event.sender.id);
+    },
   });
 }

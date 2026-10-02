@@ -8,6 +8,10 @@ import {
 } from "@shared/ipc";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
+import {
+  toSharedChatTreeChildren,
+  toSharedChatTreeSnapshot,
+} from "../../services/chat-tree-service";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -110,7 +114,8 @@ export function registerChatTreeIpcModule(
       expectArgCount(args, 1);
       return [parseValidWorkspaceId(args[0])];
     },
-    handler: ({ services }, _event, workspaceId) => services.chatTree.getChatTree(workspaceId),
+    handler: ({ services }, _event, workspaceId) =>
+      toSharedChatTreeSnapshot(services.chatTree.getChatTree(workspaceId)),
   });
 
   registerInvokeHandler<[string, string | null], ChatTreeChildrenSlice>(
@@ -123,7 +128,9 @@ export function registerChatTreeIpcModule(
         return [parseValidWorkspaceId(args[0]), parseNullableFolderId(args[1])];
       },
       handler: ({ services }, _event, workspaceId, parentFolderId) =>
-        services.chatTree.getChatTreeChildren(workspaceId, parentFolderId),
+        toSharedChatTreeChildren(
+          services.chatTree.getChatTreeChildren(workspaceId, parentFolderId),
+        ),
     },
   );
 

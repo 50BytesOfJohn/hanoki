@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findWikilinks,
   formatWikilink,
+  matchOutgoingLink,
   oldestByItemId,
   rewriteWikilinkTargets,
   wikilinkSnippet,
@@ -46,6 +47,23 @@ describe("wikilinks", () => {
     expect(rewriteWikilinkTargets(markdown, "old", "New")).toBe(
       "[[New]]\n\n```\n[[Old]]\n```\n\n[[New|pet]] and [[Other]]",
     );
+    expect(
+      rewriteWikilinkTargets("[[Alpha#Intro|alias]] and [[Projects/Alpha#H]]", "Alpha", "New", [
+        { targetText: "Alpha#Intro", alias: "alias" },
+      ]),
+    ).toBe("[[New#Intro|alias]] and [[Projects/Alpha#H]]");
+    expect(
+      rewriteWikilinkTargets(
+        "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n[[Projects/C#H]]",
+        "C",
+        "D",
+        [
+          { targetText: "C", alias: "" },
+          { targetText: "C#Intro", alias: "" },
+          { targetText: "C", alias: "alias" },
+        ],
+      ),
+    ).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n[[Projects/C#H]]");
     expect(rewriteWikilinkTargets(markdown, "Missing", "New")).toBe(markdown);
   });
 
@@ -57,6 +75,19 @@ describe("wikilinks", () => {
         { id: "0199aaaa-0000-7000-8000-000000000001", createdAt: 9 },
       ])?.id,
     ).toBe("0199aaaa-0000-7000-8000-000000000001");
+  });
+
+  it("picks the stored edge for the raw target and alias", () => {
+    const edges = [
+      { targetText: "Ideas/Garden#Plants", alias: "", toItemId: "garden" },
+      { targetText: "Work/Standup", alias: "daily", toItemId: "standup" },
+      { targetText: "Foreign", alias: "", toItemId: null },
+    ];
+    expect(matchOutgoingLink(edges, "Ideas/Garden#Plants", null)?.toItemId).toBe("garden");
+    expect(matchOutgoingLink(edges, " Work/Standup ", "daily")?.toItemId).toBe("standup");
+    expect(matchOutgoingLink(edges, "Foreign", null)?.toItemId).toBeNull();
+    expect(matchOutgoingLink(edges, "Missing", null)).toBeNull();
+    expect(matchOutgoingLink(undefined, "Ideas/Garden#Plants", null)).toBeNull();
   });
 
   it("snippets the linking line without walking other notes", () => {

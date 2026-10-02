@@ -18,11 +18,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { WorkspaceOrb } from "@/components/ui/workspace-orb";
 import { useExportMarkdownNotesFolder, useImportMarkdownNotesFolder } from "@/mutations/markdown";
+import { useNotesImportRunning } from "@/features/settings/notes-folder-import-dialog";
 import { useUpdateGlobalChatSettings } from "@/mutations/settings";
 import { useUpdateWorkspace } from "@/mutations/workspaces";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { findWorkspaceById, listWorkspacesQueryOptions } from "@/queries/workspaces";
 import type { GlobalChatSettingsUpdateInput, WorkspaceInfo } from "@shared/ipc";
+import { NOTES_FOLDER_REIMPORT_NOTE } from "@shared/markdown/folder-io";
 import {
   CHAT_TREE_FOLDER_PLACEMENTS,
   CHAT_TREE_SORT_ORDERS,
@@ -347,7 +349,8 @@ function WorkspaceChatTreeSortRows({ workspaceId }: { workspaceId: string }) {
 function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
   const exportNotes = useExportMarkdownNotesFolder();
   const importNotes = useImportMarkdownNotesFolder();
-  const isBusy = exportNotes.isPending || importNotes.isPending;
+  const notesImportRunning = useNotesImportRunning();
+  const isBusy = exportNotes.isPending || importNotes.isPending || notesImportRunning;
 
   return (
     <>
@@ -357,6 +360,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
         control={
           <Button
             type="button"
+            variant="outline"
             size="sm"
             disabled={isBusy}
             onClick={() => void exportNotes.mutateAsync({ workspaceId })}
@@ -372,7 +376,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
       />
       <SettingsRow
         title="Import notes"
-        description="Create new markdown notes from a folder of .md files. Re-importing creates duplicates (new items); existing notes are not overwritten or synced."
+        description={`One-time copy into Imported/<folder name>. ${NOTES_FOLDER_REIMPORT_NOTE} Duplicate paths within one import are skipped, including names that differ only by letter case. Not a live sync.`}
         control={
           <Button
             type="button"

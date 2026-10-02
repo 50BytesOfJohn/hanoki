@@ -46,7 +46,7 @@ import { queryKeys } from "@/queries/keys";
 import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { requestSidebarFolderReveal } from "@/features/chat/sidebar-reveal";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import type { ChatTreeFolderNode, ChatTreeItem, ChatTreeSnapshot } from "@shared/ipc";
 import { formatHanokiMoveApproval, formatHanokiRenameApproval } from "./tool-approval-summary";
 
 export { isToolUIPart };
@@ -650,7 +650,7 @@ function describeApprovalRequest(
 function collectTreeNames(snapshot: ChatTreeSnapshot | undefined) {
   const folders = new Map<string, string>();
   const items = new Map<string, string>();
-  const visit = (folderNodes: ChatTreeFolderNode[], nodeItems: ItemInfo[]) => {
+  const visit = (folderNodes: ChatTreeFolderNode[], nodeItems: ChatTreeItem[]) => {
     for (const item of nodeItems) items.set(item.id, item.title);
     for (const folder of folderNodes) {
       folders.set(folder.id, folder.name);

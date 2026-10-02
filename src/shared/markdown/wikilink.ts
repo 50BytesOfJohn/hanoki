@@ -21,6 +21,27 @@ export function oldestByItemId<T extends { id: string }>(matches: readonly T[]):
   return oldest;
 }
 
+/** Heading or block ref after the first `#`. The lookup text stays in front of it. */
+export function splitWikilinkFragment(target: string): { lookup: string; fragment: string } {
+  const hash = target.indexOf("#");
+  if (hash === -1) return { lookup: target.trim(), fragment: "" };
+  return { lookup: target.slice(0, hash).trim(), fragment: target.slice(hash) };
+}
+
+export function matchOutgoingLink<T extends { targetText: string; alias: string }>(
+  edges: readonly T[] | undefined,
+  targetText: string,
+  alias: string | null,
+): T | null {
+  if (!edges) return null;
+  const target = targetText.trim();
+  const wanted = alias?.trim() ?? "";
+  for (const edge of edges) {
+    if (edge.targetText === target && edge.alias === wanted) return edge;
+  }
+  return null;
+}
+
 export function formatWikilink(target: string, alias: string | null): string {
   const trimmedTarget = target.trim();
   const trimmedAlias = alias?.trim() ?? "";
@@ -88,19 +109,31 @@ export function rewriteWikilinkTargets(
   markdown: string,
   fromTitle: string,
   toTitle: string,
+  edges?: readonly { targetText: string; alias: string }[],
 ): string {
   const fromKey = normalizeWikilinkTitle(fromTitle);
   if (fromKey.length === 0) return markdown;
   const links = findWikilinks(markdown);
   if (links.length === 0) return markdown;
+  const edgeKeys =
+    edges === undefined
+      ? null
+      : new Set(edges.map((edge) => `${edge.targetText.trim()}\0${edge.alias.trim()}`));
 
   let next = "";
   let cursor = 0;
   let changed = false;
   for (const link of links) {
     next += markdown.slice(cursor, link.start);
-    if (normalizeWikilinkTitle(link.target) === fromKey) {
-      next += formatWikilink(toTitle, link.alias);
+    const target = link.target.trim();
+    const alias = link.alias?.trim() ?? "";
+    const parts = splitWikilinkFragment(target);
+    const selected = edgeKeys === null || edgeKeys.has(`${target}\0${alias}`);
+    const wholeTarget = normalizeWikilinkTitle(target) === fromKey;
+    const titlePart = normalizeWikilinkTitle(parts.lookup) === fromKey;
+    if (selected && (wholeTarget || titlePart)) {
+      const replacement = wholeTarget ? toTitle.trim() : `${toTitle.trim()}${parts.fragment}`;
+      next += formatWikilink(replacement, link.alias);
       changed = true;
     } else {
       next += link.raw;

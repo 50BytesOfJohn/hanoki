@@ -99,10 +99,14 @@ import {
   useExportMarkdownNotesFolder,
   useImportMarkdownNotesFolder,
 } from "@/mutations/markdown";
+import {
+  notesImportUi,
+  useNotesImportRunning,
+} from "@/features/settings/notes-folder-import-dialog";
 
 import type {
   ChatInfo,
-  ItemInfo,
+  ChatTreeItem,
   ItemType,
   ChatSidebarViewMode,
   ChatTreeFolderListItem,
@@ -136,7 +140,7 @@ import { getFocusedPane } from "../workspace/store/layout-tree";
 
 type ChatTreeNodeData =
   | { kind: "folder"; folder: ChatTreeFolderListItem }
-  | { kind: "item"; item: ItemInfo }
+  | { kind: "item"; item: ChatTreeItem }
   | { kind: "root" }
   | { kind: "loading" };
 
@@ -180,6 +184,7 @@ function ChatTreeItemContextMenu({
   itemKind: "folder" | ItemType;
   onAction: (action: ChatTreeContextMenuAction) => void;
 }) {
+  const notesImportRunning = useNotesImportRunning();
   return (
     <ContextMenu>
       <ContextMenuTrigger render={children} />
@@ -206,7 +211,10 @@ function ChatTreeItemContextMenu({
               <HugeiconsIcon icon={FileExportIcon} />
               Export Workspace Notes…
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onAction("import-markdown-notes")}>
+            <ContextMenuItem
+              disabled={notesImportRunning}
+              onClick={() => onAction("import-markdown-notes")}
+            >
               <HugeiconsIcon icon={FileImportIcon} />
               Import Workspace Notes…
             </ContextMenuItem>
@@ -319,7 +327,8 @@ function ChatSidebarViewModeMenu({
     useChatTreeSort(workspaceId);
   const exportNotes = useExportMarkdownNotesFolder();
   const importNotes = useImportMarkdownNotesFolder();
-  const notesIoBusy = exportNotes.isPending || importNotes.isPending;
+  const notesImportRunning = useNotesImportRunning();
+  const notesIoBusy = exportNotes.isPending || importNotes.isPending || notesImportRunning;
 
   return (
     <DropdownMenu>
@@ -764,14 +773,14 @@ function ChatSidebarTreeInner({
   );
 
   const openItemInTab = React.useCallback(
-    (item: ItemInfo, options?: { activate?: boolean }) => {
+    (item: ChatTreeItem, options?: { activate?: boolean }) => {
       openTab({ type: item.type, itemId: item.id }, options);
     },
     [openTab],
   );
 
   const navigateToItem = React.useCallback(
-    (item: ItemInfo) => {
+    (item: ChatTreeItem) => {
       if (item.type === "chat") setCurrentChat(item.id);
       else useWorkspaceStore.getState().openItemInFocusedPane(item.id, item.type);
     },
@@ -779,7 +788,7 @@ function ChatSidebarTreeInner({
   );
 
   const openItemBeside = React.useCallback(
-    (item: ItemInfo, direction: "left" | "right" | "top" | "bottom") => {
+    (item: ChatTreeItem, direction: "left" | "right" | "top" | "bottom") => {
       const tab = tabs.find((candidate) => candidate.id === activeTabId);
       if (!tab) {
         openTab({ type: item.type, itemId: item.id });
@@ -949,6 +958,7 @@ function ChatSidebarTreeInner({
                   } else if (action === "export-markdown-notes") {
                     void exportMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "import-markdown-notes") {
+                    if (notesImportUi.getSnapshot().phase === "running") return;
                     void importMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "open-in-focused-pane" && data.kind === "item") {
                     navigateToItem(data.item);
@@ -1131,7 +1141,7 @@ function ChatSidebarTreeInner({
 export function flattenSnapshotChats(snapshot: ChatTreeSnapshot): ChatInfo[] {
   const chats: ChatInfo[] = [];
 
-  const walk = (folders: ChatTreeFolderNode[], folderItems: ItemInfo[]) => {
+  const walk = (folders: ChatTreeFolderNode[], folderItems: ChatTreeItem[]) => {
     chats.push(...folderItems.filter((item): item is ChatInfo => item.type === "chat"));
     for (const folder of folders) {
       walk(folder.folders, folder.items);
@@ -1468,7 +1478,7 @@ function ChatActivityListItem({
   );
 }
 
-function ChatTreeItemIcon({ item }: { item: ItemInfo }) {
+function ChatTreeItemIcon({ item }: { item: ChatTreeItem }) {
   const status = useChatStatus(item.type === "chat" ? item.id : "");
   const isActive = status === "streaming" || status === "submitted";
 

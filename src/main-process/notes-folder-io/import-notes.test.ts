@@ -1,10 +1,14 @@
+import { writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { FolderInfo, MarkdownInfo } from "@shared/ipc";
-import { formatNotesFolderImportSummary } from "@shared/markdown/folder-io";
+import {
+  NOTES_FOLDER_REIMPORT_NOTE,
+  formatNotesFolderImportSummary,
+} from "@shared/markdown/folder-io";
 import { MAX_MARKDOWN_FILE_BYTES } from "@shared/markdown/content";
 
 import { importMarkdownNotesFromDirectory, type NotesFolderImportTree } from "./import-notes";
@@ -22,13 +26,21 @@ async function makeTempDir(): Promise<string> {
   return dir;
 }
 
+type StoredNote = MarkdownInfo & { importRelativePath: string | null };
+
 function memoryTree() {
-  const notes: MarkdownInfo[] = [];
+  const notes: StoredNote[] = [];
+  const notesById = new Map<string, StoredNote>();
   const folders: FolderInfo[] = [];
   let nextId = 1;
   const bodies = new Map<string, string>();
 
   const chatTree: NotesFolderImportTree = {
+    listChildFolders(workspaceId, parentId) {
+      return folders
+        .filter((folder) => folder.workspaceId === workspaceId && folder.parentId === parentId)
+        .map((folder) => ({ id: folder.id, name: folder.name }));
+    },
     createFolder({ workspaceId, name, parentId }) {
       const folder: FolderInfo = {
         id: `folder-new-${nextId}`,
@@ -42,13 +54,22 @@ function memoryTree() {
       folders.push(folder);
       return folder;
     },
-    createMarkdown({ workspaceId, title, folderId }) {
-      const item: MarkdownInfo = {
+    deleteFolderIfEmpty(id) {
+      if (folders.some((folder) => folder.parentId === id)) return false;
+      if (notes.some((note) => note.folderId === id)) return false;
+      const index = folders.findIndex((folder) => folder.id === id);
+      if (index === -1) return false;
+      folders.splice(index, 1);
+      return true;
+    },
+    createMarkdown({ workspaceId, title, folderId, importRelativePath }) {
+      const item: StoredNote = {
         type: "markdown",
         id: `md-new-${nextId}`,
         workspaceId,
         folderId,
         title,
+        importRelativePath: importRelativePath ?? null,
         data: { markdown: "" },
         metadata: {},
         extensions: {},
@@ -57,6 +78,7 @@ function memoryTree() {
       };
       nextId += 1;
       notes.push(item);
+      notesById.set(item.id, item);
       bodies.set(item.id, "");
       return item;
     },
@@ -64,7 +86,7 @@ function memoryTree() {
       bodies.set(id, markdown);
     },
     flushMarkdownContent(id) {
-      const item = notes.find((note) => note.id === id);
+      const item = notesById.get(id);
       if (!item) throw new Error(`Missing markdown "${id}".`);
       item.data = { markdown: bodies.get(id) ?? "" };
       return item;
@@ -74,9 +96,15 @@ function memoryTree() {
   return { chatTree, notes, folders, bodies };
 }
 
+function wrapFolders(folders: readonly FolderInfo[]): FolderInfo[] {
+  const parent = folders.find((folder) => folder.parentId === null && folder.name === "Imported");
+  if (!parent) return [];
+  return folders.filter((folder) => folder.parentId === parent.id);
+}
+
 describe("importMarkdownNotesFromDirectory", () => {
-  it("creates new items whose data.markdown equals exported file text", async () => {
-    const body = "# Title\n\nLine with trailing spaces  \n\n```\ncode\n```\n\n日本語\n";
+  it("wraps a one-shot copy and keeps bodies and vault paths", async () => {
+    const body = "---\ntitle: One\n---\n\n[[Projects/Alpha#Heading|shown]]\n";
     const originalIds = ["md-existing-1", "md-existing-2"];
     const dest = await makeTempDir();
     const exported = await writeNotesFolderExportPlan(
@@ -127,20 +155,83 @@ describe("importMarkdownNotesFromDirectory", () => {
 
     const tree = memoryTree();
     const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", exported);
-    const importedBodies = tree.notes
-      .map((note) => note.data.markdown)
-      .sort((left, right) => left.localeCompare(right));
+    const vaultName = basename(exported);
 
-    expect(importedBodies).toEqual([body, "second"].sort((left, right) => (left < right ? -1 : 1)));
+    expect(result.wrapFolderPath).toBe(`Imported/${vaultName}`);
+    expect(wrapFolders(tree.folders).map((folder) => folder.name)).toEqual([vaultName]);
+    expect(tree.notes.map((note) => note.importRelativePath).sort()).toEqual([
+      "Chapters/One",
+      "Loose note",
+    ]);
+    expect(tree.notes.map((note) => note.data.markdown).sort()).toEqual([body, "second"].sort());
     expect(tree.notes.every((note) => !originalIds.includes(note.id))).toBe(true);
+    expect(tree.notes.some((note) => note.data.markdown.includes("hanoki_id"))).toBe(false);
 
     const again = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", exported);
+    const wraps = wrapFolders(tree.folders);
     expect(again.noteCount).toBe(2);
+    expect(again.wrapFolderPath).not.toBe(result.wrapFolderPath);
+    expect(wraps).toHaveLength(2);
+    expect(wraps.map((folder) => folder.name)).toContain(vaultName);
     expect(tree.notes).toHaveLength(4);
-    expect(
-      tree.notes.map((note) => note.data.markdown).filter((text) => text === body),
-    ).toHaveLength(2);
     expect(result.skippedCount).toBe(0);
+    expect(result.canceled).toBe(false);
+  });
+
+  it("strips a UTF-8 BOM and leaves the rest of the file untouched", async () => {
+    const root = await makeTempDir();
+    const body = "---\nkeep: true\n---\n[[Note]]\n";
+    await writeFile(
+      join(root, "Note.md"),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(body, "utf8")]),
+    );
+
+    const tree = memoryTree();
+    await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
+
+    expect(tree.notes).toHaveLength(1);
+    expect(tree.notes[0]?.data.markdown).toBe(body);
+    expect(tree.notes[0]?.importRelativePath).toBe("Note");
+  });
+
+  it("skips duplicate paths, including names that differ only by case", async () => {
+    const root = await makeTempDir();
+    await mkdir(join(root, "Notes"), { recursive: true });
+    await mkdir(join(root, "notes"), { recursive: true });
+    await writeFile(join(root, "Notes", "A.md"), "upper", "utf8");
+    await writeFile(join(root, "notes", "a.md"), "lower", "utf8");
+    await writeFile(join(root, "Other.md"), "kept", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
+
+    expect(result.noteCount).toBe(2);
+    expect(result.skippedDuplicatePathCount).toBe(1);
+    expect(result.skippedPaths.map((path) => path.toLowerCase())).toEqual(["notes/a.md"]);
+    expect(tree.notes.map((note) => note.importRelativePath?.toLowerCase()).sort()).toEqual([
+      "notes/a",
+      "other",
+    ]);
+  });
+
+  it("summarizes an empty vault without failing", async () => {
+    const root = await makeTempDir();
+    await mkdir(join(root, ".obsidian"), { recursive: true });
+    await writeFile(join(root, ".obsidian", "note.md"), "vault", "utf8");
+    await writeFile(join(root, "skip.txt"), "nope", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
+
+    expect(result.noteCount).toBe(0);
+    expect(result.folderCount).toBe(0);
+    expect(result.failedCount).toBe(0);
+    expect(result.ignoredNonMarkdownCount).toBe(1);
+    expect(result.ignoredDirectoryNames).toEqual([".obsidian"]);
+    expect(tree.folders).toHaveLength(0);
+    expect(formatNotesFolderImportSummary(result)).toBe(
+      "No notes imported. 1 non-markdown file ignored. Ignored .obsidian/.",
+    );
   });
 
   it("summarizes oversized files and ignored non-markdown and vault dirs", async () => {
@@ -158,12 +249,188 @@ describe("importMarkdownNotesFromDirectory", () => {
     const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
 
     expect(tree.notes.map((note) => note.data.markdown)).toEqual(["kept"]);
-    expect(tree.folders).toHaveLength(0);
+    expect(tree.notes[0]?.importRelativePath).toBe("ok");
+    expect(wrapFolders(tree.folders)).toHaveLength(1);
     expect(result.skippedOversizedCount).toBe(1);
     expect(result.ignoredNonMarkdownCount).toBe(1);
     expect(result.ignoredDirectoryNames).toEqual([".git", ".obsidian"]);
     expect(formatNotesFolderImportSummary(result)).toBe(
-      `1 note added from ${root}. 1 oversized file skipped. 1 non-markdown file ignored. Ignored .git/, .obsidian/. huge.md is larger than 5 MiB and was skipped.`,
+      `New 1 · Skip 1 · Fail 0. Copied under Imported/${basename(root)}. ${NOTES_FOLDER_REIMPORT_NOTE} 1 non-markdown file ignored. Ignored .git/, .obsidian/. huge.md is larger than 5 MiB and was skipped.`,
     );
   });
+
+  it("drops the empty wrap when cancel happens before any note is copied", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "A.md"), "a", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      isCanceled: () => true,
+    });
+
+    expect(result.canceled).toBe(true);
+    expect(result.noteCount).toBe(0);
+    expect(tree.notes).toHaveLength(0);
+    expect(tree.folders).toHaveLength(0);
+    expect(formatNotesFolderImportSummary(result)).toBe("Import canceled. Nothing was copied.");
+  });
+
+  it("stops on cancel and keeps notes already copied", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "A.md"), "a", "utf8");
+    await writeFile(join(root, "B.md"), "b", "utf8");
+    await writeFile(join(root, "C.md"), "c", "utf8");
+
+    const tree = memoryTree();
+    let checks = 0;
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      isCanceled: () => {
+        checks += 1;
+        return checks > 1;
+      },
+    });
+
+    expect(result.canceled).toBe(true);
+    expect(result.noteCount).toBe(1);
+    expect(tree.notes).toHaveLength(1);
+    expect(formatNotesFolderImportSummary(result)).toContain("Partial copy kept.");
+  });
+
+  it("stops when cancel is scheduled while the import yields", async () => {
+    const root = await makeTempDir();
+    for (let index = 0; index < 40; index += 1) {
+      await writeFile(join(root, `N${String(index).padStart(2, "0")}.md`), "x", "utf8");
+    }
+
+    const tree = memoryTree();
+    let cancel = false;
+    let scheduled = false;
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      isCanceled: () => cancel,
+      onProgress: () => {
+        if (scheduled) return;
+        scheduled = true;
+        setImmediate(() => {
+          cancel = true;
+        });
+      },
+    });
+
+    expect(result.canceled).toBe(true);
+    expect(result.noteCount).toBe(25);
+    expect(formatNotesFolderImportSummary(result)).toContain("Partial copy kept.");
+  });
+
+  it("returns a summary when rebuilding note links fails", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(
+      {
+        ...tree.chatTree,
+        rebuildImportedNoteLinks() {
+          throw new Error("database is locked");
+        },
+      },
+      "workspace-1",
+      root,
+    );
+
+    expect(result.status).toBe("imported");
+    expect(result.noteCount).toBe(1);
+    expect(result.warnings).toContain("Note links could not be rebuilt: database is locked");
+    expect(formatNotesFolderImportSummary(result)).toContain(
+      "Note links could not be rebuilt: database is locked",
+    );
+  });
+
+  it("does not repeat the rebuild warning when the failure is not an Error", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(
+      {
+        ...tree.chatTree,
+        rebuildImportedNoteLinks() {
+          throw "database is locked";
+        },
+      },
+      "workspace-1",
+      root,
+    );
+
+    expect(result.warnings).toEqual(["Note links could not be rebuilt."]);
+  });
+
+  it("counts invalid UTF-8 as a failure and ignores .trash", async () => {
+    const root = await makeTempDir();
+    await mkdir(join(root, ".trash"), { recursive: true });
+    await writeFile(join(root, ".trash", "Gone.md"), "gone", "utf8");
+    await writeFile(join(root, "bad.md"), Buffer.from([0xff, 0xfe, 0x41, 0x00]));
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
+
+    expect(result.noteCount).toBe(1);
+    expect(result.failedCount).toBe(1);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ relativePath: "bad.md", reason: expect.stringContaining("UTF-8") }),
+    ]);
+    expect(result.ignoredDirectoryNames).toEqual([".trash"]);
+    expect(result.warnings.some((warning) => warning.includes("UTF-8"))).toBe(false);
+    expect(tree.notes.map((note) => note.data.markdown)).toEqual(["ok"]);
+  });
+
+  it("bounds progress events for a 20k-file import and still sends the last file", async () => {
+    const fileCount = 20_000;
+    const root = await makeTempDir();
+    writeFlatMarkdownFiles(root, fileCount);
+
+    const tree = memoryTree();
+    const events: { index: number; total: number }[] = [];
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      onProgress: (progress) => {
+        events.push({ index: progress.index, total: progress.total });
+      },
+    });
+
+    expect(result.noteCount).toBe(fileCount);
+    expect(result.canceled).toBe(false);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.length).toBeLessThanOrEqual(Math.floor((fileCount - 1) / 25) + 2);
+    expect(events.length).toBeLessThan(fileCount);
+    expect(events[0]).toEqual({ index: 1, total: fileCount });
+    expect(events.at(-1)).toEqual({ index: fileCount, total: fileCount });
+  }, 120_000);
+
+  it("cancels a large import at the next yield", async () => {
+    const fileCount = 3_000;
+    const root = await makeTempDir();
+    writeFlatMarkdownFiles(root, fileCount);
+
+    const tree = memoryTree();
+    let yields = 0;
+    let cancel = false;
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      isCanceled: () => cancel,
+      onYield: () => {
+        yields += 1;
+        if (yields === 40) cancel = true;
+      },
+    });
+
+    expect(result.canceled).toBe(true);
+    expect(result.noteCount).toBe(1_000);
+    expect(result.noteCount).toBeLessThan(fileCount);
+    expect(yields).toBe(40);
+  }, 60_000);
 });
+
+function writeFlatMarkdownFiles(root: string, count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    writeFileSync(join(root, `n${String(index).padStart(5, "0")}.md`), "x");
+  }
+}

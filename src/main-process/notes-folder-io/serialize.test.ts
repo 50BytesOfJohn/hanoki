@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo, MarkdownInfo } from "@shared/ipc";
+import type { ItemInfo, MarkdownInfo } from "@shared/ipc";
 import { MAX_MARKDOWN_FILE_BYTES } from "@shared/markdown/content";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 
@@ -43,9 +43,18 @@ function markdownItem(
   };
 }
 
-function folderNode(
-  overrides: Partial<ChatTreeFolderNode> & Pick<ChatTreeFolderNode, "id" | "name">,
-): ChatTreeFolderNode {
+interface TestFolder {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  folders: TestFolder[];
+  items: ItemInfo[];
+}
+
+function folderNode(overrides: Partial<TestFolder> & Pick<TestFolder, "id" | "name">): TestFolder {
   return {
     workspaceId: "workspace-1",
     parentId: null,
@@ -57,12 +66,11 @@ function folderNode(
   };
 }
 
-function snapshot(partial: Partial<ChatTreeSnapshot> = {}): ChatTreeSnapshot {
+function snapshot(partial: { rootFolders?: TestFolder[]; rootItems?: ItemInfo[] } = {}) {
   return {
     workspaceId: "workspace-1",
-    rootFolders: [],
-    rootItems: [],
-    ...partial,
+    rootFolders: partial.rootFolders ?? [],
+    rootItems: partial.rootItems ?? [],
   };
 }
 

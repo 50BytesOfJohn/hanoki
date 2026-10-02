@@ -80,6 +80,10 @@ export const items = sqliteTable(
     }),
     type: text("type").$type<"chat" | "terminal" | "markdown">().notNull(),
     title: text("title").notNull(),
+    /** Vault-relative posix path without `.md`, set only for imported markdown notes. */
+    importRelativePath: text("import_relative_path"),
+    /** Import batch id. Notes copied in one import share it. Resident notes stay null. */
+    importRootId: text("import_root_id"),
     data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),
@@ -91,6 +95,7 @@ export const items = sqliteTable(
     index("items_workspace_id_idx").on(table.workspaceId),
     index("items_folder_id_idx").on(table.folderId),
     index("items_type_idx").on(table.type),
+    index("items_workspace_import_path_idx").on(table.workspaceId, table.importRelativePath),
   ],
 );
 

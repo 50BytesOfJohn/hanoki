@@ -1,47 +1,209 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
-import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
+import type { MarkdownTitleOption, NoteBacklink, NoteOutgoingLink } from "@shared/ipc";
 import {
   findWikilinks,
   normalizeWikilinkTitle,
-  oldestByItemId,
   rewriteWikilinkTargets,
+  splitWikilinkFragment,
   wikilinkSnippet,
 } from "@shared/markdown/wikilink";
 
 import { getAppDatabase } from "../db/database";
+import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { folders, items, noteLinks } from "../db/schema";
+import { rewindImportRenames } from "./repository";
 
 const BACKLINK_LIMIT = 50;
+/** workspace_id, from_item_id, to_item_id, target_text, alias. */
+const NOTE_LINK_BOUND_COLUMNS = 5;
+const SQLITE_VARIABLE_LIMIT_FALLBACK = 999;
 
-interface MarkdownTitleRow {
+let cachedSqliteVariableLimit: number | null = null;
+
+interface ResolveNote {
   id: string;
   title: string;
   createdAt: number;
+  folderId: string | null;
+  importRelativePath: string | null;
+  importRootId: string | null;
+  folderTitlePath: string | null;
 }
 
-export function reindexNoteLinks(itemId: string): void {
+interface FolderRecord {
+  id: string;
+  parentId: string | null;
+  name: string;
+}
+
+interface ResolveBucket {
+  title: Map<string, ResolveNote>;
+  path: Map<string, ResolveNote>;
+  folderPath: Map<string, ResolveNote>;
+}
+
+interface ResolveIndex {
+  notes: readonly ResolveNote[];
+  all: ResolveBucket;
+  byRoot: Map<string | null, ResolveBucket>;
+}
+
+function emptyBucket(): ResolveBucket {
+  return { title: new Map(), path: new Map(), folderPath: new Map() };
+}
+
+function keepOldest(map: Map<string, ResolveNote>, key: string, note: ResolveNote): void {
+  if (key.length === 0) return;
+  const current = map.get(key);
+  if (!current || note.id < current.id) map.set(key, note);
+}
+
+const REBUILD_YIELD_EVERY = 2000;
+
+export function reindexNoteLinks(itemId: string, index?: ResolveIndex): void {
   const db = getAppDatabase();
   const item = db.select().from(items).where(eq(items.id, itemId)).get();
   if (!item || item.type !== "markdown") return;
 
-  const titles = loadMarkdownTitles(item.workspaceId);
-  const edges = uniqueEdges(readMarkdown(item.data), titles);
+  const resolved = index ?? loadResolveIndex(item.workspaceId);
+  const edges = uniqueEdges(readMarkdown(item.data), resolved, item.importRootId);
+  const rows = edges.map((edge) => ({
+    workspaceId: item.workspaceId,
+    fromItemId: itemId,
+    toItemId: edge.toItemId,
+    targetText: edge.targetText,
+    alias: edge.alias,
+  }));
+  const chunkSize = noteLinkChunkSize();
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.fromItemId, itemId)).run();
-    if (edges.length === 0) return;
-    tx.insert(noteLinks)
-      .values(
-        edges.map((edge) => ({
-          workspaceId: item.workspaceId,
-          fromItemId: itemId,
-          toItemId: edge.toItemId,
-          targetText: edge.targetText,
-          alias: edge.alias,
-        })),
-      )
-      .run();
+    insertNoteLinkRows(
+      chunkSize,
+      (chunk) => {
+        tx.insert(noteLinks).values(chunk).run();
+      },
+      rows,
+    );
   });
+}
+
+export async function rebuildImportedNoteLinks(
+  workspaceId: string,
+  importRootId: string,
+  options?: { onYield?: () => Promise<void> },
+): Promise<{ id: string; title: string }[]> {
+  const parked = rewindImportRenames();
+  try {
+    await writeImportedNoteLinks(workspaceId, importRootId, options);
+  } catch (error) {
+    restoreRewoundTitles(parked);
+    throw error;
+  }
+  return parked;
+}
+
+async function writeImportedNoteLinks(
+  workspaceId: string,
+  importRootId: string,
+  options?: { onYield?: () => Promise<void> },
+): Promise<void> {
+  const db = getAppDatabase();
+  const notes = db
+    .select()
+    .from(items)
+    .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
+    .all();
+  const index = buildResolveIndex(
+    notes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      createdAt: note.createdAt,
+      folderId: note.folderId,
+      importRelativePath: note.importRelativePath,
+      importRootId: note.importRootId,
+    })),
+    loadFolders(workspaceId),
+  );
+  const imported = notes.filter((note) => note.importRootId === importRootId);
+  const updatedAtById = new Map(notes.map((note) => [note.id, note.updatedAt]));
+  const rows: NoteLinkInsertRow[] = [];
+  for (let indexInImport = 0; indexInImport < imported.length; indexInImport += 1) {
+    if (indexInImport > 0 && indexInImport % REBUILD_YIELD_EVERY === 0) await options?.onYield?.();
+    const note = imported[indexInImport]!;
+    for (const edge of uniqueEdges(readMarkdown(note.data), index, note.importRootId)) {
+      rows.push({
+        workspaceId,
+        fromItemId: note.id,
+        toItemId: edge.toItemId,
+        targetText: edge.targetText,
+        alias: edge.alias,
+      });
+    }
+  }
+  const chunkSize = noteLinkChunkSize();
+  db.transaction((tx) => {
+    const live = tx
+      .select({ id: items.id, updatedAt: items.updatedAt })
+      .from(items)
+      .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
+      .all();
+    const liveAt = new Map(live.map((row) => [row.id, row.updatedAt]));
+    const liveIds = new Set(liveAt.keys());
+    const changed = new Set(
+      imported
+        .filter((note) => {
+          const liveUpdated = liveAt.get(note.id);
+          return liveUpdated !== undefined && liveUpdated !== updatedAtById.get(note.id);
+        })
+        .map((note) => note.id),
+    );
+    const writeIds = imported.filter((note) => liveIds.has(note.id)).map((note) => note.id);
+    const kept: NoteLinkInsertRow[] = [];
+    for (const row of rows) {
+      if (!liveIds.has(row.fromItemId) || changed.has(row.fromItemId)) continue;
+      const toItemId = row.toItemId !== null && liveIds.has(row.toItemId) ? row.toItemId : null;
+      kept.push({ ...row, toItemId });
+    }
+    eachSqlIdChunk([...changed], 0, (chunk) => {
+      const fresh = tx.select().from(items).where(inArray(items.id, chunk)).all();
+      for (const note of fresh) {
+        if (note.type !== "markdown") continue;
+        for (const edge of uniqueEdges(readMarkdown(note.data), index, note.importRootId)) {
+          const toItemId =
+            edge.toItemId !== null && liveIds.has(edge.toItemId) ? edge.toItemId : null;
+          kept.push({
+            workspaceId,
+            fromItemId: note.id,
+            toItemId,
+            targetText: edge.targetText,
+            alias: edge.alias,
+          });
+        }
+      }
+    });
+    eachSqlIdChunk(writeIds, 0, (chunk) => {
+      tx.delete(noteLinks).where(inArray(noteLinks.fromItemId, chunk)).run();
+    });
+    insertNoteLinkRows(
+      chunkSize,
+      (chunk) => {
+        tx.insert(noteLinks).values(chunk).run();
+      },
+      kept,
+    );
+  });
+  resolveOpenNoteLinks(workspaceId, { hashed: true });
+}
+
+function restoreRewoundTitles(rows: readonly { id: string; title: string }[]): void {
+  if (rows.length === 0) return;
+  const db = getAppDatabase();
+  const updatedAt = Date.now();
+  for (const row of rows) {
+    db.update(items).set({ title: row.title, updatedAt }).where(eq(items.id, row.id)).run();
+  }
 }
 
 export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
@@ -51,25 +213,37 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
     .from(items)
     .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
     .all();
-  const titles = notes.map((note) => ({
-    id: note.id,
-    title: note.title,
-    createdAt: note.createdAt,
-  }));
+  const index = buildResolveIndex(
+    notes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      createdAt: note.createdAt,
+      folderId: note.folderId,
+      importRelativePath: note.importRelativePath,
+      importRootId: note.importRootId,
+    })),
+    loadFolders(workspaceId),
+  );
 
+  const rows = notes.flatMap((note) =>
+    uniqueEdges(readMarkdown(note.data), index, note.importRootId).map((edge) => ({
+      workspaceId,
+      fromItemId: note.id,
+      toItemId: edge.toItemId,
+      targetText: edge.targetText,
+      alias: edge.alias,
+    })),
+  );
+  const chunkSize = noteLinkChunkSize();
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.workspaceId, workspaceId)).run();
-    const rows = notes.flatMap((note) =>
-      uniqueEdges(readMarkdown(note.data), titles).map((edge) => ({
-        workspaceId,
-        fromItemId: note.id,
-        toItemId: edge.toItemId,
-        targetText: edge.targetText,
-        alias: edge.alias,
-      })),
+    insertNoteLinkRows(
+      chunkSize,
+      (chunk) => {
+        tx.insert(noteLinks).values(chunk).run();
+      },
+      rows,
     );
-    if (rows.length === 0) return;
-    tx.insert(noteLinks).values(rows).run();
   });
 }
 
@@ -82,43 +256,70 @@ export function rewriteNoteLinkTargets(
   if (previousTitle === nextTitle) return [];
   const db = getAppDatabase();
   const inbound = db
-    .select({ fromItemId: noteLinks.fromItemId })
+    .select({
+      fromItemId: noteLinks.fromItemId,
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+    })
     .from(noteLinks)
     .where(eq(noteLinks.toItemId, itemId))
     .all();
-  const fromIds = [...new Set(inbound.map((row) => row.fromItemId))];
+  const edgesByFromId = new Map<string, { targetText: string; alias: string }[]>();
+  for (const row of inbound) {
+    const edges = edgesByFromId.get(row.fromItemId);
+    const edge = { targetText: row.targetText, alias: row.alias };
+    if (edges) edges.push(edge);
+    else edgesByFromId.set(row.fromItemId, [edge]);
+  }
   const rewritten: string[] = [];
+  let index: ResolveIndex | null = null;
 
-  for (const fromId of fromIds) {
+  for (const [fromId, edges] of edgesByFromId) {
     const source = db.select().from(items).where(eq(items.id, fromId)).get();
     if (!source || source.type !== "markdown") continue;
     const current = readMarkdown(source.data);
-    const next = rewriteWikilinkTargets(current, previousTitle, nextTitle);
+    const next = rewriteWikilinkTargets(current, previousTitle, nextTitle, edges);
     if (next === current) continue;
     db.update(items)
       .set({ data: { ...source.data, markdown: next }, updatedAt: Date.now() })
       .where(eq(items.id, fromId))
       .run();
-    reindexNoteLinks(fromId);
+    index ??= loadResolveIndex(source.workspaceId);
+    reindexNoteLinks(fromId, index);
     rewritten.push(fromId);
   }
 
   return rewritten;
 }
 
-export function resolveOpenNoteLinks(workspaceId: string): void {
+export function resolveOpenNoteLinks(
+  workspaceId: string,
+  scope?: { hashed?: boolean; title?: string },
+): number {
   const db = getAppDatabase();
+  const titleKey = scope?.title === undefined ? null : normalizeWikilinkTitle(scope.title);
+  if (scope?.title !== undefined && (titleKey === null || !titleKey.includes("#"))) return 0;
   const open = db
     .select()
     .from(noteLinks)
-    .where(and(eq(noteLinks.workspaceId, workspaceId), isNull(noteLinks.toItemId)))
+    .where(
+      and(
+        eq(noteLinks.workspaceId, workspaceId),
+        scope?.hashed
+          ? or(isNull(noteLinks.toItemId), like(noteLinks.targetText, "%#%"))
+          : titleKey !== null
+            ? sql`lower(trim(${noteLinks.targetText})) = ${titleKey}`
+            : isNull(noteLinks.toItemId),
+      ),
+    )
     .all();
-  if (open.length === 0) return;
+  if (open.length === 0) return 0;
 
-  const titles = loadMarkdownTitles(workspaceId);
+  const index = loadResolveIndex(workspaceId);
+  const rootByNoteId = new Map(index.notes.map((note) => [note.id, note.importRootId]));
   for (const row of open) {
-    const toItemId = resolveTitle(titles, row.targetText);
-    if (!toItemId) continue;
+    const toItemId = resolveTarget(index, rootByNoteId.get(row.fromItemId) ?? null, row.targetText);
+    if (!toItemId || toItemId === row.toItemId) continue;
     db.update(noteLinks)
       .set({ toItemId })
       .where(
@@ -130,6 +331,7 @@ export function resolveOpenNoteLinks(workspaceId: string): void {
       )
       .run();
   }
+  return open.length;
 }
 
 export function listMarkdownTitleOptions(workspaceId: string): MarkdownTitleOption[] {
@@ -192,7 +394,67 @@ export function listNoteBacklinks(itemId: string): NoteBacklink[] {
   return backlinks;
 }
 
-function uniqueEdges(markdown: string, titles: readonly MarkdownTitleRow[]) {
+export function listOutgoingNoteLinks(fromItemId: string): NoteOutgoingLink[] {
+  const db = getAppDatabase();
+  const source = db.select({ type: items.type }).from(items).where(eq(items.id, fromItemId)).get();
+  if (!source || source.type !== "markdown") return [];
+
+  const target = alias(items, "outgoing_target");
+  return db
+    .select({
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+      toItemId: noteLinks.toItemId,
+      title: target.title,
+    })
+    .from(noteLinks)
+    .leftJoin(target, eq(noteLinks.toItemId, target.id))
+    .where(eq(noteLinks.fromItemId, fromItemId))
+    .all();
+}
+
+type NoteLinkInsertRow = {
+  workspaceId: string;
+  fromItemId: string;
+  toItemId: string | null;
+  targetText: string;
+  alias: string;
+};
+
+function sqliteVariableLimit(): number {
+  if (cachedSqliteVariableLimit !== null) return cachedSqliteVariableLimit;
+  const sqlite = getAppDatabase().$client;
+  const query = sqlite.prepare("SELECT sqlite_compileoption_get(?) AS opt");
+  let limit = SQLITE_VARIABLE_LIMIT_FALLBACK;
+  for (let index = 0; ; index += 1) {
+    const row = query.get(index) as { opt: string | null } | undefined;
+    if (!row?.opt) break;
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.opt);
+    const parsed = match?.[1] ? Number(match[1]) : Number.NaN;
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      limit = parsed;
+      break;
+    }
+  }
+  cachedSqliteVariableLimit = limit;
+  return limit;
+}
+
+function noteLinkChunkSize(): number {
+  return Math.max(1, Math.floor(sqliteVariableLimit() / NOTE_LINK_BOUND_COLUMNS));
+}
+
+function insertNoteLinkRows(
+  chunkSize: number,
+  insertRows: (rows: NoteLinkInsertRow[]) => void,
+  rows: readonly NoteLinkInsertRow[],
+): void {
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    insertRows(rows.slice(offset, offset + chunkSize));
+  }
+}
+
+function uniqueEdges(markdown: string, index: ResolveIndex, sourceRootId: string | null) {
   const edges = new Map<string, { targetText: string; alias: string; toItemId: string | null }>();
   for (const link of findWikilinks(markdown)) {
     const targetText = link.target.trim();
@@ -202,27 +464,127 @@ function uniqueEdges(markdown: string, titles: readonly MarkdownTitleRow[]) {
     edges.set(key, {
       targetText,
       alias,
-      toItemId: resolveTitle(titles, targetText),
+      toItemId: resolveTarget(index, sourceRootId, targetText),
     });
   }
   return [...edges.values()];
 }
 
-function resolveTitle(titles: readonly MarkdownTitleRow[], target: string): string | null {
-  const key = normalizeWikilinkTitle(target);
-  if (key.length === 0) return null;
-  return (
-    oldestByItemId(titles.filter((title) => normalizeWikilinkTitle(title.title) === key))?.id ??
-    null
-  );
+function resolveTarget(
+  index: ResolveIndex,
+  sourceRootId: string | null,
+  target: string,
+): string | null {
+  const fullKey = normalizeWikilinkTitle(target.trim());
+  if (fullKey.length === 0) return null;
+
+  const lookup = splitWikilinkFragment(target).lookup;
+  const strippedKey = normalizeWikilinkTitle(lookup);
+  const pathKey = lookup.includes("/") ? lookup.replace(/\.md$/i, "") : null;
+  const own = sourceRootId ? index.byRoot.get(sourceRootId) : undefined;
+
+  if (pathKey && sourceRootId) {
+    const wanted = normalizeWikilinkTitle(pathKey);
+    const pathHit = own?.path.get(wanted) ?? own?.folderPath.get(wanted);
+    if (pathHit) return pathHit.id;
+  }
+
+  const scopes: ReadonlyArray<ResolveBucket | undefined> = sourceRootId
+    ? [own, index.byRoot.get(null)]
+    : [index.all];
+  for (const scope of scopes) {
+    if (!scope) continue;
+    const exact = scope.title.get(fullKey);
+    if (exact) return exact.id;
+    if (strippedKey !== fullKey && strippedKey.length > 0) {
+      const stripped = scope.title.get(strippedKey);
+      if (stripped) return stripped.id;
+    }
+  }
+  return null;
 }
 
-function loadMarkdownTitles(workspaceId: string): MarkdownTitleRow[] {
-  return getAppDatabase()
-    .select({ id: items.id, title: items.title, createdAt: items.createdAt })
+function folderTitlePath(
+  folderId: string | null,
+  title: string,
+  wrapId: string,
+  folderById: ReadonlyMap<string, FolderRecord>,
+): string | null {
+  const names: string[] = [];
+  let current = folderId;
+  const seen = new Set<string>();
+  while (current && current !== wrapId && !seen.has(current) && names.length < 40) {
+    seen.add(current);
+    const folder = folderById.get(current);
+    if (!folder) return null;
+    names.push(folder.name);
+    current = folder.parentId;
+  }
+  if (current !== wrapId) return null;
+  names.reverse();
+  return names.length > 0 ? `${names.join("/")}/${title}` : title;
+}
+
+function loadResolveIndex(workspaceId: string): ResolveIndex {
+  const noteRows = getAppDatabase()
+    .select({
+      id: items.id,
+      title: items.title,
+      createdAt: items.createdAt,
+      folderId: items.folderId,
+      importRelativePath: items.importRelativePath,
+      importRootId: items.importRootId,
+    })
     .from(items)
     .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
     .all();
+  return buildResolveIndex(noteRows, loadFolders(workspaceId));
+}
+
+function loadFolders(workspaceId: string): FolderRecord[] {
+  return getAppDatabase()
+    .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
+    .from(folders)
+    .where(eq(folders.workspaceId, workspaceId))
+    .all();
+}
+
+function buildResolveIndex(
+  notes: readonly Omit<ResolveNote, "folderTitlePath">[],
+  folderRows: readonly FolderRecord[],
+): ResolveIndex {
+  const folderById = new Map(folderRows.map((folder) => [folder.id, folder]));
+  const all = emptyBucket();
+  const byRoot = new Map<string | null, ResolveBucket>();
+  const indexed = notes.map((note) => {
+    const resolved: ResolveNote = {
+      ...note,
+      folderTitlePath:
+        note.importRootId === null
+          ? null
+          : folderTitlePath(note.folderId, note.title, note.importRootId, folderById),
+    };
+    let bucket = byRoot.get(resolved.importRootId);
+    if (!bucket) {
+      bucket = emptyBucket();
+      byRoot.set(resolved.importRootId, bucket);
+    }
+    const titleKey = normalizeWikilinkTitle(resolved.title);
+    keepOldest(all.title, titleKey, resolved);
+    keepOldest(bucket.title, titleKey, resolved);
+    if (resolved.importRelativePath) {
+      keepOldest(
+        bucket.path,
+        normalizeWikilinkTitle(resolved.importRelativePath.replace(/\.md$/i, "")),
+        resolved,
+      );
+    }
+    if (resolved.folderTitlePath !== null) {
+      keepOldest(bucket.folderPath, normalizeWikilinkTitle(resolved.folderTitlePath), resolved);
+    }
+    return resolved;
+  });
+  return { notes: indexed, all, byRoot };
 }
 
 function readMarkdown(data: unknown): string {

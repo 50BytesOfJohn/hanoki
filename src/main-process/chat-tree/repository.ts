@@ -7,6 +7,7 @@ import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
 import { getAppDatabase } from "../db/database";
+import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
 import { getWorkspaceById } from "../workspaces/repository";
@@ -166,6 +167,32 @@ function normalizeTerminalData(value: unknown): TerminalItemData {
         ? data.scrollbackVersion
         : 0,
   };
+}
+
+function idsInChunks(
+  ids: readonly string[],
+  extraBound: number,
+  load: (chunk: string[]) => readonly { id: string }[],
+): string[] {
+  const found = new Set<string>();
+  eachSqlIdChunk(ids, extraBound, (chunk) => {
+    for (const row of load(chunk)) found.add(row.id);
+  });
+  return [...found].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+function normalizeImportRelativePath(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  if (!trimmed) return null;
+  const segments = trimmed.split("/");
+  if (segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")) {
+    return null;
+  }
+  return trimmed;
 }
 
 function normalizeMarkdownData(value: unknown): MarkdownItemData {
@@ -617,37 +644,39 @@ export function getChatTreeChildren(
   const childItemCountsByFolderId = new Map<string, number>();
 
   if (childFolderIds.length > 0) {
-    const folderCountRows = getAppDatabase()
-      .select({
-        parentId: folders.parentId,
-        count: sql<number>`count(*)`,
-      })
-      .from(folders)
-      .where(inArray(folders.parentId, childFolderIds))
-      .groupBy(folders.parentId)
-      .all();
+    eachSqlIdChunk(childFolderIds, 0, (chunk) => {
+      const folderCountRows = getAppDatabase()
+        .select({
+          parentId: folders.parentId,
+          count: sql<number>`count(*)`,
+        })
+        .from(folders)
+        .where(inArray(folders.parentId, chunk))
+        .groupBy(folders.parentId)
+        .all();
 
-    for (const row of folderCountRows) {
-      if (typeof row.parentId === "string") {
-        childFolderCountsByParentId.set(row.parentId, Number(row.count) || 0);
+      for (const row of folderCountRows) {
+        if (typeof row.parentId === "string") {
+          childFolderCountsByParentId.set(row.parentId, Number(row.count) || 0);
+        }
       }
-    }
 
-    const itemCountRows = getAppDatabase()
-      .select({
-        folderId: items.folderId,
-        count: sql<number>`count(*)`,
-      })
-      .from(items)
-      .where(inArray(items.folderId, childFolderIds))
-      .groupBy(items.folderId)
-      .all();
+      const itemCountRows = getAppDatabase()
+        .select({
+          folderId: items.folderId,
+          count: sql<number>`count(*)`,
+        })
+        .from(items)
+        .where(inArray(items.folderId, chunk))
+        .groupBy(items.folderId)
+        .all();
 
-    for (const row of itemCountRows) {
-      if (typeof row.folderId === "string") {
-        childItemCountsByFolderId.set(row.folderId, Number(row.count) || 0);
+      for (const row of itemCountRows) {
+        if (typeof row.folderId === "string") {
+          childItemCountsByFolderId.set(row.folderId, Number(row.count) || 0);
+        }
       }
-    }
+    });
   }
 
   return {
@@ -669,13 +698,13 @@ export function listWorkspaceFolderIds(workspaceId: string, ids: readonly string
     return [];
   }
 
-  return getAppDatabase()
-    .select({ id: folders.id })
-    .from(folders)
-    .where(and(eq(folders.workspaceId, workspaceId), inArray(folders.id, [...ids])))
-    .orderBy(asc(folders.id))
-    .all()
-    .map((row) => row.id);
+  return idsInChunks(ids, 1, (chunk) =>
+    getAppDatabase()
+      .select({ id: folders.id })
+      .from(folders)
+      .where(and(eq(folders.workspaceId, workspaceId), inArray(folders.id, chunk)))
+      .all(),
+  );
 }
 
 export function listWorkspaceChatIds(workspaceId: string, ids: readonly string[]): string[] {
@@ -685,27 +714,27 @@ export function listWorkspaceChatIds(workspaceId: string, ids: readonly string[]
     return [];
   }
 
-  return getAppDatabase()
-    .select({ id: items.id })
-    .from(items)
-    .where(
-      and(eq(items.workspaceId, workspaceId), eq(items.type, "chat"), inArray(items.id, [...ids])),
-    )
-    .orderBy(asc(items.id))
-    .all()
-    .map((row) => row.id);
+  return idsInChunks(ids, 2, (chunk) =>
+    getAppDatabase()
+      .select({ id: items.id })
+      .from(items)
+      .where(
+        and(eq(items.workspaceId, workspaceId), eq(items.type, "chat"), inArray(items.id, chunk)),
+      )
+      .all(),
+  );
 }
 
 export function listWorkspaceItemIds(workspaceId: string, ids: readonly string[]): string[] {
   requireWorkspaceExists(workspaceId);
   if (ids.length === 0) return [];
-  return getAppDatabase()
-    .select({ id: items.id })
-    .from(items)
-    .where(and(eq(items.workspaceId, workspaceId), inArray(items.id, [...ids])))
-    .orderBy(asc(items.id))
-    .all()
-    .map((row) => row.id);
+  return idsInChunks(ids, 1, (chunk) =>
+    getAppDatabase()
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.workspaceId, workspaceId), inArray(items.id, chunk)))
+      .all(),
+  );
 }
 
 export function searchWorkspaceChats(
@@ -832,6 +861,22 @@ export function moveFolder(id: string, parentId: string | null): FolderRow {
   });
 }
 
+export function deleteFolderIfEmpty(id: string): boolean {
+  const db = getAppDatabase();
+  const folder = db.select({ id: folders.id }).from(folders).where(eq(folders.id, id)).get();
+  if (!folder) return false;
+  const childFolder = db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(eq(folders.parentId, id))
+    .get();
+  if (childFolder) return false;
+  const childItem = db.select({ id: items.id }).from(items).where(eq(items.folderId, id)).get();
+  if (childItem) return false;
+  db.delete(folders).where(eq(folders.id, id)).run();
+  return true;
+}
+
 export function deleteFolderRecursive(id: string): DeleteFolderRecursiveResult {
   return getAppDatabase().transaction((tx) => {
     const folder = tx.select().from(folders).where(eq(folders.id, id)).get();
@@ -853,8 +898,12 @@ export function deleteFolderRecursive(id: string): DeleteFolderRecursiveResult {
       };
     }
 
-    tx.delete(items).where(inArray(items.folderId, subtreeFolderIds)).run();
-    tx.delete(folders).where(inArray(folders.id, subtreeFolderIds)).run();
+    eachSqlIdChunk(subtreeFolderIds, 0, (chunk) => {
+      tx.delete(items).where(inArray(items.folderId, chunk)).run();
+    });
+    eachSqlIdChunk(subtreeFolderIds, 0, (chunk) => {
+      tx.delete(folders).where(inArray(folders.id, chunk)).run();
+    });
 
     return {
       workspaceId: folder.workspaceId,
@@ -945,13 +994,13 @@ export function deleteChatTreeItems(
       left.localeCompare(right),
     );
 
-    if (sortedDeletedItemIds.length > 0) {
-      tx.delete(items).where(inArray(items.id, sortedDeletedItemIds)).run();
-    }
+    eachSqlIdChunk(sortedDeletedItemIds, 0, (chunk) => {
+      tx.delete(items).where(inArray(items.id, chunk)).run();
+    });
 
-    if (sortedDeletedFolderIds.length > 0) {
-      tx.delete(folders).where(inArray(folders.id, sortedDeletedFolderIds)).run();
-    }
+    eachSqlIdChunk(sortedDeletedFolderIds, 0, (chunk) => {
+      tx.delete(folders).where(inArray(folders.id, chunk)).run();
+    });
 
     return {
       workspaceId,
@@ -1073,24 +1122,69 @@ export function moveChatTreeItems(
     }
 
     const updatedAt = Date.now();
-    if (movedFolderIds.length > 0) {
+    eachSqlIdChunk(movedFolderIds, 2, (chunk) => {
       tx.update(folders)
         .set({ parentId: destinationFolderId, updatedAt })
-        .where(inArray(folders.id, movedFolderIds))
+        .where(inArray(folders.id, chunk))
         .run();
-    }
-    if (movedItemIds.length > 0) {
+    });
+    eachSqlIdChunk(movedItemIds, 2, (chunk) => {
       tx.update(items)
         .set({ folderId: destinationFolderId, updatedAt })
-        .where(inArray(items.id, movedItemIds))
+        .where(inArray(items.id, chunk))
         .run();
-    }
+    });
 
     return { workspaceId, movedItems, unchangedItems, skippedItems };
   });
 }
 
 let flushPendingMarkdown: (() => void) | null = null;
+let markdownImportDepth = 0;
+const pendingImportRenames = new Map<string, { original: string; next: string }>();
+
+export function beginMarkdownImport(): void {
+  markdownImportDepth += 1;
+}
+
+export function endMarkdownImport(): { id: string; title: string }[] {
+  if (markdownImportDepth === 0) return [];
+  markdownImportDepth -= 1;
+  if (markdownImportDepth > 0) return [];
+  return rewindImportRenames();
+}
+
+/** Restores titles from before in-import renames. Returns the titles to apply after rebuild. */
+export function rewindImportRenames(): { id: string; title: string }[] {
+  if (pendingImportRenames.size === 0) return [];
+  const rows = [...pendingImportRenames.entries()].map(([id, rename]) => ({
+    id,
+    original: rename.original,
+    title: rename.next,
+  }));
+  pendingImportRenames.clear();
+  const db = getAppDatabase();
+  const live: { id: string; title: string }[] = [];
+  for (const row of rows) {
+    const result = db
+      .update(items)
+      .set({ title: row.original, updatedAt: Date.now() })
+      .where(eq(items.id, row.id))
+      .run();
+    if (result.changes === 0) continue;
+    live.push({ id: row.id, title: row.title });
+  }
+  return live;
+}
+
+export function setItemTitles(rows: readonly { id: string; title: string }[]): void {
+  if (rows.length === 0) return;
+  const db = getAppDatabase();
+  const updatedAt = Date.now();
+  for (const row of rows) {
+    db.update(items).set({ title: row.title, updatedAt }).where(eq(items.id, row.id)).run();
+  }
+}
 
 export function setPendingMarkdownFlush(flush: () => void): void {
   flushPendingMarkdown = flush;
@@ -1115,9 +1209,20 @@ export function updateItemTitle(id: string, title: string, expectedTitle?: strin
   const updated = requireItemById(id);
   broadcastItemTitleUpdated(updated, previousTitle);
   if (updated.type === "markdown" && previousTitle !== updated.title) {
-    const rewritten = rewriteNoteLinkTargets(updated.id, previousTitle, updated.title);
-    resolveOpenNoteLinks(updated.workspaceId);
-    if (rewritten.length > 0) broadcastMarkdownBodiesRewritten(updated.workspaceId, rewritten);
+    if (markdownImportDepth > 0) {
+      const pending = pendingImportRenames.get(updated.id);
+      pendingImportRenames.set(updated.id, {
+        original: pending?.original ?? previousTitle,
+        next: updated.title,
+      });
+    } else {
+      const rewritten = rewriteNoteLinkTargets(updated.id, previousTitle, updated.title);
+      resolveOpenNoteLinks(updated.workspaceId);
+      if (updated.title.includes("#")) {
+        resolveOpenNoteLinks(updated.workspaceId, { title: updated.title });
+      }
+      if (rewritten.length > 0) broadcastMarkdownBodiesRewritten(updated.workspaceId, rewritten);
+    }
   }
   return updated;
 }
@@ -1184,6 +1289,9 @@ export function createMarkdown(input: {
   workspaceId: string;
   title: string;
   folderId: string | null;
+  importRelativePath?: string | null;
+  importRootId?: string | null;
+  skipLinkIndex?: boolean;
 }): MarkdownRow {
   requireWorkspaceExists(input.workspaceId);
   if (input.folderId !== null) {
@@ -1202,16 +1310,27 @@ export function createMarkdown(input: {
       folderId: input.folderId,
       type: "markdown",
       title: input.title,
+      importRelativePath: normalizeImportRelativePath(input.importRelativePath),
+      importRootId: input.importRootId || null,
       data: { markdown: "" },
     })
     .run();
   const markdown = requireItemById(id);
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  resolveOpenNoteLinks(markdown.workspaceId);
+  if (!input.skipLinkIndex) {
+    resolveOpenNoteLinks(markdown.workspaceId);
+    if (input.title.includes("#")) {
+      resolveOpenNoteLinks(markdown.workspaceId, { title: input.title });
+    }
+  }
   return markdown;
 }
 
-export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {
+export function updateMarkdownContent(
+  id: string,
+  markdown: string,
+  options?: { skipLinkIndex?: boolean },
+): MarkdownRow {
   const item = requireItemById(id);
   if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   getAppDatabase()
@@ -1221,7 +1340,7 @@ export function updateMarkdownContent(id: string, markdown: string): MarkdownRow
     .run();
   const updated = requireItemById(id);
   if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  reindexNoteLinks(updated.id);
+  if (!options?.skipLinkIndex) reindexNoteLinks(updated.id);
   return updated;
 }
 

@@ -16,7 +16,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 
-import type { ChatInfo, ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import type { ChatInfo, ChatTreeFolderNode, ChatTreeItem, ChatTreeSnapshot } from "@shared/ipc";
 
 interface SearchableChat {
   chat: ChatInfo;
@@ -26,7 +26,7 @@ interface SearchableChat {
 function flattenSnapshot(snapshot: ChatTreeSnapshot): SearchableChat[] {
   const result: SearchableChat[] = [];
 
-  const walk = (folders: ChatTreeFolderNode[], items: ItemInfo[], path: string | null) => {
+  const walk = (folders: ChatTreeFolderNode[], items: ChatTreeItem[], path: string | null) => {
     for (const item of items) {
       if (item.type === "chat") result.push({ chat: item, folderPath: path });
     }

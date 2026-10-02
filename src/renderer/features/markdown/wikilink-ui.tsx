@@ -9,7 +9,7 @@ import type { Editor } from "@tiptap/core";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
-import { normalizeWikilinkTitle, oldestByItemId } from "@shared/markdown/wikilink";
+import { matchOutgoingLink } from "@shared/markdown/wikilink";
 
 import { markdownApi } from "@/api/markdown";
 import {
@@ -35,6 +35,7 @@ const CREATE_VALUE = "__create";
 interface EditorNoteContext {
   workspaceId: string;
   folderId: string | null;
+  itemId: string;
 }
 
 const editorNoteContext = new WeakMap<Editor, EditorNoteContext>();
@@ -43,8 +44,9 @@ export function setWikilinkEditorContext(
   editor: Editor,
   workspaceId: string,
   folderId: string | null,
+  itemId: string,
 ): void {
-  editorNoteContext.set(editor, { workspaceId, folderId });
+  editorNoteContext.set(editor, { workspaceId, folderId, itemId });
 }
 
 interface WikilinkCommand {
@@ -112,46 +114,61 @@ export const WikilinkEditor = Wikilink.extend({
   },
 });
 
-function WikilinkNodeView({ node }: ReactNodeViewProps) {
-  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
-  const { data: titles } = useQuery({
-    queryKey: queryKeys.notes.titles(workspaceId ?? ""),
-    queryFn: () => markdownApi.listTitles(workspaceId ?? ""),
-    enabled: Boolean(workspaceId),
+function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
+  const itemId = editorNoteContext.get(editor)?.itemId ?? null;
+  const { data: edges } = useQuery({
+    queryKey: queryKeys.notes.outgoing(itemId ?? ""),
+    queryFn: () => markdownApi.listOutgoing(itemId ?? ""),
+    enabled: Boolean(itemId),
   });
   const targetText = typeof node.attrs.targetText === "string" ? node.attrs.targetText : "";
   const alias =
     typeof node.attrs.alias === "string" && node.attrs.alias.length > 0 ? node.attrs.alias : null;
   const [renamedTitle, setRenamedTitle] = React.useState<string | null>(null);
+  const [confirmedBroken, setConfirmedBroken] = React.useState(false);
 
   React.useEffect(() => {
     setRenamedTitle(null);
+    setConfirmedBroken(false);
   }, [targetText]);
 
-  const resolved = resolveTitle(titles, targetText);
+  const edge = matchOutgoingLink(edges, targetText, alias);
+  const resolvedId = edge?.toItemId ?? null;
+  const broken =
+    !resolvedId && (confirmedBroken || (Boolean(edges) && edge !== null && renamedTitle === null));
+
+  React.useEffect(() => {
+    if (resolvedId) setConfirmedBroken(false);
+  }, [resolvedId]);
   React.useEffect(() => {
     return subscribeToItemTitleUpdates((event) => {
-      if (event.itemType !== "markdown" || event.itemId !== resolved?.id) return;
+      if (event.itemType !== "markdown" || event.itemId !== resolvedId) return;
       setRenamedTitle(event.title);
     });
-  }, [resolved?.id]);
+  }, [resolvedId]);
 
-  const broken = Boolean(titles) && !resolved && renamedTitle === null;
-  const label = alias ?? renamedTitle ?? resolved?.title ?? targetText;
+  const label = alias ?? renamedTitle ?? edge?.title ?? targetText;
 
   return (
     <NodeViewWrapper as="span">
       <button
         type="button"
         className={cn(broken && "wikilink-broken")}
-        disabled={broken || !resolved}
+        disabled={broken || (!resolvedId && !itemId)}
         aria-label={broken ? `Unresolved link ${label}` : `Open ${label}`}
         onMouseDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
         }}
         onClick={() => {
-          if (resolved) openNoteBeside(resolved.id);
+          if (resolvedId) {
+            openNoteBeside(resolvedId);
+            return;
+          }
+          if (!itemId || broken) return;
+          void openPendingWikilink(itemId, targetText, alias).then((opened) => {
+            if (!opened) setConfirmedBroken(true);
+          });
         }}
       >
         {label}
@@ -381,15 +398,6 @@ function filterNotes(notes: readonly MarkdownTitleOption[], query: string): Mark
   );
 }
 
-function resolveTitle(
-  titles: readonly MarkdownTitleOption[] | undefined,
-  target: string,
-): MarkdownTitleOption | null {
-  if (!titles) return null;
-  const key = normalizeWikilinkTitle(target);
-  return oldestByItemId(titles.filter((title) => normalizeWikilinkTitle(title.title) === key));
-}
-
 function insertWikilink(editor: Editor, range: { from: number; to: number }, title: string): void {
   const target = title.trim();
   if (target.length === 0) return;
@@ -423,6 +431,27 @@ async function createLinkedNote(
       description: error instanceof Error ? error.message : "The note could not be created.",
     });
   }
+}
+
+async function openPendingWikilink(
+  itemId: string,
+  targetText: string,
+  alias: string | null,
+): Promise<boolean> {
+  try {
+    await markdownApi.flushContent(itemId);
+  } catch {
+    // The stored body is what the index reads.
+  }
+  const edges = await queryClient.fetchQuery({
+    queryKey: queryKeys.notes.outgoing(itemId),
+    queryFn: () => markdownApi.listOutgoing(itemId),
+    staleTime: 0,
+  });
+  const match = matchOutgoingLink(edges, targetText, alias);
+  if (!match?.toItemId) return false;
+  openNoteBeside(match.toItemId);
+  return true;
 }
 
 function openNoteBeside(itemId: string): void {
