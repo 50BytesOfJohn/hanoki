@@ -118,6 +118,19 @@ describe("formatNotesFolderImportSummary", () => {
     );
   });
 
+  it("says when nothing was imported and keeps ignored counts", () => {
+    expect(
+      formatNotesFolderImportSummary(
+        imported({
+          noteCount: 0,
+          folderCount: 0,
+          ignoredNonMarkdownCount: 1,
+          ignoredDirectoryNames: [".obsidian"],
+        }),
+      ),
+    ).toBe("No notes imported. 1 non-markdown file ignored. Ignored .obsidian/.");
+  });
+
   it("says when cancel kept a partial copy", () => {
     expect(formatNotesFolderImportSummary(imported({ noteCount: 2, canceled: true }))).toBe(
       `Import canceled. Partial copy kept. New 2 · Skip 0 · Fail 0. Copied under Imported/Vault. ${NOTES_FOLDER_REIMPORT_NOTE}`,

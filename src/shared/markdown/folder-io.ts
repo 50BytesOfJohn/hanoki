@@ -81,7 +81,9 @@ export function formatNotesFolderImportSummary(
       ? result.noteCount > 0
         ? `Import canceled. Partial copy kept. ${counts} ${placed}`
         : "Import canceled. Nothing was copied."
-      : `${counts} ${placed}`,
+      : result.noteCount === 0
+        ? "No notes imported."
+        : `${counts} ${placed}`,
   ];
   if (result.ignoredNonMarkdownCount > 0) {
     parts.push(`${counted(result.ignoredNonMarkdownCount, "non-markdown file")} ignored.`);

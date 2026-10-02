@@ -6,6 +6,7 @@ import {
   type MarkdownInfo,
   type MarkdownTitleOption,
   type NoteBacklink,
+  type NoteOutgoingLink,
 } from "@shared/ipc";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "@shared/markdown/folder-io";
@@ -117,6 +118,14 @@ export function registerMarkdownIpcModule(
       return [parseMarkdownId(args[0])];
     },
     handler: ({ services }, _event, itemId) => services.chatTree.listNoteBacklinks(itemId),
+  });
+  registerInvokeHandler<[string], NoteOutgoingLink[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.markdown.listOutgoing,
+    parseArgs: (args) => {
+      count(args, 1);
+      return [parseMarkdownId(args[0])];
+    },
+    handler: ({ services }, _event, itemId) => services.chatTree.listOutgoingNoteLinks(itemId),
   });
   registerInvokeHandler<[string], NotesFolderExportResult>(context, registeredChannels, {
     channel: IPC_CHANNELS.markdown.exportFolder,

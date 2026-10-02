@@ -183,19 +183,22 @@ function SummaryBody({ result }: { result: ImportedNotes }) {
   const skip = notesFolderImportSkipCount(result);
   const oversized = result.warnings.filter((warning) => warning.includes("larger than"));
   const otherWarnings = result.warnings.filter((warning) => !warning.includes("larger than"));
+  const empty = result.noteCount === 0;
 
   return (
     <>
       <DialogHeader>
         <p className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
-          {result.canceled ? "Canceled" : "Imported"}
+          {result.canceled ? "Canceled" : empty ? "Import" : "Imported"}
         </p>
-        <DialogTitle>{result.canceled ? "Import canceled" : "Notes imported"}</DialogTitle>
+        <DialogTitle>
+          {result.canceled ? "Import canceled" : empty ? "No notes imported" : "Notes imported"}
+        </DialogTitle>
         <DialogDescription className="text-[13px] text-foreground">
           New {result.noteCount} · Skip {skip} · Fail {result.failedCount}
         </DialogDescription>
       </DialogHeader>
-      {result.canceled && result.noteCount === 0 ? (
+      {empty ? (
         <p className="text-[13px]">Nothing was copied.</p>
       ) : (
         <p className="text-[13px]">

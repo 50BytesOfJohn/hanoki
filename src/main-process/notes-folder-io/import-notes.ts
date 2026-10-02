@@ -192,7 +192,7 @@ export async function importMarkdownNotesFromDirectory(
 
     publishProgress(true);
 
-    const removedEmptyWrap = canceled && noteCount === 0;
+    const removedEmptyWrap = noteCount === 0;
     if (removedEmptyWrap) {
       removeEmptyWrap(chatTree, workspaceId, parentId, createdParent, wrapId);
     }

@@ -8,6 +8,7 @@ import {
 } from "@shared/ipc";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
+import { omitSnapshotMarkdownBodies } from "@shared/chat/snapshot-markdown";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -110,7 +111,8 @@ export function registerChatTreeIpcModule(
       expectArgCount(args, 1);
       return [parseValidWorkspaceId(args[0])];
     },
-    handler: ({ services }, _event, workspaceId) => services.chatTree.getChatTree(workspaceId),
+    handler: ({ services }, _event, workspaceId) =>
+      omitSnapshotMarkdownBodies(services.chatTree.getChatTree(workspaceId)),
   });
 
   registerInvokeHandler<[string, string | null], ChatTreeChildrenSlice>(

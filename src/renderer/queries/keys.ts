@@ -36,6 +36,7 @@ export const queryKeys = {
     all: ["notes"] as const,
     titles: (workspaceId: string) => [...queryKeys.notes.all, "titles", workspaceId] as const,
     backlinks: (itemId: string) => [...queryKeys.notes.all, "backlinks", itemId] as const,
+    outgoing: (itemId: string) => [...queryKeys.notes.all, "outgoing", itemId] as const,
   },
   folders: {
     all: ["folders"] as const,

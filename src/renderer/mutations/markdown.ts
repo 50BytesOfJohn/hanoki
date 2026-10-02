@@ -5,9 +5,11 @@ import { formatNotesFolderExportSummary } from "@shared/markdown/folder-io";
 
 import { markdownApi } from "../api/markdown";
 import { toastManager } from "../components/ui/toast";
+import { notifyChatTreeChanged } from "../features/items/item-title-events";
 import { notesImportUi } from "../features/settings/notes-folder-import-dialog";
 import { useWorkspaceStore } from "../features/workspace/store";
 import { queryKeys } from "../queries/keys";
+import type { NotesFolderImportResult } from "@shared/markdown/folder-io";
 
 export function useCreateMarkdown() {
   const queryClient = useQueryClient();
@@ -76,22 +78,29 @@ export function useExportMarkdownNotesFolder() {
   });
 }
 
-export function useImportMarkdownNotesFolder() {
-  const queryClient = useQueryClient();
+export function applyImportedNotesResult(
+  result: NotesFolderImportResult,
+  workspaceId: string,
+  refreshTree: (workspaceId: string) => void = notifyChatTreeChanged,
+): void {
+  if (result.status !== "imported") {
+    notesImportUi.reset();
+    return;
+  }
+  notesImportUi.finish(result);
+  requestAnimationFrame(() => {
+    refreshTree(workspaceId);
+  });
+}
 
+export function useImportMarkdownNotesFolder() {
   return useMutation({
     mutationFn: ({ workspaceId }: { workspaceId: string }) => markdownApi.importFolder(workspaceId),
     onMutate: () => {
       notesImportUi.begin();
     },
-    onSuccess: (result) => {
-      if (result.status !== "imported") {
-        notesImportUi.reset();
-        return;
-      }
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
-      notesImportUi.finish(result);
+    onSuccess: (result, { workspaceId }) => {
+      applyImportedNotesResult(result, workspaceId);
     },
     onError: (error) => {
       notesImportUi.reset();

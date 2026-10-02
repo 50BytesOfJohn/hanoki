@@ -49,6 +49,7 @@ import { importMarkdownNotesFromDirectory } from "../notes-folder-io/import-note
 import {
   listMarkdownTitleOptions,
   listNoteBacklinks,
+  listOutgoingNoteLinks,
   rebuildWorkspaceNoteLinks,
 } from "./note-links";
 
@@ -1904,6 +1905,110 @@ describe("note links", () => {
       rmSync(largeRoot, { recursive: true, force: true });
       rmSync(smallRoot, { recursive: true, force: true });
     }
+  });
+
+  it("lists a path link with a fragment on the same edge backlinks use", () => {
+    const workspace = createWorkspace({ id: "outgoing-path-fragment", name: "Outgoing path" });
+    const wrap = createFolder({ workspaceId: workspace.id, name: "Vault", parentId: null });
+    const ideas = createFolder({ workspaceId: workspace.id, name: "Ideas", parentId: wrap.id });
+    const garden = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Garden",
+      folderId: ideas.id,
+      importRelativePath: "Ideas/Garden",
+      importRootId: wrap.id,
+    });
+    const welcome = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Welcome",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    updateMarkdownContent(welcome.id, "[[Ideas/Garden#Plants]]");
+
+    expect(listOutgoingNoteLinks(welcome.id)).toEqual([
+      {
+        targetText: "Ideas/Garden#Plants",
+        alias: "",
+        toItemId: garden.id,
+        title: "Garden",
+      },
+    ]);
+    expect(listNoteBacklinks(garden.id).map((link) => link.itemId)).toEqual([welcome.id]);
+  });
+
+  it("lists a path link after the target is renamed and moved", () => {
+    const workspace = createWorkspace({ id: "outgoing-path-moved", name: "Outgoing moved" });
+    const wrap = createFolder({ workspaceId: workspace.id, name: "Vault", parentId: null });
+    const work = createFolder({ workspaceId: workspace.id, name: "Work", parentId: wrap.id });
+    const elsewhere = createFolder({
+      workspaceId: workspace.id,
+      name: "Elsewhere",
+      parentId: wrap.id,
+    });
+    const standup = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Standup",
+      folderId: work.id,
+      importRelativePath: "Work/Standup",
+      importRootId: wrap.id,
+    });
+    const retro = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Retro",
+      folderId: wrap.id,
+      importRootId: wrap.id,
+    });
+    updateMarkdownContent(retro.id, "[[Work/Standup]]");
+    updateItemTitle(standup.id, "Daily");
+    moveItem(standup.id, elsewhere.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    expect(listOutgoingNoteLinks(retro.id)).toEqual([
+      { targetText: "Work/Standup", alias: "", toItemId: standup.id, title: "Daily" },
+    ]);
+    expect(listNoteBacklinks(standup.id).map((link) => link.itemId)).toEqual([retro.id]);
+  });
+
+  it("leaves a scoped bare link unresolved when only another import has the title", () => {
+    const workspace = createWorkspace({ id: "outgoing-other-import", name: "Outgoing other" });
+    const foreign = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Shared",
+      folderId: null,
+      importRootId: "batch-b",
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    updateMarkdownContent(source.id, "[[Shared]]");
+
+    expect(listOutgoingNoteLinks(source.id)).toEqual([
+      { targetText: "Shared", alias: "", toItemId: null, title: null },
+    ]);
+    expect(listNoteBacklinks(foreign.id)).toEqual([]);
+  });
+
+  it("resolves a resident global link to the oldest note", () => {
+    const workspace = createWorkspace({ id: "outgoing-resident", name: "Outgoing resident" });
+    const older = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: null,
+      importRootId: "batch-a",
+    });
+    const newer = createMarkdown({ workspaceId: workspace.id, title: "Alpha", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[Alpha]]");
+
+    expect(listOutgoingNoteLinks(source.id)).toEqual([
+      { targetText: "Alpha", alias: "", toItemId: older.id, title: "Alpha" },
+    ]);
+    expect(listNoteBacklinks(older.id).map((link) => link.itemId)).toEqual([source.id]);
+    expect(listNoteBacklinks(newer.id)).toEqual([]);
   });
 
   it("moves and deletes more item ids than the SQLite variable limit", () => {

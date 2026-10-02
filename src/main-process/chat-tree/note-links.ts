@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
-import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
+import type { MarkdownTitleOption, NoteBacklink, NoteOutgoingLink } from "@shared/ipc";
 import {
   findWikilinks,
   normalizeWikilinkTitle,
@@ -236,6 +237,25 @@ export function listNoteBacklinks(itemId: string): NoteBacklink[] {
       left.title.localeCompare(right.title) || left.itemId.localeCompare(right.itemId),
   );
   return backlinks;
+}
+
+export function listOutgoingNoteLinks(fromItemId: string): NoteOutgoingLink[] {
+  const db = getAppDatabase();
+  const source = db.select({ type: items.type }).from(items).where(eq(items.id, fromItemId)).get();
+  if (!source || source.type !== "markdown") return [];
+
+  const target = alias(items, "outgoing_target");
+  return db
+    .select({
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+      toItemId: noteLinks.toItemId,
+      title: target.title,
+    })
+    .from(noteLinks)
+    .leftJoin(target, eq(noteLinks.toItemId, target.id))
+    .where(eq(noteLinks.fromItemId, fromItemId))
+    .all();
 }
 
 type NoteLinkInsertRow = {

@@ -28,6 +28,20 @@ export function splitWikilinkFragment(target: string): { lookup: string; fragmen
   return { lookup: target.slice(0, hash).trim(), fragment: target.slice(hash) };
 }
 
+export function matchOutgoingLink<T extends { targetText: string; alias: string }>(
+  edges: readonly T[] | undefined,
+  targetText: string,
+  alias: string | null,
+): T | null {
+  if (!edges) return null;
+  const target = targetText.trim();
+  const wanted = alias?.trim() ?? "";
+  for (const edge of edges) {
+    if (edge.targetText === target && edge.alias === wanted) return edge;
+  }
+  return null;
+}
+
 export function formatWikilink(target: string, alias: string | null): string {
   const trimmedTarget = target.trim();
   const trimmedAlias = alias?.trim() ?? "";

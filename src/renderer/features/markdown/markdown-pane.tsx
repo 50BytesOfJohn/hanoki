@@ -285,11 +285,12 @@ export function MarkdownEditor({
     if (editable) editor.commands.focus("end");
   }, [editable, editor]);
 
+  if (editor) setWikilinkEditorContext(editor, workspaceId, folderId, itemId);
+
   React.useEffect(() => {
     if (!editor) return;
-    setWikilinkEditorContext(editor, workspaceId, folderId);
     return registerMarkdownEditor(itemId, editor);
-  }, [editor, folderId, itemId, workspaceId]);
+  }, [editor, itemId]);
 
   React.useEffect(() => {
     if (!editor || editable) return;

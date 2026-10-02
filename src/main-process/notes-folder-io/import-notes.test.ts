@@ -236,11 +236,14 @@ describe("importMarkdownNotesFromDirectory", () => {
     const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
 
     expect(result.noteCount).toBe(0);
+    expect(result.folderCount).toBe(0);
     expect(result.failedCount).toBe(0);
     expect(result.ignoredNonMarkdownCount).toBe(1);
     expect(result.ignoredDirectoryNames).toEqual([".obsidian"]);
-    expect(result.wrapFolderPath).toBe(`Imported/${basename(root)}`);
-    expect(formatNotesFolderImportSummary(result)).toContain("New 0 · Skip 0 · Fail 0.");
+    expect(tree.folders).toHaveLength(0);
+    expect(formatNotesFolderImportSummary(result)).toBe(
+      "No notes imported. 1 non-markdown file ignored. Ignored .obsidian/.",
+    );
   });
 
   it("summarizes oversized files and ignored non-markdown and vault dirs", async () => {

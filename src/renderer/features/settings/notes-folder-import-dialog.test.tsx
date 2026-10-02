@@ -105,4 +105,25 @@ describe("NotesFolderImportDialog", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByText("Notes imported")).toBeNull();
   });
+
+  it("titles an empty import and keeps the ignored counts", async () => {
+    showRunningDialog();
+
+    await act(async () => {
+      notesImportUi.finish({
+        ...imported(false),
+        noteCount: 0,
+        failedCount: 0,
+        failures: [],
+        ignoredNonMarkdownCount: 2,
+        ignoredDirectoryNames: [".obsidian"],
+      });
+    });
+
+    expect(screen.getByText("No notes imported")).toBeTruthy();
+    expect(screen.queryByText("Notes imported")).toBeNull();
+    expect(screen.getByText("Nothing was copied.")).toBeTruthy();
+    expect(screen.getByText(/2 non-markdown files ignored/)).toBeTruthy();
+    expect(screen.getByText(/Ignored \.obsidian\//)).toBeTruthy();
+  });
 });

@@ -71,6 +71,7 @@ export const IPC_CHANNELS = {
     flushContent: "markdown:flushContent",
     listTitles: "markdown:listTitles",
     listBacklinks: "markdown:listBacklinks",
+    listOutgoing: "markdown:listOutgoing",
     exportFolder: "markdown:exportFolder",
     importFolder: "markdown:importFolder",
     cancelImport: "markdown:cancelImport",
@@ -304,6 +305,13 @@ export interface NoteBacklink {
   itemId: string;
   title: string;
   snippet: string;
+}
+
+export interface NoteOutgoingLink {
+  targetText: string;
+  alias: string;
+  toItemId: string | null;
+  title: string | null;
 }
 
 export interface MarkdownInfo {
@@ -641,6 +649,7 @@ export interface IpcApi {
   flushMarkdownContent: (id: string) => Promise<MarkdownInfo>;
   listMarkdownTitles: (workspaceId: string) => Promise<MarkdownTitleOption[]>;
   listNoteBacklinks: (itemId: string) => Promise<NoteBacklink[]>;
+  listOutgoingNoteLinks: (itemId: string) => Promise<NoteOutgoingLink[]>;
   exportMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderExportResult>;
   importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
   cancelMarkdownNotesImport: () => Promise<void>;

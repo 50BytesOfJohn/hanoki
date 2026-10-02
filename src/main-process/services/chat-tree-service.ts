@@ -51,12 +51,14 @@ import type {
   MarkdownInfo,
   MarkdownTitleOption,
   NoteBacklink,
+  NoteOutgoingLink,
   TabsUiState,
   TabStateItem,
 } from "@shared/ipc";
 import {
   listMarkdownTitleOptions,
   listNoteBacklinks as listNoteBacklinksInRepo,
+  listOutgoingNoteLinks as listOutgoingNoteLinksInRepo,
   rebuildWorkspaceNoteLinks,
 } from "../chat-tree/note-links";
 import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/repository";
@@ -102,6 +104,7 @@ export interface ChatTreeService {
   flushAllMarkdownContent(): void;
   listMarkdownTitles(workspaceId: string): MarkdownTitleOption[];
   listNoteBacklinks(itemId: string): NoteBacklink[];
+  listOutgoingNoteLinks(itemId: string): NoteOutgoingLink[];
   rebuildNoteLinks(workspaceId: string): void;
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
@@ -655,6 +658,10 @@ export function createChatTreeService(): ChatTreeService {
 
     listNoteBacklinks(itemId: string): NoteBacklink[] {
       return listNoteBacklinksInRepo(itemId);
+    },
+
+    listOutgoingNoteLinks(itemId: string): NoteOutgoingLink[] {
+      return listOutgoingNoteLinksInRepo(itemId);
     },
 
     rebuildNoteLinks(workspaceId: string): void {
