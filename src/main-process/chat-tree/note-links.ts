@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
@@ -13,6 +14,11 @@ import { getAppDatabase } from "../db/database";
 import { folders, items, noteLinks } from "../db/schema";
 
 const BACKLINK_LIMIT = 50;
+/** workspace_id, from_item_id, to_item_id, target_text, alias. */
+const NOTE_LINK_BOUND_COLUMNS = 5;
+const SQLITE_VARIABLE_LIMIT_FALLBACK = 999;
+
+let cachedSqliteVariableLimit: number | null = null;
 
 interface ResolveNote {
   id: string;
@@ -44,20 +50,23 @@ export function reindexNoteLinks(itemId: string): void {
 
   const index = loadResolveIndex(item.workspaceId);
   const edges = uniqueEdges(readMarkdown(item.data), index, item.folderId);
+  const rows = edges.map((edge) => ({
+    workspaceId: item.workspaceId,
+    fromItemId: itemId,
+    toItemId: edge.toItemId,
+    targetText: edge.targetText,
+    alias: edge.alias,
+  }));
+  const chunkSize = noteLinkChunkSize();
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.fromItemId, itemId)).run();
-    if (edges.length === 0) return;
-    tx.insert(noteLinks)
-      .values(
-        edges.map((edge) => ({
-          workspaceId: item.workspaceId,
-          fromItemId: itemId,
-          toItemId: edge.toItemId,
-          targetText: edge.targetText,
-          alias: edge.alias,
-        })),
-      )
-      .run();
+    insertNoteLinkRows(
+      chunkSize,
+      (chunk) => {
+        tx.insert(noteLinks).values(chunk).run();
+      },
+      rows,
+    );
   });
 }
 
@@ -79,19 +88,25 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
     loadFolders(workspaceId),
   );
 
+  const rows = notes.flatMap((note) =>
+    uniqueEdges(readMarkdown(note.data), index, note.folderId).map((edge) => ({
+      workspaceId,
+      fromItemId: note.id,
+      toItemId: edge.toItemId,
+      targetText: edge.targetText,
+      alias: edge.alias,
+    })),
+  );
+  const chunkSize = noteLinkChunkSize();
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.workspaceId, workspaceId)).run();
-    const rows = notes.flatMap((note) =>
-      uniqueEdges(readMarkdown(note.data), index, note.folderId).map((edge) => ({
-        workspaceId,
-        fromItemId: note.id,
-        toItemId: edge.toItemId,
-        targetText: edge.targetText,
-        alias: edge.alias,
-      })),
+    insertNoteLinkRows(
+      chunkSize,
+      (chunk) => {
+        tx.insert(noteLinks).values(chunk).run();
+      },
+      rows,
     );
-    if (rows.length === 0) return;
-    tx.insert(noteLinks).values(rows).run();
   });
 }
 
@@ -217,6 +232,47 @@ export function listNoteBacklinks(itemId: string): NoteBacklink[] {
       left.title.localeCompare(right.title) || left.itemId.localeCompare(right.itemId),
   );
   return backlinks;
+}
+
+type NoteLinkInsertRow = {
+  workspaceId: string;
+  fromItemId: string;
+  toItemId: string | null;
+  targetText: string;
+  alias: string;
+};
+
+function sqliteVariableLimit(): number {
+  if (cachedSqliteVariableLimit !== null) return cachedSqliteVariableLimit;
+  const sqlite = (getAppDatabase() as { $client: DatabaseSync }).$client;
+  const query = sqlite.prepare("SELECT sqlite_compileoption_get(?) AS opt");
+  let limit = SQLITE_VARIABLE_LIMIT_FALLBACK;
+  for (let index = 0; ; index += 1) {
+    const row = query.get(index) as { opt: string | null } | undefined;
+    if (!row?.opt) break;
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.opt);
+    const parsed = match?.[1] ? Number(match[1]) : Number.NaN;
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      limit = parsed;
+      break;
+    }
+  }
+  cachedSqliteVariableLimit = limit;
+  return limit;
+}
+
+function noteLinkChunkSize(): number {
+  return Math.max(1, Math.floor(sqliteVariableLimit() / NOTE_LINK_BOUND_COLUMNS));
+}
+
+function insertNoteLinkRows(
+  chunkSize: number,
+  insertRows: (rows: NoteLinkInsertRow[]) => void,
+  rows: readonly NoteLinkInsertRow[],
+): void {
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    insertRows(rows.slice(offset, offset + chunkSize));
+  }
 }
 
 function uniqueEdges(markdown: string, index: ResolveIndex, sourceFolderId: string | null) {

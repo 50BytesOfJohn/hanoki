@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
@@ -1409,7 +1410,79 @@ describe("note links", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("reindexes one note whose links exceed the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "links-var-one", name: "Var one" });
+    const known = createMarkdown({ workspaceId: workspace.id, title: "Known", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    const linkCount = linksPastVariableLimit();
+    const lines = ["[[Known]]"];
+    for (let index = 1; index < linkCount; index += 1) lines.push(`[[m${index}]]`);
+
+    updateMarkdownContent(source.id, lines.join("\n"));
+
+    expect(countNoteLinks(workspace.id)).toBe(linkCount);
+    expect(linkedTo(workspace.id, source.id, "Known")).toBe(known.id);
+  });
+
+  it("rebuilds a workspace whose links exceed the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "links-var-many", name: "Var many" });
+    const known = createMarkdown({ workspaceId: workspace.id, title: "Known", folderId: null });
+    const perNote = 10;
+    const edgeCount = linksPastVariableLimit();
+    const noteCount = Math.ceil(edgeCount / perNote);
+    const db = getAppDatabase();
+    for (let noteIndex = 0; noteIndex < noteCount; noteIndex += 1) {
+      const lines: string[] = [];
+      for (let linkIndex = 0; linkIndex < perNote; linkIndex += 1) {
+        lines.push(
+          noteIndex === 0 && linkIndex === 0 ? "[[Known]]" : `[[x${noteIndex}-${linkIndex}]]`,
+        );
+      }
+      db.insert(items)
+        .values({
+          id: `var-many-${noteIndex}`,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: `Note ${noteIndex}`,
+          data: { markdown: lines.join("\n") },
+        })
+        .run();
+    }
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    expect(countNoteLinks(workspace.id)).toBe(noteCount * perNote);
+    expect(linkedTo(workspace.id, "var-many-0", "Known")).toBe(known.id);
+  });
 });
+
+function linksPastVariableLimit(): number {
+  return Math.max(5000, Math.floor(sqliteVariableLimit() / 5) + 1);
+}
+
+function sqliteVariableLimit(): number {
+  const sqlite = (getAppDatabase() as { $client: DatabaseSync }).$client;
+  const query = sqlite.prepare("SELECT sqlite_compileoption_get(?) AS opt");
+  for (let index = 0; ; index += 1) {
+    const row = query.get(index) as { opt: string | null } | undefined;
+    if (!row?.opt) break;
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.opt);
+    const parsed = match?.[1] ? Number(match[1]) : Number.NaN;
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return 999;
+}
+
+function countNoteLinks(workspaceId: string): number {
+  const rows = getAppDatabase()
+    .select({ fromItemId: noteLinks.fromItemId })
+    .from(noteLinks)
+    .where(eq(noteLinks.workspaceId, workspaceId))
+    .all();
+  return rows.length;
+}
 
 function linkedTo(workspaceId: string, fromItemId: string, targetText: string): string | null {
   const row = getAppDatabase()
