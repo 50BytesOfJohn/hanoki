@@ -13,8 +13,8 @@ import {
 import {
   beginMarkdownImport,
   endMarkdownImport,
+  getItemById,
   rewindImportRenames,
-  setItemTitles,
   updateItemTitle,
 } from "../chat-tree/repository";
 import type { ChatTreeService } from "../services/chat-tree-service";
@@ -43,7 +43,7 @@ export type NotesFolderImportTree = Pick<
     workspaceId: string,
     importRootId: string,
     options?: { onYield?: () => Promise<void> },
-  ) => void | Promise<void>;
+  ) => void | Promise<void | { id: string; title: string }[]>;
   deleteFolderIfEmpty?: (id: string) => boolean;
 };
 
@@ -204,7 +204,7 @@ export async function importMarkdownNotesFromDirectory(
       noteCount === 0,
     );
 
-    const parkedBefore = rewindImportRenames();
+    let parkedBefore: { id: string; title: string }[] = [];
     try {
       if (noteCount > 0) {
         latestProgress = {
@@ -218,7 +218,7 @@ export async function importMarkdownNotesFromDirectory(
         await new Promise((resolve) => {
           setImmediate(resolve);
         });
-        await chatTree.rebuildImportedNoteLinks?.(workspaceId, wrapId, {
+        const rewound = await chatTree.rebuildImportedNoteLinks?.(workspaceId, wrapId, {
           onYield: async () => {
             await new Promise((resolve) => {
               setImmediate(resolve);
@@ -226,10 +226,11 @@ export async function importMarkdownNotesFromDirectory(
             await options?.onYield?.();
           },
         });
+        parkedBefore = Array.isArray(rewound) ? rewound : rewindImportRenames();
+      } else {
+        parkedBefore = rewindImportRenames();
       }
     } catch (error) {
-      setItemTitles(parkedBefore);
-      parkedBefore.length = 0;
       warnings.push(
         error instanceof Error
           ? `Note links could not be rebuilt: ${error.message}`
@@ -238,9 +239,7 @@ export async function importMarkdownNotesFromDirectory(
     }
     const parkedDuring = rewindImportRenames();
     const parkedAtEnd = finishImport();
-    for (const row of [...parkedBefore, ...parkedDuring, ...parkedAtEnd]) {
-      updateItemTitle(row.id, row.title);
-    }
+    replayImportRenames([...parkedBefore, ...parkedDuring, ...parkedAtEnd]);
 
     const skippedDuplicatePathCount = duplicatePaths.length;
     return {
@@ -261,7 +260,20 @@ export async function importMarkdownNotesFromDirectory(
       warnings,
     };
   } finally {
-    for (const row of finishImport()) updateItemTitle(row.id, row.title);
+    replayImportRenames(finishImport());
+  }
+}
+
+function replayImportRenames(rows: readonly { id: string; title: string }[]): void {
+  const finalTitle = new Map<string, string>();
+  for (const row of rows) finalTitle.set(row.id, row.title);
+  for (const [id, title] of finalTitle) {
+    if (!getItemById(id)) continue;
+    try {
+      updateItemTitle(id, title);
+    } catch {
+      // Deleted between the existence check and the write.
+    }
   }
 }
 

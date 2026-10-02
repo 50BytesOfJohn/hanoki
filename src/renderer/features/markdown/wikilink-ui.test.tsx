@@ -92,4 +92,19 @@ describe("pending wikilink", () => {
     expect(await screen.findByRole("button", { name: "Unresolved link Target" })).toBeTruthy();
     expect(openTab).not.toHaveBeenCalled();
   });
+
+  it("clears the unresolved mark once the link resolves", async () => {
+    listOutgoing.mockResolvedValue([]);
+    renderLink();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Target" }));
+    expect(await screen.findByRole("button", { name: "Unresolved link Target" })).toBeTruthy();
+
+    const resolved = [{ targetText: "Target", alias: "", toItemId: "note-2", title: "Target" }];
+    listOutgoing.mockResolvedValue(resolved);
+    queryClient.setQueryData(queryKeys.notes.outgoing("doc"), resolved);
+
+    expect(await screen.findByRole("button", { name: "Open Target" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Unresolved link Target" })).toBeNull();
+  });
 });

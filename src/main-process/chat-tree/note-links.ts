@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, like, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { MarkdownTitleOption, NoteBacklink, NoteOutgoingLink } from "@shared/ipc";
@@ -13,6 +13,7 @@ import {
 import { getAppDatabase } from "../db/database";
 import { eachSqlIdChunk } from "../db/sqlite-max-variable-number";
 import { folders, items, noteLinks } from "../db/schema";
+import { rewindImportRenames } from "./repository";
 
 const BACKLINK_LIMIT = 50;
 /** workspace_id, from_item_id, to_item_id, target_text, alias. */
@@ -92,6 +93,21 @@ export async function rebuildImportedNoteLinks(
   workspaceId: string,
   importRootId: string,
   options?: { onYield?: () => Promise<void> },
+): Promise<{ id: string; title: string }[]> {
+  const parked = rewindImportRenames();
+  try {
+    await writeImportedNoteLinks(workspaceId, importRootId, options);
+  } catch (error) {
+    restoreRewoundTitles(parked);
+    throw error;
+  }
+  return parked;
+}
+
+async function writeImportedNoteLinks(
+  workspaceId: string,
+  importRootId: string,
+  options?: { onYield?: () => Promise<void> },
 ): Promise<void> {
   const db = getAppDatabase();
   const notes = db
@@ -135,14 +151,37 @@ export async function rebuildImportedNoteLinks(
       .all();
     const liveAt = new Map(live.map((row) => [row.id, row.updatedAt]));
     const liveIds = new Set(liveAt.keys());
-    const writeIds = imported
-      .filter((note) => liveAt.get(note.id) === updatedAtById.get(note.id))
-      .map((note) => note.id);
-    const writeIdSet = new Set(writeIds);
-    const kept = rows.flatMap((row) => {
-      if (!writeIdSet.has(row.fromItemId)) return [];
+    const changed = new Set(
+      imported
+        .filter((note) => {
+          const liveUpdated = liveAt.get(note.id);
+          return liveUpdated !== undefined && liveUpdated !== updatedAtById.get(note.id);
+        })
+        .map((note) => note.id),
+    );
+    const writeIds = imported.filter((note) => liveIds.has(note.id)).map((note) => note.id);
+    const kept: NoteLinkInsertRow[] = [];
+    for (const row of rows) {
+      if (!liveIds.has(row.fromItemId) || changed.has(row.fromItemId)) continue;
       const toItemId = row.toItemId !== null && liveIds.has(row.toItemId) ? row.toItemId : null;
-      return [{ ...row, toItemId }];
+      kept.push({ ...row, toItemId });
+    }
+    eachSqlIdChunk([...changed], 0, (chunk) => {
+      const fresh = tx.select().from(items).where(inArray(items.id, chunk)).all();
+      for (const note of fresh) {
+        if (note.type !== "markdown") continue;
+        for (const edge of uniqueEdges(readMarkdown(note.data), index, note.importRootId)) {
+          const toItemId =
+            edge.toItemId !== null && liveIds.has(edge.toItemId) ? edge.toItemId : null;
+          kept.push({
+            workspaceId,
+            fromItemId: note.id,
+            toItemId,
+            targetText: edge.targetText,
+            alias: edge.alias,
+          });
+        }
+      }
     });
     eachSqlIdChunk(writeIds, 0, (chunk) => {
       tx.delete(noteLinks).where(inArray(noteLinks.fromItemId, chunk)).run();
@@ -155,7 +194,16 @@ export async function rebuildImportedNoteLinks(
       kept,
     );
   });
-  resolveOpenNoteLinks(workspaceId);
+  resolveOpenNoteLinks(workspaceId, { hashed: true });
+}
+
+function restoreRewoundTitles(rows: readonly { id: string; title: string }[]): void {
+  if (rows.length === 0) return;
+  const db = getAppDatabase();
+  const updatedAt = Date.now();
+  for (const row of rows) {
+    db.update(items).set({ title: row.title, updatedAt }).where(eq(items.id, row.id)).run();
+  }
 }
 
 export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
@@ -244,19 +292,28 @@ export function rewriteNoteLinkTargets(
   return rewritten;
 }
 
-export function resolveOpenNoteLinks(workspaceId: string): void {
+export function resolveOpenNoteLinks(
+  workspaceId: string,
+  scope?: { hashed?: boolean; title?: string },
+): number {
   const db = getAppDatabase();
+  const titleKey = scope?.title === undefined ? null : normalizeWikilinkTitle(scope.title);
+  if (scope?.title !== undefined && (titleKey === null || !titleKey.includes("#"))) return 0;
   const open = db
     .select()
     .from(noteLinks)
     .where(
       and(
         eq(noteLinks.workspaceId, workspaceId),
-        or(isNull(noteLinks.toItemId), like(noteLinks.targetText, "%#%")),
+        scope?.hashed
+          ? or(isNull(noteLinks.toItemId), like(noteLinks.targetText, "%#%"))
+          : titleKey !== null
+            ? sql`lower(trim(${noteLinks.targetText})) = ${titleKey}`
+            : isNull(noteLinks.toItemId),
       ),
     )
     .all();
-  if (open.length === 0) return;
+  if (open.length === 0) return 0;
 
   const index = loadResolveIndex(workspaceId);
   const rootByNoteId = new Map(index.notes.map((note) => [note.id, note.importRootId]));
@@ -274,6 +331,7 @@ export function resolveOpenNoteLinks(workspaceId: string): void {
       )
       .run();
   }
+  return open.length;
 }
 
 export function listMarkdownTitleOptions(workspaceId: string): MarkdownTitleOption[] {

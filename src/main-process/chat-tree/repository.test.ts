@@ -58,6 +58,7 @@ import {
   listOutgoingNoteLinks,
   rebuildImportedNoteLinks,
   rebuildWorkspaceNoteLinks,
+  resolveOpenNoteLinks,
 } from "./note-links";
 
 const testDataDirectory = mkdtempSync(join(tmpdir(), "hanoki-move-items-"));
@@ -2218,6 +2219,68 @@ describe("note links", () => {
     expect(linkedTo(workspace.id, source.id, "G# later")).toBe("hash-imported");
   });
 
+  it("re-resolves only the hashed title being created", () => {
+    const workspace = createWorkspace({ id: "hash-scoped-create", name: "Hash scoped create" });
+    const resident = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Home",
+      folderId: null,
+    });
+    updateMarkdownContent(source.id, "[[G# tips]]");
+    const db = getAppDatabase();
+    for (let index = 0; index < 200; index += 1) {
+      const id = `decoy-${String(index).padStart(3, "0")}`;
+      const title = `Hash ${index}# x`;
+      db.insert(items)
+        .values({
+          id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title,
+          data: { markdown: "" },
+        })
+        .run();
+      db.insert(noteLinks)
+        .values({
+          workspaceId: workspace.id,
+          fromItemId: source.id,
+          toItemId: resident.id,
+          targetText: title,
+          alias: "",
+        })
+        .run();
+    }
+
+    expect(resolveOpenNoteLinks(workspace.id, { title: "G# tips" })).toBe(1);
+
+    const exact = createMarkdown({
+      workspaceId: workspace.id,
+      title: "G# tips",
+      folderId: null,
+    });
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(exact.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe(resident.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 199# x")).toBe(resident.id);
+
+    const plain = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Plain",
+      folderId: null,
+    });
+    deleteItem(plain.id);
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe(resident.id);
+
+    resolveOpenNoteLinks(workspace.id, { hashed: true });
+    expect(linkedTo(workspace.id, source.id, "Hash 0# x")).toBe("decoy-000");
+    expect(linkedTo(workspace.id, source.id, "G# tips")).toBe(exact.id);
+  });
+
   it("keeps edges when a source and a target disappear during the rebuild yield", async () => {
     const workspace = createWorkspace({ id: "resolve-yield-delete", name: "Yield delete" });
     const db = getAppDatabase();
@@ -2347,6 +2410,186 @@ describe("note links", () => {
       const sources = notes.filter((note) => note.title !== "Renamed");
       expect(sources).toHaveLength(2000);
       for (const note of sources) expect(note.markdown).toBe("[[Renamed]]\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("keeps a renamed batch note's outgoing links", async () => {
+    const workspace = createWorkspace({ id: "resolve-yield-rename-out", name: "Yield rename out" });
+    const db = getAppDatabase();
+    for (const note of [
+      { id: "out-keep", title: "Keep" },
+      { id: "out-also", title: "Also" },
+    ]) {
+      db.insert(items)
+        .values({
+          id: note.id,
+          workspaceId: workspace.id,
+          folderId: null,
+          type: "markdown",
+          title: note.title,
+          importRootId: "root-out",
+          data: { markdown: "" },
+          createdAt: 1,
+          updatedAt: 1,
+        })
+        .run();
+    }
+    insertImportedNotes(workspace.id, 2001, "[[Keep]]\n[[Also]]", "root-out", "out-src");
+
+    let yielded = false;
+    await rebuildImportedNoteLinks(workspace.id, "root-out", {
+      onYield: async () => {
+        if (yielded) return;
+        yielded = true;
+        updateItemTitle("out-src-0000", "Renamed");
+      },
+    });
+
+    expect(yielded).toBe(true);
+    expect(linkedTo(workspace.id, "out-src-0000", "Keep")).toBe("out-keep");
+    expect(linkedTo(workspace.id, "out-src-0000", "Also")).toBe("out-also");
+    const scoped = edgeRows(workspace.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(edgeRows(workspace.id)).toEqual(scoped);
+  });
+
+  it("rewrites a rename that lands between linking progress and the index load", async () => {
+    const workspace = createWorkspace({ id: "links-linking-immediate", name: "Linking immediate" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-linking-immediate-"));
+    try {
+      writeFileSync(join(root, "Target.md"), "t\n");
+      writeFileSync(join(root, "A.md"), "[[Target]]\n");
+      writeFileSync(join(root, "B.md"), "[[Target]]\n");
+
+      const chatTree = createChatTreeService();
+      let queued = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: (progress) => {
+          if (progress.step !== "linking" || queued) return;
+          queued = true;
+          setImmediate(() => {
+            const note = getAppDatabase()
+              .select({ id: items.id })
+              .from(items)
+              .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Target")))
+              .get();
+            if (!note) throw new Error("Target was not imported before linking.");
+            updateItemTitle(note.id, "Moved");
+          });
+        },
+      });
+
+      expect(result.status).toBe("imported");
+      expect(queued).toBe(true);
+      const notes = markdownRows(workspace.id);
+      const sources = notes.filter((note) => note.title !== "Moved");
+      expect(sources).toHaveLength(2);
+      for (const note of sources) expect(note.markdown).toBe("[[Moved]]\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("imports when a renamed note is deleted before replay", async () => {
+    const workspace = createWorkspace({ id: "links-rename-delete", name: "Rename delete" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-rename-delete-"));
+    try {
+      writeFileSync(join(root, "Other.md"), "o\n");
+      writeFileSync(join(root, "Source.md"), "[[Victim]]\n[[Other]]\n");
+      writeFileSync(join(root, "Victim.md"), "v\n");
+      for (let index = 0; index < 30; index += 1) {
+        writeFileSync(join(root, `Z${String(index).padStart(2, "0")}.md`), "z\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let acted = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onYield: () => {
+          if (acted) return;
+          const db = getAppDatabase();
+          const victim = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Victim")))
+            .get();
+          const other = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "Other")))
+            .get();
+          if (!victim || !other) return;
+          acted = true;
+          updateItemTitle(victim.id, "Gone");
+          deleteItem(victim.id);
+          updateItemTitle(other.id, "Moved");
+        },
+      });
+
+      expect(result.status).toBe("imported");
+      expect(acted).toBe(true);
+      const source = markdownRows(workspace.id).find((note) => note.title === "Source");
+      expect(source?.markdown).toBe("[[Victim]]\n[[Moved]]\n");
+      expect(getItemById(source?.id ?? "")).not.toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replays a rename chain split across the rewind as its final title", async () => {
+    const workspace = createWorkspace({ id: "links-rename-chain", name: "Rename chain" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-rename-chain-"));
+    try {
+      writeFileSync(join(root, "Beta.md"), "beta\n");
+      writeFileSync(join(root, "M-alpha.md"), "alpha\n");
+      for (let index = 0; index < 1999; index += 1) {
+        writeFileSync(join(root, `N${String(index).padStart(4, "0")}.md`), "[[M-alpha]]\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let linking = false;
+      let renamedToBeta = false;
+      let renamedToGamma = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: (progress) => {
+          if (progress.step === "linking") linking = true;
+        },
+        onYield: () => {
+          const db = getAppDatabase();
+          const alpha = db
+            .select({ id: items.id })
+            .from(items)
+            .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "M-alpha")))
+            .get();
+          if (!linking) {
+            if (renamedToBeta || !alpha) return;
+            updateItemTitle(alpha.id, "Beta");
+            renamedToBeta = true;
+            return;
+          }
+          if (renamedToGamma) return;
+          if (!alpha) throw new Error("M-alpha was not restored before the linking yield.");
+          updateItemTitle(alpha.id, "Gamma");
+          renamedToGamma = true;
+        },
+      });
+
+      expect(result.noteCount).toBe(2001);
+      expect(renamedToBeta).toBe(true);
+      expect(renamedToGamma).toBe(true);
+      const notes = markdownRows(workspace.id);
+      const gamma = notes.find((note) => note.title === "Gamma");
+      const beta = notes.find((note) => note.title === "Beta");
+      const source = notes.find((note) => note.title === "N0000");
+      expect(gamma?.id).toBeTruthy();
+      expect(beta?.id).toBeTruthy();
+      expect(source?.markdown).toBe("[[Gamma]]\n");
+      expect(linkedTo(workspace.id, source?.id ?? "", "Gamma")).toBe(gamma?.id);
+      expect(linkedTo(workspace.id, source?.id ?? "", "Beta")).toBeNull();
+      const sources = notes.filter((note) => note.title.startsWith("N"));
+      expect(sources).toHaveLength(1999);
+      for (const note of sources) expect(note.markdown).toBe("[[Gamma]]\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -1164,13 +1164,17 @@ export function rewindImportRenames(): { id: string; title: string }[] {
   }));
   pendingImportRenames.clear();
   const db = getAppDatabase();
+  const live: { id: string; title: string }[] = [];
   for (const row of rows) {
-    db.update(items)
+    const result = db
+      .update(items)
       .set({ title: row.original, updatedAt: Date.now() })
       .where(eq(items.id, row.id))
       .run();
+    if (result.changes === 0) continue;
+    live.push({ id: row.id, title: row.title });
   }
-  return rows.map(({ id, title }) => ({ id, title }));
+  return live;
 }
 
 export function setItemTitles(rows: readonly { id: string; title: string }[]): void {
@@ -1214,6 +1218,9 @@ export function updateItemTitle(id: string, title: string, expectedTitle?: strin
     } else {
       const rewritten = rewriteNoteLinkTargets(updated.id, previousTitle, updated.title);
       resolveOpenNoteLinks(updated.workspaceId);
+      if (updated.title.includes("#")) {
+        resolveOpenNoteLinks(updated.workspaceId, { title: updated.title });
+      }
       if (rewritten.length > 0) broadcastMarkdownBodiesRewritten(updated.workspaceId, rewritten);
     }
   }
@@ -1310,7 +1317,12 @@ export function createMarkdown(input: {
     .run();
   const markdown = requireItemById(id);
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  if (!input.skipLinkIndex) resolveOpenNoteLinks(markdown.workspaceId);
+  if (!input.skipLinkIndex) {
+    resolveOpenNoteLinks(markdown.workspaceId);
+    if (input.title.includes("#")) {
+      resolveOpenNoteLinks(markdown.workspaceId, { title: input.title });
+    }
+  }
   return markdown;
 }
 

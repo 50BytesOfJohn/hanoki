@@ -117,7 +117,7 @@ export interface ChatTreeService {
     workspaceId: string,
     importRootId: string,
     options?: { onYield?: () => Promise<void> },
-  ): Promise<void>;
+  ): Promise<{ id: string; title: string }[]>;
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -700,7 +700,7 @@ export function createChatTreeService(): ChatTreeService {
 
     async rebuildImportedNoteLinks(workspaceId, importRootId, options) {
       flushAllPendingMarkdownContent();
-      await rebuildImportedNoteLinksInRepo(workspaceId, importRootId, options);
+      return rebuildImportedNoteLinksInRepo(workspaceId, importRootId, options);
     },
 
     cloneChat(chatId: string): ChatInfo {

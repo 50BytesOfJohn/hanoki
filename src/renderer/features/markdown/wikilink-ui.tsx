@@ -135,7 +135,11 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
   const edge = matchOutgoingLink(edges, targetText, alias);
   const resolvedId = edge?.toItemId ?? null;
   const broken =
-    confirmedBroken || (Boolean(edges) && edge !== null && !resolvedId && renamedTitle === null);
+    !resolvedId && (confirmedBroken || (Boolean(edges) && edge !== null && renamedTitle === null));
+
+  React.useEffect(() => {
+    if (resolvedId) setConfirmedBroken(false);
+  }, [resolvedId]);
   React.useEffect(() => {
     return subscribeToItemTitleUpdates((event) => {
       if (event.itemType !== "markdown" || event.itemId !== resolvedId) return;
