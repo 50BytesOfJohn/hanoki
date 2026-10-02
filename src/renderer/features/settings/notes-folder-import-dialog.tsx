@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import type { NotesFolderImportProgressEvent } from "@shared/events";
 import {
@@ -76,11 +76,38 @@ export function NotesFolderImportDialog() {
     notesImportUi.getSnapshot,
   );
 
+  const summaryCloseArmed = useRef(false);
+
   useEffect(() => {
-    return window.electronAPI.onSystemEvent((event) => {
-      if (event.type === "markdown:import-progress") notesImportUi.progress(event);
+    let frame: number | null = null;
+    let pending: NotesFolderImportProgressEvent | null = null;
+    const stop = window.electronAPI.onSystemEvent((event) => {
+      if (event.type !== "markdown:import-progress") return;
+      pending = event;
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        const next = pending;
+        pending = null;
+        if (next) notesImportUi.progress(next);
+      });
     });
+    return () => {
+      stop();
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, []);
+
+  useEffect(() => {
+    if (ui.phase !== "summary") {
+      summaryCloseArmed.current = false;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      summaryCloseArmed.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [ui.phase]);
 
   const progress = ui.phase === "running" ? ui.progress : null;
   const open = ui.phase === "summary" || progress !== null;
@@ -88,14 +115,14 @@ export function NotesFolderImportDialog() {
   return (
     <Dialog
       open={open}
-      disablePointerDismissal={ui.phase === "running"}
-      onOpenChange={(nextOpen) => {
+      disablePointerDismissal
+      onOpenChange={(nextOpen, details) => {
         if (nextOpen) return;
         if (ui.phase === "running") {
           void cancelImport();
           return;
         }
-        notesImportUi.reset();
+        if (details.reason === "escape-key" && summaryCloseArmed.current) notesImportUi.reset();
       }}
     >
       <DialogContent showCloseButton={false} className="sm:max-w-md">

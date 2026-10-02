@@ -29,6 +29,7 @@ import {
 
 const IMPORTED_PARENT_NAME = "Imported";
 const IMPORT_YIELD_EVERY = 25;
+const IMPORT_PROGRESS_MIN_INTERVAL_MS = 100;
 
 export type NotesFolderImportTree = Pick<
   ChatTreeService,
@@ -109,7 +110,7 @@ export async function importMarkdownNotesFromDirectory(
       reason: entry.reason ?? "Could not be read.",
     }));
   const warnings = collected.skipped
-    .filter((entry) => entry.kind === "oversized" || entry.kind === "unreadable")
+    .filter((entry) => entry.kind === "oversized")
     .map((entry) => entry.reason ?? entry.relativePath);
 
   beginMarkdownImport();
@@ -129,12 +130,24 @@ export async function importMarkdownNotesFromDirectory(
     const folderIds = new Map<string, string>();
     let noteCount = 0;
     let canceled = false;
+    let latestProgress: NotesFolderImportProgress | null = null;
+    let lastProgressSentAt = Number.NEGATIVE_INFINITY;
+
+    const publishProgress = (force: boolean) => {
+      if (!latestProgress) return;
+      const now = Date.now();
+      if (!force && now - lastProgressSentAt < IMPORT_PROGRESS_MIN_INTERVAL_MS) return;
+      options?.onProgress?.(latestProgress);
+      latestProgress = null;
+      lastProgressSentAt = now;
+    };
 
     for (let index = 0; index < kept.length; index += 1) {
       if (index > 0 && index % IMPORT_YIELD_EVERY === 0) {
         await new Promise((resolve) => {
           setImmediate(resolve);
         });
+        publishProgress(false);
         await options?.onYield?.();
       }
       if (options?.isCanceled?.()) {
@@ -143,12 +156,13 @@ export async function importMarkdownNotesFromDirectory(
       }
 
       const file = kept[index]!;
-      options?.onProgress?.({
+      latestProgress = {
         folderPath: source,
         index: index + 1,
         total: kept.length,
         relativePath: file.relativePath,
-      });
+      };
+      publishProgress(lastProgressSentAt === Number.NEGATIVE_INFINITY);
 
       try {
         const folderId = ensureImportedFolder(
@@ -175,6 +189,8 @@ export async function importMarkdownNotesFromDirectory(
         warnings.push(`${file.relativePath} could not be imported: ${reason}`);
       }
     }
+
+    publishProgress(true);
 
     const removedEmptyWrap = canceled && noteCount === 0;
     if (removedEmptyWrap) {
