@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 
 import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
 import {
@@ -9,10 +9,22 @@ import {
   wikilinkSnippet,
 } from "@shared/markdown/wikilink";
 
-import { getAppDatabase } from "../db/database";
+import { getAppDatabase, type AppDatabase } from "../db/database";
 import { folders, items, noteLinks } from "../db/schema";
 
 const BACKLINK_LIMIT = 50;
+const SQLITE_MAX_VARIABLE_NUMBER_FALLBACK = 999;
+const NOTE_LINK_BOUND_COLUMNS = Object.keys(getTableColumns(noteLinks)).length;
+
+type NoteLinkInsert = {
+  workspaceId: string;
+  fromItemId: string;
+  toItemId: string | null;
+  targetText: string;
+  alias: string;
+};
+
+let sqliteMaxVariableNumberCache: number | undefined;
 
 interface MarkdownTitleRow {
   id: string;
@@ -26,21 +38,16 @@ export function reindexNoteLinks(itemId: string): void {
   if (!item || item.type !== "markdown") return;
 
   const titles = loadMarkdownTitles(item.workspaceId);
-  const edges = uniqueEdges(readMarkdown(item.data), titles);
+  const rows = uniqueEdges(readMarkdown(item.data), titles).map((edge) => ({
+    workspaceId: item.workspaceId,
+    fromItemId: itemId,
+    toItemId: edge.toItemId,
+    targetText: edge.targetText,
+    alias: edge.alias,
+  }));
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.fromItemId, itemId)).run();
-    if (edges.length === 0) return;
-    tx.insert(noteLinks)
-      .values(
-        edges.map((edge) => ({
-          workspaceId: item.workspaceId,
-          fromItemId: itemId,
-          toItemId: edge.toItemId,
-          targetText: edge.targetText,
-          alias: edge.alias,
-        })),
-      )
-      .run();
+    insertNoteLinkRows(tx, rows);
   });
 }
 
@@ -68,8 +75,7 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
         alias: edge.alias,
       })),
     );
-    if (rows.length === 0) return;
-    tx.insert(noteLinks).values(rows).run();
+    insertNoteLinkRows(tx, rows);
   });
 }
 
@@ -190,6 +196,29 @@ export function listNoteBacklinks(itemId: string): NoteBacklink[] {
       left.title.localeCompare(right.title) || left.itemId.localeCompare(right.itemId),
   );
   return backlinks;
+}
+
+function insertNoteLinkRows(tx: Pick<AppDatabase, "insert">, rows: NoteLinkInsert[]): void {
+  if (rows.length === 0) return;
+  const chunkSize = Math.max(1, Math.floor(sqliteMaxVariableNumber() / NOTE_LINK_BOUND_COLUMNS));
+  for (let offset = 0; offset < rows.length; offset += chunkSize) {
+    tx.insert(noteLinks)
+      .values(rows.slice(offset, offset + chunkSize))
+      .run();
+  }
+}
+
+function sqliteMaxVariableNumber(): number {
+  if (sqliteMaxVariableNumberCache !== undefined) return sqliteMaxVariableNumberCache;
+  const rows = getAppDatabase().all<{ compile_options: string }>(sql`PRAGMA compile_options`);
+  for (const row of rows) {
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.compile_options);
+    if (!match?.[1]) continue;
+    sqliteMaxVariableNumberCache = Number(match[1]);
+    return sqliteMaxVariableNumberCache;
+  }
+  sqliteMaxVariableNumberCache = SQLITE_MAX_VARIABLE_NUMBER_FALLBACK;
+  return sqliteMaxVariableNumberCache;
 }
 
 function uniqueEdges(markdown: string, titles: readonly MarkdownTitleRow[]) {
