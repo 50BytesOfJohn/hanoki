@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, sql } from "drizzle-orm";
+import { eq, getTableColumns, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
@@ -1112,6 +1112,15 @@ describe("Hanoki context reads", () => {
   });
 });
 
+function sqliteMaxVariableNumber(): number {
+  const rows = getAppDatabase().all<{ compile_options: string }>(sql`PRAGMA compile_options`);
+  for (const row of rows) {
+    const match = /^MAX_VARIABLE_NUMBER=(\d+)$/.exec(row.compile_options);
+    if (match?.[1]) return Number(match[1]);
+  }
+  return 999;
+}
+
 function markdownOf(itemId: string): string {
   const item = getItemById(itemId);
   if (item?.type !== "markdown") throw new Error(`Item "${itemId}" is not markdown.`);
@@ -1242,4 +1251,91 @@ describe("note links", () => {
     expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
   });
+
+  it("reindexes one note whose links exceed the sqlite variable limit", () => {
+    const columns = Object.keys(getTableColumns(noteLinks)).length;
+    const variableLimit = sqliteMaxVariableNumber();
+    const linkCount = Math.max(5_000, Math.floor(variableLimit / columns) + 1);
+    expect(linkCount * columns).toBeGreaterThan(variableLimit);
+
+    const workspace = createWorkspace({ id: "links-one-note-limit", name: "One note limit" });
+    const pinned = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Pinned",
+      folderId: null,
+    });
+    const source = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Source",
+      folderId: null,
+    });
+    const lines = Array.from({ length: linkCount }, (_, index) => `[[Open ${index}]]`);
+    lines.push("[[Pinned]]");
+    updateMarkdownContent(source.id, lines.join("\n"));
+
+    const rows = getAppDatabase()
+      .select()
+      .from(noteLinks)
+      .where(eq(noteLinks.fromItemId, source.id))
+      .all();
+    expect(rows).toHaveLength(linkCount + 1);
+    expect(rows.filter((row) => row.toItemId === null)).toHaveLength(linkCount);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetText: "Pinned", toItemId: pinned.id, alias: "" }),
+      ]),
+    );
+    expect(listNoteBacklinks(pinned.id)).toEqual([
+      { itemId: source.id, title: "Source", snippet: "Pinned" },
+    ]);
+  });
+
+  it("rebuilds a workspace of about 700 notes times 10 links", () => {
+    const noteCount = 700;
+    const linksPerNote = 10;
+    const columns = Object.keys(getTableColumns(noteLinks)).length;
+    expect(noteCount * linksPerNote * columns).toBeGreaterThan(sqliteMaxVariableNumber());
+
+    const workspace = createWorkspace({
+      id: "links-workspace-limit",
+      name: "Workspace limit",
+    });
+    const targets = Array.from({ length: linksPerNote }, (_, index) =>
+      createMarkdown({
+        workspaceId: workspace.id,
+        title: `T${index}`,
+        folderId: null,
+      }),
+    );
+    const sources = Array.from({ length: noteCount }, (_, index) =>
+      createMarkdown({
+        workspaceId: workspace.id,
+        title: `Note ${String(index).padStart(4, "0")}`,
+        folderId: null,
+      }),
+    );
+    const markdown = targets.map((target) => `[[${target.title}]]`).join("\n");
+    const db = getAppDatabase();
+    for (const source of sources) {
+      db.update(items).set({ data: { markdown } }).where(eq(items.id, source.id)).run();
+    }
+
+    rebuildWorkspaceNoteLinks(workspace.id);
+
+    const rows = db.select().from(noteLinks).where(eq(noteLinks.workspaceId, workspace.id)).all();
+    expect(rows).toHaveLength(noteCount * linksPerNote);
+    const targetIdByTitle = new Map(targets.map((target) => [target.title, target.id]));
+    for (const row of rows) {
+      expect(row.toItemId).toBe(targetIdByTitle.get(row.targetText));
+    }
+    const hub = targets[0];
+    if (!hub) throw new Error("Missing link target.");
+    expect(listNoteBacklinks(hub.id)).toEqual(
+      sources.slice(0, 50).map((source) => ({
+        itemId: source.id,
+        title: source.title,
+        snippet: "T0",
+      })),
+    );
+  }, 60_000);
 });
