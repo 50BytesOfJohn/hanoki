@@ -26,7 +26,7 @@ interface ResolveNote {
   createdAt: number;
   folderId: string | null;
   importRelativePath: string | null;
-  wrapId: string | null;
+  importRootId: string | null;
   folderTitlePath: string | null;
 }
 
@@ -38,10 +38,7 @@ interface FolderRecord {
 
 interface ResolveIndex {
   notes: readonly ResolveNote[];
-  wrapByFolderId: ReadonlyMap<string, string>;
 }
-
-const IMPORTED_PARENT_NAME = "imported";
 
 export function reindexNoteLinks(itemId: string): void {
   const db = getAppDatabase();
@@ -49,7 +46,7 @@ export function reindexNoteLinks(itemId: string): void {
   if (!item || item.type !== "markdown") return;
 
   const index = loadResolveIndex(item.workspaceId);
-  const edges = uniqueEdges(readMarkdown(item.data), index, item.folderId);
+  const edges = uniqueEdges(readMarkdown(item.data), index, item.importRootId);
   const rows = edges.map((edge) => ({
     workspaceId: item.workspaceId,
     fromItemId: itemId,
@@ -84,12 +81,13 @@ export function rebuildWorkspaceNoteLinks(workspaceId: string): void {
       createdAt: note.createdAt,
       folderId: note.folderId,
       importRelativePath: note.importRelativePath,
+      importRootId: note.importRootId,
     })),
     loadFolders(workspaceId),
   );
 
   const rows = notes.flatMap((note) =>
-    uniqueEdges(readMarkdown(note.data), index, note.folderId).map((edge) => ({
+    uniqueEdges(readMarkdown(note.data), index, note.importRootId).map((edge) => ({
       workspaceId,
       fromItemId: note.id,
       toItemId: edge.toItemId,
@@ -119,18 +117,28 @@ export function rewriteNoteLinkTargets(
   if (previousTitle === nextTitle) return [];
   const db = getAppDatabase();
   const inbound = db
-    .select({ fromItemId: noteLinks.fromItemId })
+    .select({
+      fromItemId: noteLinks.fromItemId,
+      targetText: noteLinks.targetText,
+      alias: noteLinks.alias,
+    })
     .from(noteLinks)
     .where(eq(noteLinks.toItemId, itemId))
     .all();
-  const fromIds = [...new Set(inbound.map((row) => row.fromItemId))];
+  const edgesByFromId = new Map<string, { targetText: string; alias: string }[]>();
+  for (const row of inbound) {
+    const edges = edgesByFromId.get(row.fromItemId);
+    const edge = { targetText: row.targetText, alias: row.alias };
+    if (edges) edges.push(edge);
+    else edgesByFromId.set(row.fromItemId, [edge]);
+  }
   const rewritten: string[] = [];
 
-  for (const fromId of fromIds) {
+  for (const [fromId, edges] of edgesByFromId) {
     const source = db.select().from(items).where(eq(items.id, fromId)).get();
     if (!source || source.type !== "markdown") continue;
     const current = readMarkdown(source.data);
-    const next = rewriteWikilinkTargets(current, previousTitle, nextTitle);
+    const next = rewriteWikilinkTargets(current, previousTitle, nextTitle, edges);
     if (next === current) continue;
     db.update(items)
       .set({ data: { ...source.data, markdown: next }, updatedAt: Date.now() })
@@ -153,13 +161,9 @@ export function resolveOpenNoteLinks(workspaceId: string): void {
   if (open.length === 0) return;
 
   const index = loadResolveIndex(workspaceId);
-  const folderByNoteId = new Map(index.notes.map((note) => [note.id, note.folderId]));
+  const rootByNoteId = new Map(index.notes.map((note) => [note.id, note.importRootId]));
   for (const row of open) {
-    const toItemId = resolveTarget(
-      index,
-      folderByNoteId.get(row.fromItemId) ?? null,
-      row.targetText,
-    );
+    const toItemId = resolveTarget(index, rootByNoteId.get(row.fromItemId) ?? null, row.targetText);
     if (!toItemId) continue;
     db.update(noteLinks)
       .set({ toItemId })
@@ -275,7 +279,7 @@ function insertNoteLinkRows(
   }
 }
 
-function uniqueEdges(markdown: string, index: ResolveIndex, sourceFolderId: string | null) {
+function uniqueEdges(markdown: string, index: ResolveIndex, sourceRootId: string | null) {
   const edges = new Map<string, { targetText: string; alias: string; toItemId: string | null }>();
   for (const link of findWikilinks(markdown)) {
     const targetText = link.target.trim();
@@ -285,7 +289,7 @@ function uniqueEdges(markdown: string, index: ResolveIndex, sourceFolderId: stri
     edges.set(key, {
       targetText,
       alias,
-      toItemId: resolveTarget(index, sourceFolderId, targetText),
+      toItemId: resolveTarget(index, sourceRootId, targetText),
     });
   }
   return [...edges.values()];
@@ -293,7 +297,7 @@ function uniqueEdges(markdown: string, index: ResolveIndex, sourceFolderId: stri
 
 function resolveTarget(
   index: ResolveIndex,
-  sourceFolderId: string | null,
+  sourceRootId: string | null,
   target: string,
 ): string | null {
   const fullKey = normalizeWikilinkTitle(target.trim());
@@ -302,11 +306,10 @@ function resolveTarget(
   const lookup = splitWikilinkFragment(target).lookup;
   const strippedKey = normalizeWikilinkTitle(lookup);
   const pathKey = lookup.includes("/") ? lookup.replace(/\.md$/i, "") : null;
-  const wrapId = sourceFolderId ? (index.wrapByFolderId.get(sourceFolderId) ?? null) : null;
 
-  if (pathKey && wrapId) {
+  if (pathKey && sourceRootId) {
     const wanted = normalizeWikilinkTitle(pathKey);
-    const scoped = index.notes.filter((note) => note.wrapId === wrapId);
+    const scoped = index.notes.filter((note) => note.importRootId === sourceRootId);
     const byPath = scoped.filter((note) => {
       if (!note.importRelativePath) return false;
       return normalizeWikilinkTitle(note.importRelativePath.replace(/\.md$/i, "")) === wanted;
@@ -322,8 +325,13 @@ function resolveTarget(
     if (folderHit) return folderHit.id;
   }
 
-  const scopes: ReadonlyArray<readonly ResolveNote[]> = wrapId
-    ? [index.notes.filter((note) => note.wrapId === wrapId), index.notes]
+  const scopes: ReadonlyArray<readonly ResolveNote[]> = sourceRootId
+    ? [
+        index.notes.filter((note) => note.importRootId === sourceRootId),
+        index.notes.filter(
+          (note) => note.importRootId === null || note.importRootId === sourceRootId,
+        ),
+      ]
     : [index.notes];
   for (const scope of scopes) {
     const exact = oldestTitled(scope, fullKey);
@@ -342,26 +350,6 @@ function oldestTitled(notes: readonly ResolveNote[], titleKey: string): string |
     oldestByItemId(notes.filter((note) => normalizeWikilinkTitle(note.title) === titleKey))?.id ??
     null
   );
-}
-
-function wrapRootId(
-  folderId: string | null,
-  folderById: ReadonlyMap<string, FolderRecord>,
-): string | null {
-  let current = folderId;
-  const seen = new Set<string>();
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    const folder = folderById.get(current);
-    if (!folder?.parentId) return null;
-    const parent = folderById.get(folder.parentId);
-    if (!parent) return null;
-    if (parent.parentId === null && parent.name.toLowerCase() === IMPORTED_PARENT_NAME) {
-      return current;
-    }
-    current = folder.parentId;
-  }
-  return null;
 }
 
 function folderTitlePath(
@@ -393,6 +381,7 @@ function loadResolveIndex(workspaceId: string): ResolveIndex {
       createdAt: items.createdAt,
       folderId: items.folderId,
       importRelativePath: items.importRelativePath,
+      importRootId: items.importRootId,
     })
     .from(items)
     .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
@@ -409,22 +398,18 @@ function loadFolders(workspaceId: string): FolderRecord[] {
 }
 
 function buildResolveIndex(
-  notes: readonly Omit<ResolveNote, "wrapId" | "folderTitlePath">[],
+  notes: readonly Omit<ResolveNote, "folderTitlePath">[],
   folderRows: readonly FolderRecord[],
 ): ResolveIndex {
   const folderById = new Map(folderRows.map((folder) => [folder.id, folder]));
-  const wrapByFolderId = new Map<string, string>();
-  const indexed = notes.map((note) => {
-    const wrapId = wrapRootId(note.folderId, folderById);
-    if (note.folderId && wrapId) wrapByFolderId.set(note.folderId, wrapId);
-    return {
-      ...note,
-      wrapId,
-      folderTitlePath:
-        wrapId === null ? null : folderTitlePath(note.folderId, note.title, wrapId, folderById),
-    };
-  });
-  return { notes: indexed, wrapByFolderId };
+  const indexed = notes.map((note) => ({
+    ...note,
+    folderTitlePath:
+      note.importRootId === null
+        ? null
+        : folderTitlePath(note.folderId, note.title, note.importRootId, folderById),
+  }));
+  return { notes: indexed };
 }
 
 function readMarkdown(data: unknown): string {

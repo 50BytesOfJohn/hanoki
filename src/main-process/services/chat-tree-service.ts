@@ -93,6 +93,7 @@ export interface ChatTreeService {
     title: string;
     folderId: string | null;
     importRelativePath?: string | null;
+    importRootId?: string | null;
     skipLinkIndex?: boolean;
   }): MarkdownInfo;
   listChildFolders(workspaceId: string, parentId: string | null): { id: string; name: string }[];

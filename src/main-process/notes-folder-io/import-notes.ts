@@ -10,6 +10,13 @@ import {
   type NotesFolderImportResult,
 } from "@shared/markdown/folder-io";
 
+import {
+  beginMarkdownImport,
+  endMarkdownImport,
+  rewindImportRenames,
+  setItemTitles,
+  updateItemTitle,
+} from "../chat-tree/repository";
 import type { ChatTreeService } from "../services/chat-tree-service";
 import type { AppServices } from "../services";
 import { pickNotesFolder } from "./pick-directory";
@@ -104,85 +111,101 @@ export async function importMarkdownNotesFromDirectory(
     .filter((entry) => entry.kind === "oversized" || entry.kind === "unreadable")
     .map((entry) => entry.reason ?? entry.relativePath);
 
-  const { parentId, createdParent, wrapId, wrapName } = createWrapRoot(
-    chatTree,
-    workspaceId,
-    vaultNameFromSource(source),
-    options?.now?.() ?? new Date(),
-  );
-  const folderIds = new Map<string, string>();
-  let noteCount = 0;
-  let canceled = false;
+  beginMarkdownImport();
+  try {
+    const { parentId, createdParent, wrapId, wrapName } = createWrapRoot(
+      chatTree,
+      workspaceId,
+      vaultNameFromSource(source),
+      options?.now?.() ?? new Date(),
+    );
+    const folderIds = new Map<string, string>();
+    let noteCount = 0;
+    let canceled = false;
 
-  for (let index = 0; index < kept.length; index += 1) {
-    if (index > 0 && index % IMPORT_YIELD_EVERY === 0) {
-      await new Promise((resolve) => {
-        setImmediate(resolve);
+    for (let index = 0; index < kept.length; index += 1) {
+      if (index > 0 && index % IMPORT_YIELD_EVERY === 0) {
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+      }
+      if (options?.isCanceled?.()) {
+        canceled = true;
+        break;
+      }
+
+      const file = kept[index]!;
+      options?.onProgress?.({
+        folderPath: source,
+        index: index + 1,
+        total: kept.length,
+        relativePath: file.relativePath,
       });
-    }
-    if (options?.isCanceled?.()) {
-      canceled = true;
-      break;
+
+      try {
+        const folderId = ensureImportedFolder(
+          chatTree,
+          workspaceId,
+          file.folderSegments,
+          folderIds,
+          wrapId,
+        );
+        const item = chatTree.createMarkdown({
+          workspaceId,
+          title: file.title,
+          folderId,
+          importRelativePath: vaultRelativeNotePath(file.relativePath),
+          importRootId: wrapId,
+          skipLinkIndex: true,
+        });
+        chatTree.queueMarkdownContent(item.id, file.body);
+        chatTree.flushMarkdownContent(item.id, { skipLinkIndex: true });
+        noteCount += 1;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Could not be imported.";
+        failures.push({ relativePath: file.relativePath, reason });
+        warnings.push(`${file.relativePath} could not be imported: ${reason}`);
+      }
     }
 
-    const file = kept[index]!;
-    options?.onProgress?.({
-      folderPath: source,
-      index: index + 1,
-      total: kept.length,
-      relativePath: file.relativePath,
-    });
+    const removedEmptyWrap = canceled && noteCount === 0;
+    if (removedEmptyWrap) {
+      removeEmptyWrap(chatTree, workspaceId, parentId, createdParent, wrapId);
+    }
 
+    const parked = rewindImportRenames();
     try {
-      const folderId = ensureImportedFolder(
-        chatTree,
-        workspaceId,
-        file.folderSegments,
-        folderIds,
-        wrapId,
-      );
-      const item = chatTree.createMarkdown({
-        workspaceId,
-        title: file.title,
-        folderId,
-        importRelativePath: vaultRelativeNotePath(file.relativePath),
-        skipLinkIndex: true,
-      });
-      chatTree.queueMarkdownContent(item.id, file.body);
-      chatTree.flushMarkdownContent(item.id, { skipLinkIndex: true });
-      noteCount += 1;
+      chatTree.rebuildNoteLinks?.(workspaceId);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "Could not be imported.";
-      failures.push({ relativePath: file.relativePath, reason });
-      warnings.push(`${file.relativePath} could not be imported: ${reason}`);
+      setItemTitles(parked);
+      const reason = error instanceof Error ? error.message : "Note links could not be rebuilt.";
+      warnings.push(`Note links could not be rebuilt: ${reason}`);
+      parked.length = 0;
     }
+    endMarkdownImport();
+    for (const row of parked) updateItemTitle(row.id, row.title);
+
+    const skippedDuplicatePathCount = duplicatePaths.length;
+    return {
+      status: "imported",
+      folderPath: source,
+      wrapFolderPath: `${IMPORTED_PARENT_NAME}/${wrapName}`,
+      noteCount,
+      folderCount: removedEmptyWrap ? 0 : folderIds.size + 1 + (createdParent ? 1 : 0),
+      skippedCount: skippedDuplicatePathCount + skipSummary.skippedOversizedCount,
+      skippedDuplicatePathCount,
+      skippedPaths: duplicatePaths,
+      failedCount: failures.length,
+      failures,
+      canceled,
+      skippedOversizedCount: skipSummary.skippedOversizedCount,
+      ignoredNonMarkdownCount: skipSummary.ignoredNonMarkdownCount,
+      ignoredDirectoryNames: skipSummary.ignoredDirectoryNames,
+      warnings,
+    };
+  } finally {
+    endMarkdownImport();
   }
-
-  const removedEmptyWrap = canceled && noteCount === 0;
-  if (removedEmptyWrap) {
-    removeEmptyWrap(chatTree, workspaceId, parentId, createdParent, wrapId);
-  }
-
-  chatTree.rebuildNoteLinks?.(workspaceId);
-
-  const skippedDuplicatePathCount = duplicatePaths.length;
-  return {
-    status: "imported",
-    folderPath: source,
-    wrapFolderPath: `${IMPORTED_PARENT_NAME}/${wrapName}`,
-    noteCount,
-    folderCount: removedEmptyWrap ? 0 : folderIds.size + 1 + (createdParent ? 1 : 0),
-    skippedCount: skippedDuplicatePathCount + skipSummary.skippedOversizedCount,
-    skippedDuplicatePathCount,
-    skippedPaths: duplicatePaths,
-    failedCount: failures.length,
-    failures,
-    canceled,
-    skippedOversizedCount: skipSummary.skippedOversizedCount,
-    ignoredNonMarkdownCount: skipSummary.ignoredNonMarkdownCount,
-    ignoredDirectoryNames: skipSummary.ignoredDirectoryNames,
-    warnings,
-  };
 }
 
 export function vaultRelativeNotePath(relativePath: string): string {

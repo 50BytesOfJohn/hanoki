@@ -7,6 +7,7 @@ import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
 import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { sqliteMaxVariableNumber } from "../db/sqlite-max-variable-number";
 import { items, noteLinks } from "../db/schema";
 import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
 import {
@@ -33,12 +34,15 @@ import {
   getChatCurrentBranchId,
   getChatTreeChildren,
   getFolderById,
+  deleteChatTreeItems,
   deleteItem,
   getItemById,
+  listWorkspaceItemIds,
   moveChatTreeItems,
   moveItem,
   searchWorkspaceChats,
   updateChatSettings,
+  updateFolderName,
   updateItemTitle,
 } from "./repository";
 import { importMarkdownNotesFromDirectory } from "../notes-folder-io/import-notes";
@@ -92,6 +96,7 @@ beforeAll(() => {
       type text not null,
       title text not null,
       import_relative_path text,
+      import_root_id text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
@@ -1273,11 +1278,13 @@ describe("note links", () => {
       title: "Alpha",
       folderId: projects.id,
       importRelativePath: "Projects/Alpha",
+      importRootId: wrap.id,
     });
     const beta = createMarkdown({
       workspaceId: workspace.id,
       title: "Beta",
       folderId: projects.id,
+      importRootId: wrap.id,
     });
     const archive = createFolder({
       workspaceId: workspace.id,
@@ -1294,17 +1301,20 @@ describe("note links", () => {
       title: "Scene",
       folderId: archive.id,
       importRelativePath: "Archive/Scene",
+      importRootId: wrap.id,
     });
     const newerScene = createMarkdown({
       workspaceId: workspace.id,
       title: "Scene",
       folderId: drafts.id,
       importRelativePath: "Drafts/Scene",
+      importRootId: wrap.id,
     });
     const source = createMarkdown({
       workspaceId: workspace.id,
       title: "Index",
       folderId: wrap.id,
+      importRootId: wrap.id,
     });
     const body = [
       "[[Projects/Alpha]]",
@@ -1324,7 +1334,7 @@ describe("note links", () => {
       title: "Outsider",
       folderId: null,
     });
-    updateMarkdownContent(outsider.id, "[[Projects/Alpha]]");
+    updateMarkdownContent(outsider.id, "[[Projects/Alpha]]\n[[Alpha]]");
 
     expect(markdownOf(source.id)).toBe(body);
     expect(linkedTo(workspace.id, source.id, "Projects/Alpha")).toBe(alpha.id);
@@ -1333,11 +1343,12 @@ describe("note links", () => {
     expect(linkedTo(workspace.id, source.id, "projects/alpha")).toBe(alpha.id);
     expect(linkedTo(workspace.id, source.id, "Projects/Beta")).toBe(beta.id);
     expect(linkedTo(workspace.id, source.id, "Alpha#Intro")).toBe(alpha.id);
-    expect(listNoteBacklinks(resident.id)).toEqual([]);
+    expect(listNoteBacklinks(resident.id).map((link) => link.itemId)).toEqual([outsider.id]);
     expect(linkedTo(workspace.id, source.id, "Scene")).toBe(olderScene.id);
     expect(linkedTo(workspace.id, source.id, "Archive/Scene")).toBe(olderScene.id);
     expect(linkedTo(workspace.id, source.id, "Drafts/Scene#Later")).toBe(newerScene.id);
     expect(linkedTo(workspace.id, outsider.id, "Projects/Alpha")).toBeNull();
+    expect(linkedTo(workspace.id, outsider.id, "Alpha")).toBe(resident.id);
     expect(listNoteBacklinks(newerScene.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(olderScene.id).map((link) => link.itemId)).toContain(source.id);
   });
@@ -1378,6 +1389,8 @@ describe("note links", () => {
       expect(alpha?.markdown).toBe(
         "---\ntitle: Alpha\n---\n[[Archive/Scene]]\n[[Drafts/Scene#Later]]\n",
       );
+      expect(alpha?.importRootId).toBeTruthy();
+      expect(loose?.importRootId).toBe(alpha?.importRootId);
       expect(alpha && archive && drafts && loose).toBeTruthy();
       if (!alpha || !archive || !drafts || !loose) return;
 
@@ -1400,6 +1413,8 @@ describe("note links", () => {
       );
       expect(again).toHaveLength(1);
       const secondAlpha = again[0];
+      expect(secondAlpha?.importRootId).toBeTruthy();
+      expect(secondAlpha?.importRootId).not.toBe(alpha.importRootId);
       const secondArchive = markdownRows(workspace.id).find(
         (note) => note.importRelativePath === "Archive/Scene" && note.id !== archive.id,
       );
@@ -1452,6 +1467,22 @@ describe("note links", () => {
     expect(linkedTo(workspace.id, source.id, "Projects/Alpha#H")).toBeNull();
   });
 
+  it("does not rewrite a different note whose title extends the renamed title with #", () => {
+    const workspace = createWorkspace({ id: "links-hash-collision", name: "Hash collision" });
+    const note = createMarkdown({ workspaceId: workspace.id, title: "C", folderId: null });
+    const tips = createMarkdown({ workspaceId: workspace.id, title: "C# tips", folderId: null });
+    const source = createMarkdown({ workspaceId: workspace.id, title: "Source", folderId: null });
+    updateMarkdownContent(source.id, "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]");
+
+    updateItemTitle(note.id, "D");
+
+    expect(markdownOf(source.id)).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]");
+    expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+    expect(linkedTo(workspace.id, source.id, "D")).toBe(note.id);
+    expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(note.id);
+    expect(linkedTo(workspace.id, source.id, "C")).toBeNull();
+  });
+
   it("keeps path links on the imported note after rename and move", () => {
     const workspace = createWorkspace({ id: "links-path-stable", name: "Path stable" });
     const imported = createFolder({
@@ -1479,11 +1510,13 @@ describe("note links", () => {
       title: "Alpha",
       folderId: projects.id,
       importRelativePath: "Projects/Alpha",
+      importRootId: wrap.id,
     });
     const source = createMarkdown({
       workspaceId: workspace.id,
       title: "Index",
       folderId: wrap.id,
+      importRootId: wrap.id,
     });
     const body = "[[Projects/Alpha]]\n[[Projects/Alpha#H|alias]]";
     updateMarkdownContent(source.id, body);
@@ -1512,6 +1545,101 @@ describe("note links", () => {
     ).toBe("Projects/Alpha");
     expect(linkedTo(workspace.id, source.id, "Projects/Alpha")).toBe(alpha.id);
     expect(linkedTo(workspace.id, source.id, "Projects/Alpha#H")).toBe(alpha.id);
+  });
+
+  it("keeps import links on the stored root after moves and folder renames", () => {
+    const workspace = createWorkspace({ id: "links-root-id", name: "Root id" });
+    const imported = createFolder({
+      workspaceId: workspace.id,
+      name: "Imported",
+      parentId: null,
+    });
+    const wrapA = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault A",
+      parentId: imported.id,
+    });
+    const wrapB = createFolder({
+      workspaceId: workspace.id,
+      name: "Vault B",
+      parentId: imported.id,
+    });
+    const projectsA = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrapA.id,
+    });
+    const projectsB = createFolder({
+      workspaceId: workspace.id,
+      name: "Projects",
+      parentId: wrapB.id,
+    });
+    const alpha = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Alpha",
+      folderId: projectsA.id,
+      importRelativePath: "Projects/Alpha",
+      importRootId: wrapA.id,
+    });
+    const sceneA = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: projectsA.id,
+      importRelativePath: "Projects/Scene",
+      importRootId: wrapA.id,
+    });
+    const sceneB = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Scene",
+      folderId: projectsB.id,
+      importRelativePath: "Projects/Scene",
+      importRootId: wrapB.id,
+    });
+    const sourceA = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index A",
+      folderId: wrapA.id,
+      importRootId: wrapA.id,
+    });
+    const sourceB = createMarkdown({
+      workspaceId: workspace.id,
+      title: "Index B",
+      folderId: wrapB.id,
+      importRootId: wrapB.id,
+    });
+    updateMarkdownContent(sourceA.id, "[[Projects/Alpha]]\n[[Scene]]");
+    updateMarkdownContent(sourceB.id, "[[Projects/Alpha]]\n[[Scene]]");
+
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Scene")).toBe(sceneA.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Projects/Alpha")).toBeNull();
+
+    moveItem(alpha.id, null);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(getItemById(alpha.id)?.folderId).toBeNull();
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+
+    moveItem(alpha.id, projectsB.id);
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Projects/Alpha")).toBeNull();
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+
+    updateFolderName(imported.id, "Library");
+    updateFolderName(wrapA.id, "Renamed vault");
+    createFolder({ workspaceId: workspace.id, name: "Mine", parentId: imported.id });
+    rebuildWorkspaceNoteLinks(workspace.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Projects/Alpha")).toBe(alpha.id);
+    expect(linkedTo(workspace.id, sourceA.id, "Scene")).toBe(sceneA.id);
+    expect(linkedTo(workspace.id, sourceB.id, "Scene")).toBe(sceneB.id);
+    expect(
+      getAppDatabase()
+        .select({ importRootId: items.importRootId })
+        .from(items)
+        .where(eq(items.id, alpha.id))
+        .get()?.importRootId,
+    ).toBe(wrapA.id);
   });
 
   it("skips per-note link indexing when asked and resolves on rebuild", () => {
@@ -1580,6 +1708,93 @@ describe("note links", () => {
     expect(countNoteLinks(workspace.id)).toBe(noteCount * perNote);
     expect(linkedTo(workspace.id, "var-many-0", "Known")).toBe(known.id);
   });
+
+  it("rewrites a rename that happens while import is yielding", async () => {
+    const workspace = createWorkspace({ id: "links-import-rename", name: "Import rename" });
+    const root = mkdtempSync(join(tmpdir(), "hanoki-import-rename-"));
+    try {
+      writeFileSync(join(root, "A-source.md"), "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n");
+      writeFileSync(join(root, "C# tips.md"), "tips\n");
+      writeFileSync(join(root, "C.md"), "c\n");
+      for (let index = 0; index < 30; index += 1) {
+        writeFileSync(join(root, `P${String(index).padStart(2, "0")}.md`), "x\n");
+      }
+
+      const chatTree = createChatTreeService();
+      let scheduled = false;
+      const result = await importMarkdownNotesFromDirectory(chatTree, workspace.id, root, {
+        onProgress: () => {
+          if (scheduled) return;
+          scheduled = true;
+          setImmediate(() => {
+            const note = getAppDatabase()
+              .select({ id: items.id })
+              .from(items)
+              .where(and(eq(items.workspaceId, workspace.id), eq(items.title, "C")))
+              .get();
+            if (!note) throw new Error("C was not imported before the yield.");
+            updateItemTitle(note.id, "D");
+          });
+        },
+      });
+
+      expect(result.noteCount).toBe(33);
+      const notes = markdownRows(workspace.id);
+      const source = notes.find((note) => note.title === "A-source");
+      const tips = notes.find((note) => note.title === "C# tips");
+      const renamed = notes.find((note) => note.title === "D");
+      expect(source?.markdown).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n");
+      expect(tips && renamed && source).toBeTruthy();
+      if (!tips || !renamed || !source) return;
+      expect(linkedTo(workspace.id, source.id, "C# tips")).toBe(tips.id);
+      expect(linkedTo(workspace.id, source.id, "D")).toBe(renamed.id);
+      expect(linkedTo(workspace.id, source.id, "D#Intro")).toBe(renamed.id);
+      expect(source.importRootId).toBe(renamed.importRootId);
+      expect(source.importRootId).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("moves and deletes more item ids than the SQLite variable limit", () => {
+    const workspace = createWorkspace({ id: "items-var-limit", name: "Items var" });
+    const dest = createFolder({ workspaceId: workspace.id, name: "Dest", parentId: null });
+    const count = sqliteMaxVariableNumber() + 1;
+    const ids = Array.from(
+      { length: count },
+      (_, index) => `var-${String(index).padStart(6, "0")}`,
+    );
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      "INSERT INTO items (id, workspace_id, type, title, data, created_at, updated_at) VALUES (?, ?, 'markdown', ?, '{}', 1, 1)",
+    );
+    sqlite.exec("BEGIN");
+    try {
+      for (const id of ids) insert.run(id, workspace.id, id);
+      sqlite.exec("COMMIT");
+    } catch (error) {
+      sqlite.exec("ROLLBACK");
+      throw error;
+    }
+
+    expect(listWorkspaceItemIds(workspace.id, ids)).toEqual(ids);
+    const moved = moveChatTreeItems(
+      workspace.id,
+      ids.map((id) => ({ kind: "item", id })),
+      dest.id,
+    );
+    expect(moved.movedItems).toHaveLength(count);
+    expect(getItemById(ids[0]!)?.folderId).toBe(dest.id);
+    expect(getItemById(ids[count - 1]!)?.folderId).toBe(dest.id);
+
+    const deleted = deleteChatTreeItems(
+      workspace.id,
+      ids.map((id) => ({ kind: "item", id })),
+    );
+    expect(deleted.deletedItemIds).toHaveLength(count);
+    expect(getItemById(ids[0]!)).toBeNull();
+    expect(getItemById(ids[count - 1]!)).toBeNull();
+  }, 180_000);
 });
 
 function linksPastVariableLimit(): number {
@@ -1629,6 +1844,7 @@ function markdownRows(workspaceId: string) {
       id: items.id,
       title: items.title,
       importRelativePath: items.importRelativePath,
+      importRootId: items.importRootId,
       data: items.data,
     })
     .from(items)
@@ -1638,6 +1854,7 @@ function markdownRows(workspaceId: string) {
       id: row.id,
       title: row.title,
       importRelativePath: row.importRelativePath,
+      importRootId: row.importRootId,
       markdown: "markdown" in row.data ? row.data.markdown : "",
     }));
 }

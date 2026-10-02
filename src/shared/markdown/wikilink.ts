@@ -95,20 +95,31 @@ export function rewriteWikilinkTargets(
   markdown: string,
   fromTitle: string,
   toTitle: string,
+  edges?: readonly { targetText: string; alias: string }[],
 ): string {
   const fromKey = normalizeWikilinkTitle(fromTitle);
   if (fromKey.length === 0) return markdown;
   const links = findWikilinks(markdown);
   if (links.length === 0) return markdown;
+  const edgeKeys =
+    edges === undefined
+      ? null
+      : new Set(edges.map((edge) => `${edge.targetText.trim()}\0${edge.alias.trim()}`));
 
   let next = "";
   let cursor = 0;
   let changed = false;
   for (const link of links) {
     next += markdown.slice(cursor, link.start);
-    const parts = splitWikilinkFragment(link.target);
-    if (normalizeWikilinkTitle(parts.lookup) === fromKey) {
-      next += formatWikilink(`${toTitle.trim()}${parts.fragment}`, link.alias);
+    const target = link.target.trim();
+    const alias = link.alias?.trim() ?? "";
+    const parts = splitWikilinkFragment(target);
+    const selected = edgeKeys === null || edgeKeys.has(`${target}\0${alias}`);
+    const wholeTarget = normalizeWikilinkTitle(target) === fromKey;
+    const titlePart = normalizeWikilinkTitle(parts.lookup) === fromKey;
+    if (selected && (wholeTarget || titlePart)) {
+      const replacement = wholeTarget ? toTitle.trim() : `${toTitle.trim()}${parts.fragment}`;
+      next += formatWikilink(replacement, link.alias);
       changed = true;
     } else {
       next += link.raw;

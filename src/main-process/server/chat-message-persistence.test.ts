@@ -29,6 +29,7 @@ beforeAll(() => {
       type text not null,
       title text not null,
       import_relative_path text,
+      import_root_id text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',

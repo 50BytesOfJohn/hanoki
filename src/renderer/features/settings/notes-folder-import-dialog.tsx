@@ -146,6 +146,7 @@ function ProgressBody({
 function SummaryBody({ result }: { result: ImportedNotes }) {
   const skip = notesFolderImportSkipCount(result);
   const oversized = result.warnings.filter((warning) => warning.includes("larger than"));
+  const otherWarnings = result.warnings.filter((warning) => !warning.includes("larger than"));
 
   return (
     <>
@@ -180,6 +181,11 @@ function SummaryBody({ result }: { result: ImportedNotes }) {
         </p>
       ) : null}
       {oversized.map((warning) => (
+        <p key={warning} className="text-[12px] text-muted-foreground">
+          {warning}
+        </p>
+      ))}
+      {otherWarnings.map((warning) => (
         <p key={warning} className="text-[12px] text-muted-foreground">
           {warning}
         </p>

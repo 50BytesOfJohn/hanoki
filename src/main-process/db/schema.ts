@@ -82,6 +82,8 @@ export const items = sqliteTable(
     title: text("title").notNull(),
     /** Vault-relative posix path without `.md`, set only for imported markdown notes. */
     importRelativePath: text("import_relative_path"),
+    /** Id of the `Imported/…` wrap folder this note was copied into. */
+    importRootId: text("import_root_id"),
     data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),

@@ -324,6 +324,30 @@ describe("importMarkdownNotesFromDirectory", () => {
     expect(formatNotesFolderImportSummary(result)).toContain("Partial copy kept.");
   });
 
+  it("returns a summary when rebuilding note links fails", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(
+      {
+        ...tree.chatTree,
+        rebuildNoteLinks() {
+          throw new Error("database is locked");
+        },
+      },
+      "workspace-1",
+      root,
+    );
+
+    expect(result.status).toBe("imported");
+    expect(result.noteCount).toBe(1);
+    expect(result.warnings).toContain("Note links could not be rebuilt: database is locked");
+    expect(formatNotesFolderImportSummary(result)).toContain(
+      "Note links could not be rebuilt: database is locked",
+    );
+  });
+
   it("counts invalid UTF-8 as a failure and ignores .trash", async () => {
     const root = await makeTempDir();
     await mkdir(join(root, ".trash"), { recursive: true });

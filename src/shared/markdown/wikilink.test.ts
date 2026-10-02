@@ -47,8 +47,22 @@ describe("wikilinks", () => {
       "[[New]]\n\n```\n[[Old]]\n```\n\n[[New|pet]] and [[Other]]",
     );
     expect(
-      rewriteWikilinkTargets("[[Alpha#Intro|alias]] and [[Projects/Alpha#H]]", "Alpha", "New"),
+      rewriteWikilinkTargets("[[Alpha#Intro|alias]] and [[Projects/Alpha#H]]", "Alpha", "New", [
+        { targetText: "Alpha#Intro", alias: "alias" },
+      ]),
     ).toBe("[[New#Intro|alias]] and [[Projects/Alpha#H]]");
+    expect(
+      rewriteWikilinkTargets(
+        "[[C]]\n[[C#Intro]]\n[[C|alias]]\n[[C# tips]]\n[[Projects/C#H]]",
+        "C",
+        "D",
+        [
+          { targetText: "C", alias: "" },
+          { targetText: "C#Intro", alias: "" },
+          { targetText: "C", alias: "alias" },
+        ],
+      ),
+    ).toBe("[[D]]\n[[D#Intro]]\n[[D|alias]]\n[[C# tips]]\n[[Projects/C#H]]");
     expect(rewriteWikilinkTargets(markdown, "Missing", "New")).toBe(markdown);
   });
 
