@@ -121,6 +121,13 @@ describe("NotesFolderImportDialog", () => {
 
     expect(screen.getByText("Linking notes…")).toBeTruthy();
     expect(screen.queryByText("Importing… 20 of 20")).toBeNull();
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(window.electronAPI.cancelMarkdownNotesImport).not.toHaveBeenCalled();
+    expect(screen.getByText("Linking notes…")).toBeTruthy();
   });
 
   it("titles an empty import and keeps the ignored counts", async () => {

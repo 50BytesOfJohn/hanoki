@@ -1147,10 +1147,11 @@ export function beginMarkdownImport(): void {
   markdownImportDepth += 1;
 }
 
-export function endMarkdownImport(): void {
-  if (markdownImportDepth === 0) return;
+export function endMarkdownImport(): { id: string; title: string }[] {
+  if (markdownImportDepth === 0) return [];
   markdownImportDepth -= 1;
-  if (markdownImportDepth === 0) pendingImportRenames.clear();
+  if (markdownImportDepth > 0) return [];
+  return rewindImportRenames();
 }
 
 /** Restores titles from before in-import renames. Returns the titles to apply after rebuild. */

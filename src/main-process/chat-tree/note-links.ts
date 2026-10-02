@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { MarkdownTitleOption, NoteBacklink, NoteOutgoingLink } from "@shared/ipc";
@@ -111,6 +111,7 @@ export async function rebuildImportedNoteLinks(
     loadFolders(workspaceId),
   );
   const imported = notes.filter((note) => note.importRootId === importRootId);
+  const updatedAtById = new Map(notes.map((note) => [note.id, note.updatedAt]));
   const rows: NoteLinkInsertRow[] = [];
   for (let indexInImport = 0; indexInImport < imported.length; indexInImport += 1) {
     if (indexInImport > 0 && indexInImport % REBUILD_YIELD_EVERY === 0) await options?.onYield?.();
@@ -127,19 +128,31 @@ export async function rebuildImportedNoteLinks(
   }
   const chunkSize = noteLinkChunkSize();
   db.transaction((tx) => {
-    eachSqlIdChunk(
-      imported.map((note) => note.id),
-      0,
-      (chunk) => {
-        tx.delete(noteLinks).where(inArray(noteLinks.fromItemId, chunk)).run();
-      },
-    );
+    const live = tx
+      .select({ id: items.id, updatedAt: items.updatedAt })
+      .from(items)
+      .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "markdown")))
+      .all();
+    const liveAt = new Map(live.map((row) => [row.id, row.updatedAt]));
+    const liveIds = new Set(liveAt.keys());
+    const writeIds = imported
+      .filter((note) => liveAt.get(note.id) === updatedAtById.get(note.id))
+      .map((note) => note.id);
+    const writeIdSet = new Set(writeIds);
+    const kept = rows.flatMap((row) => {
+      if (!writeIdSet.has(row.fromItemId)) return [];
+      const toItemId = row.toItemId !== null && liveIds.has(row.toItemId) ? row.toItemId : null;
+      return [{ ...row, toItemId }];
+    });
+    eachSqlIdChunk(writeIds, 0, (chunk) => {
+      tx.delete(noteLinks).where(inArray(noteLinks.fromItemId, chunk)).run();
+    });
     insertNoteLinkRows(
       chunkSize,
       (chunk) => {
         tx.insert(noteLinks).values(chunk).run();
       },
-      rows,
+      kept,
     );
   });
   resolveOpenNoteLinks(workspaceId);
@@ -236,7 +249,12 @@ export function resolveOpenNoteLinks(workspaceId: string): void {
   const open = db
     .select()
     .from(noteLinks)
-    .where(and(eq(noteLinks.workspaceId, workspaceId), isNull(noteLinks.toItemId)))
+    .where(
+      and(
+        eq(noteLinks.workspaceId, workspaceId),
+        or(isNull(noteLinks.toItemId), like(noteLinks.targetText, "%#%")),
+      ),
+    )
     .all();
   if (open.length === 0) return;
 
@@ -244,7 +262,7 @@ export function resolveOpenNoteLinks(workspaceId: string): void {
   const rootByNoteId = new Map(index.notes.map((note) => [note.id, note.importRootId]));
   for (const row of open) {
     const toItemId = resolveTarget(index, rootByNoteId.get(row.fromItemId) ?? null, row.targetText);
-    if (!toItemId) continue;
+    if (!toItemId || toItemId === row.toItemId) continue;
     db.update(noteLinks)
       .set({ toItemId })
       .where(

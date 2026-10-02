@@ -119,10 +119,10 @@ export async function importMarkdownNotesFromDirectory(
 
   beginMarkdownImport();
   let ended = false;
-  const finishImport = () => {
-    if (ended) return;
+  const finishImport = (): { id: string; title: string }[] => {
+    if (ended) return [];
     ended = true;
-    endMarkdownImport();
+    return endMarkdownImport();
   };
   try {
     const { parentId, createdParent, wrapId, wrapName } = createWrapRoot(
@@ -204,7 +204,7 @@ export async function importMarkdownNotesFromDirectory(
       noteCount === 0,
     );
 
-    const parked = rewindImportRenames();
+    const parkedBefore = rewindImportRenames();
     try {
       if (noteCount > 0) {
         latestProgress = {
@@ -223,21 +223,24 @@ export async function importMarkdownNotesFromDirectory(
             await new Promise((resolve) => {
               setImmediate(resolve);
             });
-            if (options?.isCanceled?.()) canceled = true;
+            await options?.onYield?.();
           },
         });
       }
     } catch (error) {
-      setItemTitles(parked);
+      setItemTitles(parkedBefore);
+      parkedBefore.length = 0;
       warnings.push(
         error instanceof Error
           ? `Note links could not be rebuilt: ${error.message}`
           : "Note links could not be rebuilt.",
       );
-      parked.length = 0;
     }
-    finishImport();
-    for (const row of parked) updateItemTitle(row.id, row.title);
+    const parkedDuring = rewindImportRenames();
+    const parkedAtEnd = finishImport();
+    for (const row of [...parkedBefore, ...parkedDuring, ...parkedAtEnd]) {
+      updateItemTitle(row.id, row.title);
+    }
 
     const skippedDuplicatePathCount = duplicatePaths.length;
     return {
@@ -258,7 +261,7 @@ export async function importMarkdownNotesFromDirectory(
       warnings,
     };
   } finally {
-    finishImport();
+    for (const row of finishImport()) updateItemTitle(row.id, row.title);
   }
 }
 

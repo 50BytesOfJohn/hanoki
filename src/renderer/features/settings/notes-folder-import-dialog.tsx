@@ -116,7 +116,7 @@ export function NotesFolderImportDialog() {
       if (snap.phase === "running") {
         event.preventDefault();
         event.stopPropagation();
-        void cancelImport();
+        if (snap.progress?.step !== "linking") void cancelImport();
         return;
       }
       if (snap.phase === "summary" && summaryCloseArmed.current) {
@@ -140,7 +140,7 @@ export function NotesFolderImportDialog() {
         if (nextOpen) return;
         const snap = notesImportUi.getSnapshot();
         if (snap.phase === "running") {
-          void cancelImport();
+          if (snap.progress?.step !== "linking") void cancelImport();
           return;
         }
         if (
@@ -201,7 +201,13 @@ function ProgressBody({
         </p>
       )}
       <div className="flex justify-end">
-        <Button type="button" variant="ghost" size="sm" disabled={canceling} onClick={onCancel}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={canceling || linking}
+          onClick={onCancel}
+        >
           {canceling ? "Canceling…" : "Cancel"}
         </Button>
       </div>

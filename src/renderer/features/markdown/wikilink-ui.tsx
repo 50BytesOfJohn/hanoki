@@ -125,14 +125,17 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
   const alias =
     typeof node.attrs.alias === "string" && node.attrs.alias.length > 0 ? node.attrs.alias : null;
   const [renamedTitle, setRenamedTitle] = React.useState<string | null>(null);
+  const [confirmedBroken, setConfirmedBroken] = React.useState(false);
 
   React.useEffect(() => {
     setRenamedTitle(null);
+    setConfirmedBroken(false);
   }, [targetText]);
 
   const edge = matchOutgoingLink(edges, targetText, alias);
   const resolvedId = edge?.toItemId ?? null;
-  const broken = Boolean(edges) && edge !== null && !resolvedId && renamedTitle === null;
+  const broken =
+    confirmedBroken || (Boolean(edges) && edge !== null && !resolvedId && renamedTitle === null);
   React.useEffect(() => {
     return subscribeToItemTitleUpdates((event) => {
       if (event.itemType !== "markdown" || event.itemId !== resolvedId) return;
@@ -159,7 +162,9 @@ function WikilinkNodeView({ node, editor }: ReactNodeViewProps) {
             return;
           }
           if (!itemId || broken) return;
-          void openPendingWikilink(itemId, targetText, alias);
+          void openPendingWikilink(itemId, targetText, alias).then((opened) => {
+            if (!opened) setConfirmedBroken(true);
+          });
         }}
       >
         {label}
@@ -428,7 +433,7 @@ async function openPendingWikilink(
   itemId: string,
   targetText: string,
   alias: string | null,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await markdownApi.flushContent(itemId);
   } catch {
@@ -437,9 +442,12 @@ async function openPendingWikilink(
   const edges = await queryClient.fetchQuery({
     queryKey: queryKeys.notes.outgoing(itemId),
     queryFn: () => markdownApi.listOutgoing(itemId),
+    staleTime: 0,
   });
   const match = matchOutgoingLink(edges, targetText, alias);
-  if (match?.toItemId) openNoteBeside(match.toItemId);
+  if (!match?.toItemId) return false;
+  openNoteBeside(match.toItemId);
+  return true;
 }
 
 function openNoteBeside(itemId: string): void {
