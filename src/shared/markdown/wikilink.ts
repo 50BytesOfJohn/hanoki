@@ -21,6 +21,13 @@ export function oldestByItemId<T extends { id: string }>(matches: readonly T[]):
   return oldest;
 }
 
+/** Heading or block ref after the first `#`. The lookup text stays in front of it. */
+export function splitWikilinkFragment(target: string): { lookup: string; fragment: string } {
+  const hash = target.indexOf("#");
+  if (hash === -1) return { lookup: target.trim(), fragment: "" };
+  return { lookup: target.slice(0, hash).trim(), fragment: target.slice(hash) };
+}
+
 export function formatWikilink(target: string, alias: string | null): string {
   const trimmedTarget = target.trim();
   const trimmedAlias = alias?.trim() ?? "";
@@ -99,8 +106,9 @@ export function rewriteWikilinkTargets(
   let changed = false;
   for (const link of links) {
     next += markdown.slice(cursor, link.start);
-    if (normalizeWikilinkTitle(link.target) === fromKey) {
-      next += formatWikilink(toTitle, link.alias);
+    const parts = splitWikilinkFragment(link.target);
+    if (normalizeWikilinkTitle(parts.lookup) === fromKey) {
+      next += formatWikilink(`${toTitle.trim()}${parts.fragment}`, link.alias);
       changed = true;
     } else {
       next += link.raw;

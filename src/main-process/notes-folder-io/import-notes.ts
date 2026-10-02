@@ -21,6 +21,7 @@ import {
 } from "./serialize";
 
 const IMPORTED_PARENT_NAME = "Imported";
+const IMPORT_YIELD_EVERY = 25;
 
 export type NotesFolderImportTree = Pick<
   ChatTreeService,
@@ -114,6 +115,11 @@ export async function importMarkdownNotesFromDirectory(
   let canceled = false;
 
   for (let index = 0; index < kept.length; index += 1) {
+    if (index > 0 && index % IMPORT_YIELD_EVERY === 0) {
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+    }
     if (options?.isCanceled?.()) {
       canceled = true;
       break;
@@ -140,9 +146,10 @@ export async function importMarkdownNotesFromDirectory(
         title: file.title,
         folderId,
         importRelativePath: vaultRelativeNotePath(file.relativePath),
+        skipLinkIndex: true,
       });
       chatTree.queueMarkdownContent(item.id, file.body);
-      chatTree.flushMarkdownContent(item.id);
+      chatTree.flushMarkdownContent(item.id, { skipLinkIndex: true });
       noteCount += 1;
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Could not be imported.";

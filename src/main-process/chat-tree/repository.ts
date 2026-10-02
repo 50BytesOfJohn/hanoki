@@ -1199,6 +1199,7 @@ export function createMarkdown(input: {
   title: string;
   folderId: string | null;
   importRelativePath?: string | null;
+  skipLinkIndex?: boolean;
 }): MarkdownRow {
   requireWorkspaceExists(input.workspaceId);
   if (input.folderId !== null) {
@@ -1223,11 +1224,15 @@ export function createMarkdown(input: {
     .run();
   const markdown = requireItemById(id);
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  resolveOpenNoteLinks(markdown.workspaceId);
+  if (!input.skipLinkIndex) resolveOpenNoteLinks(markdown.workspaceId);
   return markdown;
 }
 
-export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {
+export function updateMarkdownContent(
+  id: string,
+  markdown: string,
+  options?: { skipLinkIndex?: boolean },
+): MarkdownRow {
   const item = requireItemById(id);
   if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   getAppDatabase()
@@ -1237,7 +1242,7 @@ export function updateMarkdownContent(id: string, markdown: string): MarkdownRow
     .run();
   const updated = requireItemById(id);
   if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  reindexNoteLinks(updated.id);
+  if (!options?.skipLinkIndex) reindexNoteLinks(updated.id);
   return updated;
 }
 

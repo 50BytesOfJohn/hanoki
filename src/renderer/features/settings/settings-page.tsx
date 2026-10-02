@@ -23,6 +23,7 @@ import { useUpdateWorkspace } from "@/mutations/workspaces";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { findWorkspaceById, listWorkspacesQueryOptions } from "@/queries/workspaces";
 import type { GlobalChatSettingsUpdateInput, WorkspaceInfo } from "@shared/ipc";
+import { NOTES_FOLDER_REIMPORT_NOTE } from "@shared/markdown/folder-io";
 import {
   CHAT_TREE_FOLDER_PLACEMENTS,
   CHAT_TREE_SORT_ORDERS,
@@ -373,7 +374,7 @@ function MarkdownNotesFolderIoRows({ workspaceId }: { workspaceId: string }) {
       />
       <SettingsRow
         title="Import notes"
-        description="One-time copy into Imported/<folder name>. A duplicate path is skipped, including names that differ only by letter case. Not a live sync."
+        description={`One-time copy into Imported/<folder name>. ${NOTES_FOLDER_REIMPORT_NOTE} Duplicate paths within one import are skipped, including names that differ only by letter case. Not a live sync.`}
         control={
           <Button
             type="button"

@@ -1,5 +1,8 @@
 export const NOTES_FOLDER_IMPORT_PROGRESS_MIN = 25;
 
+export const NOTES_FOLDER_REIMPORT_NOTE =
+  "Importing this folder again creates a second copy under a new Imported/… root.";
+
 export type NotesFolderExportResult =
   | { status: "canceled" }
   | {
@@ -72,7 +75,7 @@ export function formatNotesFolderImportSummary(
 ): string {
   const skip = notesFolderImportSkipCount(result);
   const counts = `New ${result.noteCount} · Skip ${skip} · Fail ${result.failedCount}.`;
-  const placed = `Copied under ${result.wrapFolderPath}.`;
+  const placed = `Copied under ${result.wrapFolderPath}. ${NOTES_FOLDER_REIMPORT_NOTE}`;
   const parts = [
     result.canceled
       ? result.noteCount > 0

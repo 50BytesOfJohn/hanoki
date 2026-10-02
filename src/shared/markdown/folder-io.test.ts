@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { formatNotesFolderExportSummary, formatNotesFolderImportSummary } from "./folder-io";
+import {
+  NOTES_FOLDER_REIMPORT_NOTE,
+  formatNotesFolderExportSummary,
+  formatNotesFolderImportSummary,
+} from "./folder-io";
 
 describe("formatNotesFolderExportSummary", () => {
   it("reports skipped non-markdown items", () => {
@@ -90,13 +94,13 @@ describe("formatNotesFolderImportSummary", () => {
         }),
       ),
     ).toBe(
-      "New 3 · Skip 2 · Fail 0. Copied under Imported/Vault. 4 non-markdown files ignored. Ignored .git/, .obsidian/.",
+      `New 3 · Skip 2 · Fail 0. Copied under Imported/Vault. ${NOTES_FOLDER_REIMPORT_NOTE} 4 non-markdown files ignored. Ignored .git/, .obsidian/.`,
     );
   });
 
   it("omits zero-count skip clauses", () => {
     expect(formatNotesFolderImportSummary(imported({}))).toBe(
-      "New 1 · Skip 0 · Fail 0. Copied under Imported/Vault.",
+      `New 1 · Skip 0 · Fail 0. Copied under Imported/Vault. ${NOTES_FOLDER_REIMPORT_NOTE}`,
     );
   });
 
@@ -110,13 +114,13 @@ describe("formatNotesFolderImportSummary", () => {
         }),
       ),
     ).toBe(
-      "New 1 · Skip 1 · Fail 0. Copied under Imported/Vault. huge.md is larger than 5 MiB and was skipped.",
+      `New 1 · Skip 1 · Fail 0. Copied under Imported/Vault. ${NOTES_FOLDER_REIMPORT_NOTE} huge.md is larger than 5 MiB and was skipped.`,
     );
   });
 
   it("says when cancel kept a partial copy", () => {
     expect(formatNotesFolderImportSummary(imported({ noteCount: 2, canceled: true }))).toBe(
-      "Import canceled. Partial copy kept. New 2 · Skip 0 · Fail 0. Copied under Imported/Vault.",
+      `Import canceled. Partial copy kept. New 2 · Skip 0 · Fail 0. Copied under Imported/Vault. ${NOTES_FOLDER_REIMPORT_NOTE}`,
     );
   });
 });

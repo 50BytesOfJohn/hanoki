@@ -8,7 +8,7 @@ import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc
 import { MAX_MARKDOWN_FILE_BYTES, MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 
-export const IGNORED_DIRECTORY_NAMES = new Set([".obsidian", ".git"]);
+export const IGNORED_DIRECTORY_NAMES = new Set([".obsidian", ".git", ".trash"]);
 
 export interface NotesFolderExportFile {
   relativePath: string;
@@ -296,10 +296,15 @@ async function walkImportDirectory(
 }
 
 function decodeUtf8WithoutBom(bytes: Buffer): string {
-  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    return bytes.subarray(3).toString("utf8");
+  const payload =
+    bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+      ? bytes.subarray(3)
+      : bytes;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(payload);
+  } catch (error) {
+    throw new Error("File is not valid UTF-8.", { cause: error });
   }
-  return bytes.toString("utf8");
 }
 
 function isMarkdownFileName(name: string): boolean {

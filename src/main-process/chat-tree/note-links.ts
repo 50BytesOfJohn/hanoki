@@ -1,4 +1,3 @@
-import type { DatabaseSync } from "node:sqlite";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 import type { MarkdownTitleOption, NoteBacklink } from "@shared/ipc";
@@ -7,6 +6,7 @@ import {
   normalizeWikilinkTitle,
   oldestByItemId,
   rewriteWikilinkTargets,
+  splitWikilinkFragment,
   wikilinkSnippet,
 } from "@shared/markdown/wikilink";
 
@@ -244,7 +244,7 @@ type NoteLinkInsertRow = {
 
 function sqliteVariableLimit(): number {
   if (cachedSqliteVariableLimit !== null) return cachedSqliteVariableLimit;
-  const sqlite = (getAppDatabase() as { $client: DatabaseSync }).$client;
+  const sqlite = getAppDatabase().$client;
   const query = sqlite.prepare("SELECT sqlite_compileoption_get(?) AS opt");
   let limit = SQLITE_VARIABLE_LIMIT_FALLBACK;
   for (let index = 0; ; index += 1) {
@@ -291,46 +291,56 @@ function uniqueEdges(markdown: string, index: ResolveIndex, sourceFolderId: stri
   return [...edges.values()];
 }
 
-/** Strip `#heading` / `#^block` for lookup. Bodies stay untouched. */
-function wikilinkLookupKey(target: string): string {
-  const hash = target.indexOf("#");
-  return (hash === -1 ? target : target.slice(0, hash)).trim();
-}
-
 function resolveTarget(
   index: ResolveIndex,
   sourceFolderId: string | null,
   target: string,
 ): string | null {
-  const lookup = wikilinkLookupKey(target);
-  const titleKey = normalizeWikilinkTitle(lookup);
-  if (titleKey.length === 0) return null;
+  const fullKey = normalizeWikilinkTitle(target.trim());
+  if (fullKey.length === 0) return null;
 
+  const lookup = splitWikilinkFragment(target).lookup;
+  const strippedKey = normalizeWikilinkTitle(lookup);
   const pathKey = lookup.includes("/") ? lookup.replace(/\.md$/i, "") : null;
-  if (pathKey && sourceFolderId) {
-    const wrapId = index.wrapByFolderId.get(sourceFolderId) ?? null;
-    if (wrapId) {
-      const wanted = normalizeWikilinkTitle(pathKey);
-      const scoped = index.notes.filter((note) => note.wrapId === wrapId);
-      const byPath = scoped.filter((note) => {
-        if (!note.importRelativePath) return false;
-        return normalizeWikilinkTitle(note.importRelativePath.replace(/\.md$/i, "")) === wanted;
-      });
-      const pathHit = oldestByItemId(byPath);
-      if (pathHit) return pathHit.id;
+  const wrapId = sourceFolderId ? (index.wrapByFolderId.get(sourceFolderId) ?? null) : null;
 
-      const byFolder = scoped.filter(
-        (note) =>
-          note.folderTitlePath !== null && normalizeWikilinkTitle(note.folderTitlePath) === wanted,
-      );
-      const folderHit = oldestByItemId(byFolder);
-      if (folderHit) return folderHit.id;
-    }
+  if (pathKey && wrapId) {
+    const wanted = normalizeWikilinkTitle(pathKey);
+    const scoped = index.notes.filter((note) => note.wrapId === wrapId);
+    const byPath = scoped.filter((note) => {
+      if (!note.importRelativePath) return false;
+      return normalizeWikilinkTitle(note.importRelativePath.replace(/\.md$/i, "")) === wanted;
+    });
+    const pathHit = oldestByItemId(byPath);
+    if (pathHit) return pathHit.id;
+
+    const byFolder = scoped.filter(
+      (note) =>
+        note.folderTitlePath !== null && normalizeWikilinkTitle(note.folderTitlePath) === wanted,
+    );
+    const folderHit = oldestByItemId(byFolder);
+    if (folderHit) return folderHit.id;
   }
 
+  const scopes: ReadonlyArray<readonly ResolveNote[]> = wrapId
+    ? [index.notes.filter((note) => note.wrapId === wrapId), index.notes]
+    : [index.notes];
+  for (const scope of scopes) {
+    const exact = oldestTitled(scope, fullKey);
+    if (exact) return exact;
+    if (strippedKey !== fullKey) {
+      const stripped = oldestTitled(scope, strippedKey);
+      if (stripped) return stripped;
+    }
+  }
+  return null;
+}
+
+function oldestTitled(notes: readonly ResolveNote[], titleKey: string): string | null {
+  if (titleKey.length === 0) return null;
   return (
-    oldestByItemId(index.notes.filter((note) => normalizeWikilinkTitle(note.title) === titleKey))
-      ?.id ?? null
+    oldestByItemId(notes.filter((note) => normalizeWikilinkTitle(note.title) === titleKey))?.id ??
+    null
   );
 }
 

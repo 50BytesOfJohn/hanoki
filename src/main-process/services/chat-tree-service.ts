@@ -93,10 +93,11 @@ export interface ChatTreeService {
     title: string;
     folderId: string | null;
     importRelativePath?: string | null;
+    skipLinkIndex?: boolean;
   }): MarkdownInfo;
   listChildFolders(workspaceId: string, parentId: string | null): { id: string; name: string }[];
   queueMarkdownContent(id: string, markdown: string): void;
-  flushMarkdownContent(id: string): MarkdownInfo;
+  flushMarkdownContent(id: string, options?: { skipLinkIndex?: boolean }): MarkdownInfo;
   flushAllMarkdownContent(): void;
   listMarkdownTitles(workspaceId: string): MarkdownTitleOption[];
   listNoteBacklinks(itemId: string): NoteBacklink[];
@@ -400,7 +401,10 @@ export function createChatTreeService(): ChatTreeService {
     pendingMarkdownSaves.delete(id);
   }
 
-  function flushPendingMarkdownContent(id: string): MarkdownInfo {
+  function flushPendingMarkdownContent(
+    id: string,
+    options?: { skipLinkIndex?: boolean },
+  ): MarkdownInfo {
     const pending = pendingMarkdownSaves.get(id);
     if (!pending) {
       const item = getItemById(id);
@@ -410,7 +414,7 @@ export function createChatTreeService(): ChatTreeService {
     }
 
     if (pending.timeout) clearTimeout(pending.timeout);
-    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
+    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown, options));
     pendingMarkdownSaves.delete(id);
     return saved;
   }
@@ -636,8 +640,8 @@ export function createChatTreeService(): ChatTreeService {
       queuePendingMarkdownContent(id, markdown);
     },
 
-    flushMarkdownContent(id: string): MarkdownInfo {
-      return flushPendingMarkdownContent(id);
+    flushMarkdownContent(id: string, options?: { skipLinkIndex?: boolean }): MarkdownInfo {
+      return flushPendingMarkdownContent(id, options);
     },
 
     flushAllMarkdownContent(): void {

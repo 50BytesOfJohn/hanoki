@@ -6,7 +6,7 @@ import { getUserDataDirectory, isPackagedElectronApp } from "../system/paths";
 import { drizzle, type NodeSQLiteDatabase } from "./node-sqlite-drizzle";
 import * as schema from "./schema";
 
-export type AppDatabase = NodeSQLiteDatabase<typeof schema>;
+export type AppDatabase = NodeSQLiteDatabase<typeof schema> & { $client: DatabaseSync };
 
 const APP_DATABASE_FILENAME = "app.sqlite";
 const MIGRATIONS_TABLE = "__drizzle_migrations";

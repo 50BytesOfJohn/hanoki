@@ -46,6 +46,9 @@ describe("wikilinks", () => {
     expect(rewriteWikilinkTargets(markdown, "old", "New")).toBe(
       "[[New]]\n\n```\n[[Old]]\n```\n\n[[New|pet]] and [[Other]]",
     );
+    expect(
+      rewriteWikilinkTargets("[[Alpha#Intro|alias]] and [[Projects/Alpha#H]]", "Alpha", "New"),
+    ).toBe("[[New#Intro|alias]] and [[Projects/Alpha#H]]");
     expect(rewriteWikilinkTargets(markdown, "Missing", "New")).toBe(markdown);
   });
 

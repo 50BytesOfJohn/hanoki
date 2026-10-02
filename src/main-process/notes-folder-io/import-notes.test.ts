@@ -4,7 +4,10 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { FolderInfo, MarkdownInfo } from "@shared/ipc";
-import { formatNotesFolderImportSummary } from "@shared/markdown/folder-io";
+import {
+  NOTES_FOLDER_REIMPORT_NOTE,
+  formatNotesFolderImportSummary,
+} from "@shared/markdown/folder-io";
 import { MAX_MARKDOWN_FILE_BYTES } from "@shared/markdown/content";
 
 import { importMarkdownNotesFromDirectory, type NotesFolderImportTree } from "./import-notes";
@@ -255,7 +258,7 @@ describe("importMarkdownNotesFromDirectory", () => {
     expect(result.ignoredNonMarkdownCount).toBe(1);
     expect(result.ignoredDirectoryNames).toEqual([".git", ".obsidian"]);
     expect(formatNotesFolderImportSummary(result)).toBe(
-      `New 1 · Skip 1 · Fail 0. Copied under Imported/${basename(root)}. 1 non-markdown file ignored. Ignored .git/, .obsidian/. huge.md is larger than 5 MiB and was skipped.`,
+      `New 1 · Skip 1 · Fail 0. Copied under Imported/${basename(root)}. ${NOTES_FOLDER_REIMPORT_NOTE} 1 non-markdown file ignored. Ignored .git/, .obsidian/. huge.md is larger than 5 MiB and was skipped.`,
     );
   });
 
@@ -294,5 +297,49 @@ describe("importMarkdownNotesFromDirectory", () => {
     expect(result.noteCount).toBe(1);
     expect(tree.notes).toHaveLength(1);
     expect(formatNotesFolderImportSummary(result)).toContain("Partial copy kept.");
+  });
+
+  it("stops when cancel is scheduled while the import yields", async () => {
+    const root = await makeTempDir();
+    for (let index = 0; index < 40; index += 1) {
+      await writeFile(join(root, `N${String(index).padStart(2, "0")}.md`), "x", "utf8");
+    }
+
+    const tree = memoryTree();
+    let cancel = false;
+    let scheduled = false;
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root, {
+      isCanceled: () => cancel,
+      onProgress: () => {
+        if (scheduled) return;
+        scheduled = true;
+        setImmediate(() => {
+          cancel = true;
+        });
+      },
+    });
+
+    expect(result.canceled).toBe(true);
+    expect(result.noteCount).toBe(25);
+    expect(formatNotesFolderImportSummary(result)).toContain("Partial copy kept.");
+  });
+
+  it("counts invalid UTF-8 as a failure and ignores .trash", async () => {
+    const root = await makeTempDir();
+    await mkdir(join(root, ".trash"), { recursive: true });
+    await writeFile(join(root, ".trash", "Gone.md"), "gone", "utf8");
+    await writeFile(join(root, "bad.md"), Buffer.from([0xff, 0xfe, 0x41, 0x00]));
+    await writeFile(join(root, "ok.md"), "ok", "utf8");
+
+    const tree = memoryTree();
+    const result = await importMarkdownNotesFromDirectory(tree.chatTree, "workspace-1", root);
+
+    expect(result.noteCount).toBe(1);
+    expect(result.failedCount).toBe(1);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ relativePath: "bad.md", reason: expect.stringContaining("UTF-8") }),
+    ]);
+    expect(result.ignoredDirectoryNames).toEqual([".trash"]);
+    expect(tree.notes.map((note) => note.data.markdown)).toEqual(["ok"]);
   });
 });

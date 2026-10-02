@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import type { NotesFolderImportProgressEvent } from "@shared/events";
 import {
+  NOTES_FOLDER_REIMPORT_NOTE,
   notesFolderImportSkipCount,
   type NotesFolderImportResult,
 } from "@shared/markdown/folder-io";
@@ -161,7 +162,7 @@ function SummaryBody({ result }: { result: ImportedNotes }) {
         <p className="text-[13px]">Nothing was copied.</p>
       ) : (
         <p className="text-[13px]">
-          Copied under {result.wrapFolderPath}.
+          Copied under {result.wrapFolderPath}. {NOTES_FOLDER_REIMPORT_NOTE}
           {result.canceled ? " Notes already copied were kept." : null}
         </p>
       )}
