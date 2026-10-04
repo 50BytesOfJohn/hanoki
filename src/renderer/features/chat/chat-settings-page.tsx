@@ -28,6 +28,7 @@ import {
 } from "@/features/settings/settings-ui";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { getChatQueryOptions } from "@/queries/chats";
+import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "@/lib/utils";
 import {
@@ -41,6 +42,7 @@ export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
   const activeChatId = chatId ?? currentChatId;
 
   const chatQuery = useQuery(getChatQueryOptions(activeChatId, { enabled: activeChatId !== null }));
+  const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
 
   if (!activeChatId) {
     return (
@@ -74,6 +76,8 @@ export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
   if (!chat) {
     return <ChatEmptyPage title="Chat not found" description="This chat may have been deleted." />;
   }
+  const selectedModel =
+    enabledModels.find((model) => model.id === chat.data.settings.modelId) ?? enabledModels[0];
 
   return (
     <ChatSettingsShell>
@@ -92,6 +96,7 @@ export function ChatSettingsPage({ chatId }: { chatId?: string } = {}) {
           key={chat.id}
           chatId={chat.id}
           savedTemperature={chat.data.settings.modelConfig?.temperature}
+          temperatureMax={selectedModel?.temperatureMax}
         />
       </SettingsSection>
 
@@ -189,20 +194,25 @@ function ChatExportRow({ chatId }: { chatId: string }) {
 function TemperatureRow({
   chatId,
   savedTemperature,
+  temperatureMax,
 }: {
   chatId: string;
   savedTemperature?: number;
+  temperatureMax?: number | null;
 }) {
   const updateChatSettings = useUpdateChatSettings();
   const [temperature, setTemperature] = React.useState(savedTemperature ?? 0.7);
   const [error, setError] = React.useState<string | null>(null);
   const isCustom = savedTemperature !== undefined;
+  const isSupported = temperatureMax !== null;
+  const max = temperatureMax ?? 1;
+  const displayedTemperature = Math.min(temperature, max);
 
   React.useEffect(() => {
-    if (savedTemperature !== undefined) {
+    if (!updateChatSettings.isPending && savedTemperature !== undefined) {
       setTemperature(savedTemperature);
     }
-  }, [savedTemperature]);
+  }, [savedTemperature, updateChatSettings.isPending]);
 
   function updateTemperature(nextTemperature: number | null) {
     setError(null);
@@ -222,21 +232,25 @@ function TemperatureRow({
   return (
     <SettingsRow
       title="Temperature"
-      description="Default uses the selected model's setting. Custom values run from focused (0) to varied (1); some models may ignore them."
+      description={
+        isSupported
+          ? `Default leaves temperature unset so the provider chooses. Custom values run from focused (0) to varied (${max}); some models may restrict them further.`
+          : "The selected model does not support custom temperature. It uses its own default; any saved override is inactive."
+      }
       control={
         <div className="flex items-center gap-2.5">
           <span className="text-xs text-muted-foreground">{isCustom ? "Custom" : "Default"}</span>
           <Switch
             aria-label="Use custom temperature"
             checked={isCustom}
-            disabled={updateChatSettings.isPending}
-            onCheckedChange={(checked) => updateTemperature(checked ? temperature : null)}
+            disabled={updateChatSettings.isPending || (!isSupported && !isCustom)}
+            onCheckedChange={(checked) => updateTemperature(checked ? displayedTemperature : null)}
           />
         </div>
       }
     >
       <div className="flex flex-col gap-2.5">
-        {isCustom ? (
+        {isCustom && isSupported ? (
           <div className="flex items-center gap-3">
             <span id="chat-temperature-control-label" className="sr-only">
               Temperature
@@ -245,9 +259,9 @@ function TemperatureRow({
               aria-labelledby="chat-temperature-control-label"
               className="max-w-sm"
               min={0}
-              max={1}
+              max={max}
               step={0.1}
-              value={[temperature]}
+              value={[displayedTemperature]}
               disabled={updateChatSettings.isPending}
               onValueChange={(value) =>
                 setTemperature((typeof value === "number" ? value : value[0]) ?? temperature)
@@ -260,9 +274,15 @@ function TemperatureRow({
               }}
             />
             <output className="w-7 text-right font-mono text-xs tabular-nums">
-              {temperature.toFixed(1)}
+              {displayedTemperature.toFixed(1)}
             </output>
           </div>
+        ) : null}
+        {isSupported && savedTemperature !== undefined && savedTemperature > max ? (
+          <SettingsError>
+            Saved temperature {savedTemperature} exceeds this model's limit of {max}. Adjust it or
+            use Default before sending.
+          </SettingsError>
         ) : null}
         <SettingsError>{error}</SettingsError>
       </div>

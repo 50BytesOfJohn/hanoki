@@ -27,8 +27,9 @@ import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
-import { buildReasoningProviderOptions } from "../providers/reasoning-provider-options";
+import { buildChatProviderOptions } from "../providers/chat-provider-options";
 import { getModelReasoningEfforts } from "@shared/models/reasoning";
+import { getModelTemperatureMax } from "@shared/models/temperature";
 import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
@@ -120,6 +121,20 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const provider = getProviderById(model.providerId);
     if (!provider) {
       return c.json({ error: "Model not found or not enabled" }, 400);
+    }
+
+    const temperatureMax = getModelTemperatureMax(provider.catalogId as ProviderId, model.metadata);
+    const savedTemperature = chat.data.settings.modelConfig?.temperature;
+    // Overrides survive model switches. Leave unsupported models at their own
+    // default, and report an incompatible range before persisting a message.
+    const temperature = temperatureMax === null ? undefined : savedTemperature;
+    if (temperature !== undefined && temperatureMax !== null && temperature > temperatureMax) {
+      return c.json(
+        {
+          error: `This model accepts temperature from 0 to ${temperatureMax}. Adjust it in Chat Settings or use Default.`,
+        },
+        400,
+      );
     }
 
     let languageModel: Awaited<ReturnType<typeof createLanguageModel>>;
@@ -300,11 +315,12 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         [chat.data.settings.systemPrompt?.trim() || "", mentionedInstructions ?? ""]
           .filter((part) => part.length > 0)
           .join("\n\n") || undefined,
-      temperature: chat.data.settings.modelConfig?.temperature,
+      temperature,
       reasoning: reasoningEffort,
-      providerOptions: buildReasoningProviderOptions(
+      providerOptions: buildChatProviderOptions(
         provider.catalogId as ProviderId,
         reasoningEffort,
+        temperature,
       ),
       tools,
       activeTools,
@@ -326,7 +342,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           workspaceId: chat.workspaceId,
           provider: sdkProvider,
           modelId: sdkModelId,
-          temperature: chat.data.settings.modelConfig?.temperature ?? null,
+          temperature: temperature ?? null,
           reasoning: reasoningEffort ?? null,
           hasCustomSystemPrompt: Boolean(chat.data.settings.systemPrompt?.trim()),
           activeTools,

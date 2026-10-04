@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
+import { isTemperature } from "@shared/models/temperature";
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
@@ -236,12 +237,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   if (modelConfig && typeof modelConfig === "object" && !Array.isArray(modelConfig)) {
     const temperature = (modelConfig as Record<string, unknown>).temperature;
     const reasoningEffort = (modelConfig as Record<string, unknown>).reasoningEffort;
-    if (
-      typeof temperature === "number" &&
-      Number.isFinite(temperature) &&
-      temperature >= 0 &&
-      temperature <= 1
-    ) {
+    if (isTemperature(temperature)) {
       normalizedSettings.modelConfig = { temperature };
     }
 

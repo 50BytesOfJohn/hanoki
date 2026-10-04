@@ -347,6 +347,7 @@ export interface ChatSettings {
 }
 
 export interface ChatModelConfig {
+  /** Sampling override (0–2); unset uses the provider's default. Model limits vary. */
   temperature?: number;
   /** Unset means the provider's own default. */
   reasoningEffort?: ReasoningEffort;
@@ -503,6 +504,8 @@ export interface ProviderModelInfo {
   metadata?: Record<string, unknown>;
   /** Thinking efforts this model accepts; empty when it does not reason. */
   reasoningEfforts?: ReasoningEffort[];
+  /** Custom temperature limit; null when unsupported. */
+  temperatureMax?: number | null;
 }
 
 export interface SaveProviderInput {

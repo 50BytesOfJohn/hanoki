@@ -253,6 +253,24 @@ describe("createMarkdown", () => {
 });
 
 describe("updateChatSettings", () => {
+  it.each([0, 1.6, 2])(
+    "round-trips temperature %s without losing reasoning settings",
+    (temperature) => {
+      const workspace = createWorkspace({
+        id: `temperature-workspace-${temperature}`,
+        name: `Temperature ${temperature}`,
+      });
+      const chat = createChat({ workspaceId: workspace.id, title: "Temperature", folderId: null });
+      updateChatSettings(chat.id, { modelConfig: { reasoningEffort: "high", temperature } });
+      expect(getChatById(chat.id)?.data.settings.modelConfig).toEqual({
+        temperature,
+        reasoningEffort: "high",
+      });
+      updateChatSettings(chat.id, { modelConfig: { temperature: null } });
+      expect(getChatById(chat.id)?.data.settings.modelConfig).toEqual({ reasoningEffort: "high" });
+    },
+  );
+
   it("stores a temperature override and removes the empty model config when reset", () => {
     createWorkspace({ id: "settings-workspace", name: "Settings" });
     const chat = createChat({

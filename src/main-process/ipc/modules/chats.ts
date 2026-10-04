@@ -9,6 +9,7 @@ import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import { isReasoningEffort } from "@shared/models/reasoning";
+import { isTemperature, MAX_TEMPERATURE } from "@shared/models/temperature";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -134,14 +135,10 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     if (modelConfig.temperature !== undefined) {
-      if (
-        modelConfig.temperature !== null &&
-        (typeof modelConfig.temperature !== "number" ||
-          !Number.isFinite(modelConfig.temperature) ||
-          modelConfig.temperature < 0 ||
-          modelConfig.temperature > 1)
-      ) {
-        throw AppError.badRequest("temperature must be null or a number between 0 and 1.");
+      if (modelConfig.temperature !== null && !isTemperature(modelConfig.temperature)) {
+        throw AppError.badRequest(
+          `temperature must be null or a number between 0 and ${MAX_TEMPERATURE}.`,
+        );
       }
 
       parsedInput.modelConfig = { temperature: modelConfig.temperature };
