@@ -603,6 +603,10 @@ describe("MarkdownEditor", () => {
           editable ? "Markdown rich text editor" : "Markdown preview",
         );
         const row = surface.querySelector("[data-remote-image]");
+        const renderer = row?.closest(".react-renderer");
+        expect(renderer?.classList.contains("block")).toBe(layout === "block");
+        expect(renderer?.classList.contains("inline")).toBe(layout === "inline");
+        expect(row?.className).toContain(layout === "inline" ? "inline-flex" : "flex");
         expect(row?.textContent).toBe(label);
         expect(row?.getAttribute("data-layout")).toBe(layout);
         expect(row?.getAttribute("role")).toBe("img");
@@ -707,6 +711,111 @@ describe("MarkdownEditor", () => {
     expect(saved).toContain("Hello");
     expect(saved).not.toContain(image);
     expect(editor?.getMarkdown()).not.toContain("cdn.example.com");
+  });
+
+  it("keeps a remote image through cut and paste", async () => {
+    const image = "![cover](https://cdn.example.com/a.png)";
+    const markdown = `Intro\n\n${image}\n\nend`;
+    const { surface, editor, onChange } = await renderEditable("cut-one", markdown);
+    selectImage(editor, "https://cdn.example.com/a.png");
+    const data = clipboard();
+    surface.dispatchEvent(clipboardEvent("cut", data));
+    expect(data.getData("text/html")).toContain("https://cdn.example.com/a.png");
+    surface.dispatchEvent(clipboardEvent("paste", data));
+    await expectSaved(onChange, ["Intro", "end", "https://cdn.example.com/a.png"]);
+    expect(editor.getMarkdown()).toContain("https://cdn.example.com/a.png");
+    expect(surface.querySelector("[data-remote-image]")).toBeTruthy();
+    expect(surface.querySelector("img[src^='http']")).toBeNull();
+  });
+
+  it("keeps every remote image through select-all cut and paste", async () => {
+    const markdown = "Intro\n\n![cover](https://cdn.example.com/a.png)\n\nend";
+    const { surface, editor, onChange } = await renderEditable("cut-all", markdown);
+    editor.commands.selectAll();
+    const data = clipboard();
+    surface.dispatchEvent(clipboardEvent("cut", data));
+    surface.dispatchEvent(clipboardEvent("paste", data));
+    await expectSaved(onChange, ["Intro", "end", "https://cdn.example.com/a.png"]);
+    expect(imageSrcs(editor)).toEqual(["https://cdn.example.com/a.png"]);
+    expect(surface.querySelector("img[src^='http']")).toBeNull();
+  });
+
+  it("keeps remote, local, and data images through select-all cut and paste", async () => {
+    const srcs = [
+      "https://cdn.example.com/one.png",
+      "./local.png",
+      "data:image/png;base64,aaaa",
+      "https://www.example.com/four.png",
+      "img/five.png",
+      "https://cdn.example.com/six.png",
+    ];
+    const markdown = [
+      `![one](${srcs[0]})`,
+      "",
+      `![two](${srcs[1]})`,
+      "",
+      `![three](${srcs[2]})`,
+      "",
+      `See ![four](${srcs[3]}) and ![five](${srcs[4]}) and ![six](${srcs[5]}).`,
+    ].join("\n");
+    const { surface, editor, onChange } = await renderEditable("cut-mixed", markdown);
+    expect(imageSrcs(editor)).toEqual(srcs);
+    editor.commands.selectAll();
+    const data = clipboard();
+    surface.dispatchEvent(clipboardEvent("cut", data));
+    surface.dispatchEvent(clipboardEvent("paste", data));
+    await expectSaved(onChange, srcs);
+    expect(imageSrcs(editor)).toEqual(srcs);
+    expect(surface.querySelector("img[src^='http']")).toBeNull();
+    expect(surface.querySelector("img[src='./local.png']")).toBeTruthy();
+    expect(surface.querySelector("img[src='data:image/png;base64,aaaa']")).toBeTruthy();
+  });
+
+  it("pastes a copied remote image into a second editor", async () => {
+    const image = "![cover](https://cdn.example.com/a.png)";
+    const sourceChange = vi.fn();
+    const targetChange = vi.fn();
+    render(
+      <>
+        <MarkdownEditor
+          itemId="copy-source"
+          workspaceId="workspace"
+          folderId={null}
+          markdown={`Intro\n\n${image}\n\nend`}
+          editable
+          onChange={sourceChange}
+          onBlur={vi.fn()}
+        />
+        <MarkdownEditor
+          itemId="copy-target"
+          workspaceId="workspace"
+          folderId={null}
+          markdown="Here."
+          editable
+          onChange={targetChange}
+          onBlur={vi.fn()}
+        />
+      </>,
+    );
+    const surfaces = await screen.findAllByLabelText("Markdown rich text editor");
+    const source = surfaces[0];
+    const target = surfaces[1];
+    if (!source || !target) throw new Error("missing editor");
+    const sourceEditor = registeredMarkdownEditor("copy-source");
+    const targetEditor = registeredMarkdownEditor("copy-target");
+    if (!sourceEditor || !targetEditor) throw new Error("missing editor");
+    sourceEditor.commands.selectAll();
+    const data = clipboard();
+    source.dispatchEvent(clipboardEvent("copy", data));
+    expect(data.getData("text/html")).toContain("https://cdn.example.com/a.png");
+    targetEditor.commands.focus("end");
+    target.dispatchEvent(clipboardEvent("paste", data));
+    await expectSaved(targetChange, ["Here.", "https://cdn.example.com/a.png"]);
+    expect(targetEditor.getMarkdown()).toContain("https://cdn.example.com/a.png");
+    expect(sourceEditor.getMarkdown()).toContain("https://cdn.example.com/a.png");
+    expect(target.querySelector("[data-remote-image]")).toBeTruthy();
+    expect(target.querySelector("img[src^='http']")).toBeNull();
+    expect(sourceChange).not.toHaveBeenCalled();
   });
 
   it("shows a fallback when the note view throws", () => {
@@ -836,6 +945,75 @@ describe("MarkdownEditor", () => {
     expect(opened).toEqual([]);
   });
 });
+
+async function renderEditable(itemId: string, markdown: string) {
+  const onChange = vi.fn();
+  render(
+    <MarkdownEditor
+      itemId={itemId}
+      workspaceId="workspace"
+      folderId={null}
+      markdown={markdown}
+      editable
+      onChange={onChange}
+      onBlur={vi.fn()}
+    />,
+  );
+  const surface = await screen.findByLabelText("Markdown rich text editor");
+  const editor = registeredMarkdownEditor(itemId);
+  if (!editor) throw new Error("missing editor");
+  return { surface, editor, onChange };
+}
+
+function imageSrcs(editor: NonNullable<ReturnType<typeof registeredMarkdownEditor>>): string[] {
+  const srcs: string[] = [];
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === "image" && typeof node.attrs.src === "string") srcs.push(node.attrs.src);
+  });
+  return srcs;
+}
+
+function selectImage(
+  editor: NonNullable<ReturnType<typeof registeredMarkdownEditor>>,
+  src: string,
+) {
+  let pos = -1;
+  editor.state.doc.descendants((node, position) => {
+    if (node.type.name === "image" && node.attrs.src === src) {
+      pos = position;
+      return false;
+    }
+    return true;
+  });
+  editor.commands.setNodeSelection(pos);
+}
+
+function clipboard() {
+  const store = new Map<string, string>();
+  return {
+    getData: (type: string) => store.get(type) ?? "",
+    setData: (type: string, value: string) => {
+      store.set(type, value);
+    },
+    clearData: () => {
+      store.clear();
+    },
+  };
+}
+
+function clipboardEvent(type: "copy" | "cut" | "paste", data: ReturnType<typeof clipboard>): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", { value: data });
+  return event;
+}
+
+async function expectSaved(onChange: ReturnType<typeof vi.fn>, parts: string[]) {
+  await waitFor(() => {
+    expect(onChange).toHaveBeenCalled();
+  });
+  const saved = String(onChange.mock.calls.at(-1)?.[0]);
+  for (const part of parts) expect(saved).toContain(part);
+}
 
 function inlineHandlers(surface: HTMLElement): string[] {
   const names: string[] = [];

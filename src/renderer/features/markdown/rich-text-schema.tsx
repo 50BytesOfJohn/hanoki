@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
 import {
-  mergeAttributes,
   type MarkdownParseHelpers,
   type MarkdownToken,
   type NodeViewRendererProps,
@@ -65,12 +64,18 @@ function RemoteImageNode({ node, editor, getPos }: ReactNodeViewProps) {
     const outer = ref.current?.parentElement;
     if (!outer) return;
     outer.classList.add("cursor-default");
+    outer.classList.toggle("inline", !block);
     outer.classList.toggle("block", block);
     outer.classList.toggle("w-full", block);
   }, [block]);
 
   return (
-    <NodeViewWrapper ref={ref} as="span" className={block ? "block w-full" : undefined}>
+    <NodeViewWrapper
+      ref={ref}
+      as="span"
+      className={block ? "block w-full" : "inline"}
+      style={block ? undefined : { whiteSpace: "nowrap" }}
+    >
       <RemoteImagePlaceholder src={src} alt={alt} layout={block ? "block" : "inline"} />
     </NodeViewWrapper>
   );
@@ -99,15 +104,6 @@ const RichTextImage = Image.extend({
       return { dom: localImageDom(props.node) };
     };
   },
-
-  renderHTML({ HTMLAttributes }) {
-    const src = HTMLAttributes.src;
-    const attributes =
-      typeof src === "string" && isRemoteImageUrl(src)
-        ? { ...HTMLAttributes, src: null }
-        : HTMLAttributes;
-    return ["img", mergeAttributes(this.options.HTMLAttributes, attributes)];
-  },
 });
 
 export const RICH_TEXT_SCHEMA_EXTENSIONS = [
@@ -116,5 +112,5 @@ export const RICH_TEXT_SCHEMA_EXTENSIONS = [
   TableKit,
   TaskList,
   TaskItem.configure({ nested: true }),
-  RichTextImage.configure({ inline: true }),
+  RichTextImage.configure({ inline: true, allowBase64: true }),
 ];
