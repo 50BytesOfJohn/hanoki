@@ -7,7 +7,7 @@ export const MARKDOWN_FLUSH_EDITORS_ACK_CHANNEL = "markdown:flush-editors:ack" a
 
 export type AiServerEvent =
   | { type: "ai-server:starting" }
-  | { type: "ai-server:ready"; port: number }
+  | { type: "ai-server:ready"; port: number; token: string }
   | { type: "ai-server:error"; error: string };
 
 export type ProviderModelSyncStatus = "succeeded" | "failed";
@@ -107,6 +107,7 @@ export type SystemEvent =
 export interface AiServerStateSnapshot {
   status: "idle" | "starting" | "ready" | "error";
   port: number | null;
+  token: string | null;
   error: string | null;
 }
 
