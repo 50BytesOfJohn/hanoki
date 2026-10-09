@@ -77,9 +77,22 @@ describe("countMarkdownWords", () => {
     expect(countMarkdownWords("<script>\nhidden words\n</script>\nvisible")).toBe(1);
     expect(countMarkdownWords("a&nbsp;b")).toBe(2);
     expect(countMarkdownWords("fish &amp; chips")).toBe(2);
+    expect(countMarkdownWords("&copy;")).toBe(0);
     expect(countMarkdownWords("&#169;")).toBe(0);
     expect(countMarkdownWords("see [^1] note\n\n[^1]: the note text")).toBe(5);
     expect(countMarkdownWords("x<y and z>w")).toBe(3);
+  });
+
+  it("decodes letter and apostrophe entities into the word", () => {
+    expect(countMarkdownWords("na&iuml;ve")).toBe(1);
+    expect(countPlainTextWords("na&iuml;ve")).toBe(1);
+    expect(countMarkdownWords("don&rsquo;t")).toBe(1);
+    expect(countMarkdownWords("don&lsquo;t")).toBe(1);
+    expect(countMarkdownWords("don&apos;t")).toBe(1);
+    expect(countMarkdownWords("don&#39;t")).toBe(1);
+    expect(countMarkdownWords("don&#8217;t")).toBe(1);
+    expect(countMarkdownWords("na&#239;ve")).toBe(1);
+    expect(countMarkdownWords("`a&amp;b` x")).toBe(2);
   });
 
   it("counts Korean by whitespace and Japanese per character", () => {

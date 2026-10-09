@@ -35,6 +35,7 @@ export function writeMarkdownWordCount(id: string, markdown: string, mode: WordC
     const now = Date.now();
     const day = localDayKey(new Date(now));
     const goalIds = item.folderId ? ancestorGoalIds(item.folderId) : [];
+    /** Today rows are written for every ancestor even before a goal exists, so words written earlier the same day count when a goal is set mid-day. */
     const folderIds = item.folderId ? ancestorFolderIds(item.folderId) : [];
 
     tx.update(items)

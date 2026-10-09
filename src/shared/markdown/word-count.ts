@@ -1,10 +1,14 @@
+import { WORD_ENTITY_JOINERS } from "./word-entity-joiners";
+
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
 const SEGMENTED_SCRIPT_RE = /[\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 const WORD_CHAR_RE = /[\p{L}\p{N}]/u;
 const KEYCAP_RE = /[#*0-9]\uFE0F?\u20E3/gu;
 const PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/gu;
-const HTML_ENTITY_RE = /&(?:#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi;
+const HTML_ENTITY_RE = /&(?:#x([0-9a-fA-F]+)|#(\d+)|([A-Za-z][A-Za-z0-9]+));/g;
+const APOSTROPHE_RE = /['\u2018\u2019\u201A\u201B\u02BC]/u;
+const CODE_ENTITY_MARK = "\uE000";
 const RAW_BLOCK_OPEN_RE = /<(script|style)\b[^>]*>/gi;
 const FOOTNOTE_DEF_RE = /^ {0,3}\[\^[^\]]+\]:[ \t]?(.*)$/;
 const FOOTNOTE_REF_RE = /\[\^[^\]]+\]/g;
@@ -71,8 +75,7 @@ let segmenter: Intl.Segmenter | undefined;
 
 export function countPlainTextWords(text: string): number {
   let count = 0;
-  HTML_ENTITY_RE.lastIndex = 0;
-  const source = text.includes("&") ? text.replace(HTML_ENTITY_RE, " ") : text;
+  const source = applyWordEntities(text);
   for (const token of source.split(/\s+/)) {
     if (token.length === 0) continue;
     const plain = token
@@ -209,6 +212,30 @@ function takeRawBlock(
   return { text, rawBlock: null };
 }
 
+function applyWordEntities(text: string): string {
+  if (!text.includes("&")) return text;
+  HTML_ENTITY_RE.lastIndex = 0;
+  return text.replace(
+    HTML_ENTITY_RE,
+    (_raw, hex: string | undefined, dec: string | undefined, name: string | undefined) => {
+      if (name) return WORD_ENTITY_JOINERS.get(name) ?? " ";
+      const cp = Number.parseInt(hex ?? dec ?? "", hex ? 16 : 10);
+      if (!Number.isInteger(cp) || cp < 0 || cp > 0x10ffff) return " ";
+      const decoded = String.fromCodePoint(cp);
+      return isWordJoiner(decoded) ? decoded : " ";
+    },
+  );
+}
+
+function isWordJoiner(decoded: string): boolean {
+  if (decoded.length === 0) return false;
+  for (const ch of decoded) {
+    if (APOSTROPHE_RE.test(ch)) continue;
+    if (!/\p{L}/u.test(ch)) return false;
+  }
+  return true;
+}
+
 function takeVisibleText(line: string, inComment: boolean): { text: string; inComment: boolean } {
   let text = "";
   let cursor = 0;
@@ -233,13 +260,11 @@ function takeVisibleText(line: string, inComment: boolean): { text: string; inCo
 
 function stripInline(line: string): string {
   let text = line;
-  if (text.includes("&")) {
-    HTML_ENTITY_RE.lastIndex = 0;
-    text = text.replace(HTML_ENTITY_RE, " ");
-  }
   if (text.includes("`")) {
     INLINE_CODE_RE.lastIndex = 0;
-    text = text.replace(INLINE_CODE_RE, (match) => match.replace(/`/g, ""));
+    text = text.replace(INLINE_CODE_RE, (match) =>
+      match.replace(/`/g, "").replaceAll("&", CODE_ENTITY_MARK),
+    );
   }
   if (text.includes("[") || text.includes("!")) {
     FOOTNOTE_REF_RE.lastIndex = 0;
