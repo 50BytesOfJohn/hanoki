@@ -1,4 +1,5 @@
 import { IPC_CHANNELS, type FolderInfo, type FolderWordGoalStats } from "@shared/ipc";
+import { MAX_WORD_GOAL_TARGET } from "@shared/markdown/word-goal";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseFolderName } from "@shared/folder/folder-name";
 import { parseUuidV7 } from "@shared/uuidv7";
@@ -155,8 +156,15 @@ function parseValidItemId(input: unknown): string {
 }
 
 function parseTargetWords(input: unknown): number {
-  if (typeof input !== "number" || !Number.isInteger(input) || input < 1) {
-    throw AppError.badRequest("Word goal target must be a positive integer.");
+  if (
+    typeof input !== "number" ||
+    !Number.isInteger(input) ||
+    input < 1 ||
+    input > MAX_WORD_GOAL_TARGET
+  ) {
+    throw AppError.badRequest(
+      `Word goal target must be an integer from 1 to ${MAX_WORD_GOAL_TARGET.toLocaleString("en-US")}.`,
+    );
   }
   return input;
 }

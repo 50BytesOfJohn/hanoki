@@ -114,12 +114,13 @@ beforeAll(() => {
     sql.raw(`
     create table note_word_days (
       item_id text not null references items(id) on delete cascade,
+      folder_id text not null references folders(id) on delete cascade,
       workspace_id text not null references workspaces(id) on delete cascade,
       day text not null,
       start_words integer not null,
       end_words integer not null,
       updated_at integer not null,
-      primary key (item_id, day)
+      primary key (item_id, day, folder_id)
     )
   `),
   );
@@ -132,9 +133,18 @@ beforeAll(() => {
       started_at integer not null,
       start_day text not null,
       baseline_words integer not null,
-      pre_start_today integer not null default 0,
       created_at integer not null,
       updated_at integer not null
+    )
+  `),
+  );
+  db.run(
+    sql.raw(`
+    create table folder_goal_baselines (
+      folder_id text not null references folders(id) on delete cascade,
+      item_id text not null references items(id) on delete cascade,
+      baseline_words integer not null,
+      primary key (folder_id, item_id)
     )
   `),
   );

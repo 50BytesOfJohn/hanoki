@@ -188,11 +188,11 @@ export function MarkdownPane({
   const [selectionWords, setSelectionWords] = React.useState<number | null>(null);
   const selectionTimer = React.useRef<number | null>(null);
 
-  const reportSelectionWords = React.useCallback((count: number | null) => {
+  const reportSelectionWords = React.useCallback((read: () => number | null) => {
     if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
     selectionTimer.current = window.setTimeout(() => {
       selectionTimer.current = null;
-      setSelectionWords(count);
+      setSelectionWords(read());
     }, 100);
   }, []);
 
@@ -239,9 +239,18 @@ export function MarkdownPane({
             value={markdown}
             placeholder="Write Markdown…"
             onChange={(event) => updateMarkdown(event.target.value)}
-            onSelect={(event) => reportSourceSelection(event.currentTarget, reportSelectionWords)}
-            onKeyUp={(event) => reportSourceSelection(event.currentTarget, reportSelectionWords)}
-            onMouseUp={(event) => reportSourceSelection(event.currentTarget, reportSelectionWords)}
+            onSelect={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
+            onKeyUp={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
+            onMouseUp={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
             onBlur={() => void saver.flush()}
             className="h-full min-h-full w-full resize-none bg-transparent px-6 py-5 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
           />
@@ -305,7 +314,7 @@ export function MarkdownEditor({
   editable: boolean;
   onChange: (markdown: string) => void;
   onBlur: () => void;
-  onSelectionCountChange?: (count: number | null) => void;
+  onSelectionCountChange?: (read: () => number | null) => void;
 }) {
   const editor = useEditor({
     extensions: MARKDOWN_EXTENSIONS,
@@ -340,7 +349,7 @@ export function MarkdownEditor({
 
   React.useEffect(() => {
     if (!editor || !onSelectionCountChange) return;
-    const report = () => onSelectionCountChange(countEditorSelection(editor));
+    const report = () => onSelectionCountChange(() => countEditorSelection(editor));
     editor.on("selectionUpdate", report);
     editor.on("update", report);
     return () => {
@@ -362,19 +371,11 @@ export function MarkdownEditor({
   );
 }
 
-function reportSourceSelection(
-  textarea: HTMLTextAreaElement,
-  report: (count: number | null) => void,
-) {
+function readSourceSelection(textarea: HTMLTextAreaElement): number | null {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
-  if (start === end) {
-    report(null);
-    return;
-  }
-  report(
-    countMarkdownWords(textarea.value.slice(start, end), {
-      frontmatter: start === 0,
-    }),
-  );
+  if (start === end) return null;
+  return countMarkdownWords(textarea.value.slice(start, end), {
+    frontmatter: start === 0,
+  });
 }

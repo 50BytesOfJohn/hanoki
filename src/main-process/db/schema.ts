@@ -108,7 +108,6 @@ export const folderWordGoals = sqliteTable(
     startedAt: integer("started_at").notNull(),
     startDay: text("start_day").notNull(),
     baselineWords: integer("baseline_words").notNull(),
-    preStartToday: integer("pre_start_today").notNull().default(0),
     createdAt: timestampMs("created_at"),
     updatedAt: timestampMs("updated_at"),
   },
@@ -118,12 +117,29 @@ export const folderWordGoals = sqliteTable(
   ],
 );
 
+export const folderGoalBaselines = sqliteTable(
+  "folder_goal_baselines",
+  {
+    folderId: text("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    baselineWords: integer("baseline_words").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.folderId, table.itemId] })],
+);
+
 export const noteWordDays = sqliteTable(
   "note_word_days",
   {
     itemId: text("item_id")
       .notNull()
       .references(() => items.id, { onDelete: "cascade" }),
+    folderId: text("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
@@ -133,8 +149,8 @@ export const noteWordDays = sqliteTable(
     updatedAt: timestampMs("updated_at"),
   },
   (table) => [
-    primaryKey({ columns: [table.itemId, table.day] }),
-    index("note_word_days_workspace_day_idx").on(table.workspaceId, table.day),
+    primaryKey({ columns: [table.itemId, table.day, table.folderId] }),
+    index("note_word_days_folder_day_idx").on(table.folderId, table.day),
   ],
 );
 

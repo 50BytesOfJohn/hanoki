@@ -1,11 +1,15 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
-import { closeAppDatabase, getAppDatabase } from "../db/database";
+import { MAX_WORD_GOAL_TARGET } from "@shared/markdown/word-goal";
+
+import { closeAppDatabase, getAppDatabase, initializeAppDatabase } from "../db/database";
 import { items, noteWordDays } from "../db/schema";
+import { importMarkdownNotesFromDirectory } from "../notes-folder-io/import-notes";
+import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
   createFolder,
@@ -13,6 +17,7 @@ import {
   deleteItem,
   getFolderById,
   getItemById,
+  moveFolder,
   moveItem,
   updateItemTitle,
   updateMarkdownContent,
@@ -29,94 +34,8 @@ const testDataDirectory = mkdtempSync(join(tmpdir(), "hanoki-word-goals-"));
 
 beforeAll(() => {
   process.env["HANOKI_USER_DATA_DIR"] = testDataDirectory;
-  const db = getAppDatabase();
-  db.run(
-    sql.raw(`
-    create table workspaces (
-      id text primary key,
-      name text not null,
-      color text,
-      settings text not null default '{}',
-      data text not null default '{}',
-      metadata text not null default '{}',
-      extensions text not null default '{}',
-      created_at integer not null,
-      updated_at integer not null
-    )
-  `),
-  );
-  db.run(
-    sql.raw(`
-    create table folders (
-      id text primary key,
-      workspace_id text not null references workspaces(id) on delete cascade,
-      parent_id text references folders(id) on delete set null,
-      name text not null,
-      data text not null default '{}',
-      metadata text not null default '{}',
-      extensions text not null default '{}',
-      created_at integer not null,
-      updated_at integer not null
-    )
-  `),
-  );
-  db.run(
-    sql.raw(`
-    create table items (
-      id text primary key,
-      workspace_id text not null references workspaces(id) on delete cascade,
-      folder_id text references folders(id) on delete set null,
-      type text not null,
-      title text not null,
-      data text not null default '{}',
-      metadata text not null default '{}',
-      extensions text not null default '{}',
-      word_count integer,
-      created_at integer not null,
-      updated_at integer not null
-    )
-  `),
-  );
-  db.run(
-    sql.raw(`
-    create table note_links (
-      workspace_id text not null references workspaces(id) on delete cascade,
-      from_item_id text not null references items(id) on delete cascade,
-      to_item_id text references items(id) on delete set null,
-      target_text text not null,
-      alias text not null default '',
-      primary key (from_item_id, target_text, alias)
-    )
-  `),
-  );
-  db.run(
-    sql.raw(`
-    create table note_word_days (
-      item_id text not null references items(id) on delete cascade,
-      workspace_id text not null references workspaces(id) on delete cascade,
-      day text not null,
-      start_words integer not null,
-      end_words integer not null,
-      updated_at integer not null,
-      primary key (item_id, day)
-    )
-  `),
-  );
-  db.run(
-    sql.raw(`
-    create table folder_word_goals (
-      folder_id text primary key references folders(id) on delete cascade,
-      workspace_id text not null references workspaces(id) on delete cascade,
-      target_words integer not null default 50000 check (target_words > 0),
-      started_at integer not null,
-      start_day text not null,
-      baseline_words integer not null,
-      pre_start_today integer not null default 0,
-      created_at integer not null,
-      updated_at integer not null
-    )
-  `),
-  );
+  process.env["HANOKI_MIGRATIONS_DIR"] = resolve("src/main-process/db/migrations");
+  initializeAppDatabase();
 });
 
 afterEach(() => {
@@ -127,6 +46,7 @@ afterAll(() => {
   closeAppDatabase();
   rmSync(testDataDirectory, { recursive: true, force: true });
   delete process.env["HANOKI_USER_DATA_DIR"];
+  delete process.env["HANOKI_MIGRATIONS_DIR"];
 });
 
 function prose(count: number): string {
@@ -134,7 +54,12 @@ function prose(count: number): string {
 }
 
 function ledger(itemId: string) {
-  return getAppDatabase().select().from(noteWordDays).where(eq(noteWordDays.itemId, itemId)).all();
+  return getAppDatabase()
+    .select()
+    .from(noteWordDays)
+    .where(eq(noteWordDays.itemId, itemId))
+    .orderBy(asc(noteWordDays.day), asc(noteWordDays.folderId))
+    .all();
 }
 
 function storedWordCount(itemId: string): number | null {
@@ -151,6 +76,7 @@ describe("folder word goals", () => {
   it("records the first save as the day's start and later saves only move the end", () => {
     createWorkspace({ id: "ledger", name: "Ledger" });
     const folder = createFolder({ workspaceId: "ledger", name: "Manuscript", parentId: null });
+    setFolderWordGoal(folder.id, 1000);
     const note = createMarkdown({ workspaceId: "ledger", title: "Chapter", folderId: folder.id });
 
     updateMarkdownContent(note.id, prose(3));
@@ -165,6 +91,7 @@ describe("folder word goals", () => {
     vi.setSystemTime(new Date(2026, 9, 8, 22, 0, 0));
     createWorkspace({ id: "midnight", name: "Midnight" });
     const folder = createFolder({ workspaceId: "midnight", name: "Manuscript", parentId: null });
+    setFolderWordGoal(folder.id, 1000);
     const note = createMarkdown({
       workspaceId: "midnight",
       title: "Chapter",
@@ -174,23 +101,10 @@ describe("folder word goals", () => {
     vi.setSystemTime(new Date(2026, 9, 9, 0, 5, 0));
     updateMarkdownContent(note.id, prose(6));
     const rows = ledger(note.id);
-    expect(rows).toHaveLength(2);
     expect(rows.map((row) => [row.day, row.startWords, row.endWords])).toEqual([
       ["2026-10-08", 0, 4],
       ["2026-10-09", 4, 6],
     ]);
-  });
-
-  it("floors today at 0 and floors since start at 0", () => {
-    createWorkspace({ id: "floor", name: "Floor" });
-    const folder = createFolder({ workspaceId: "floor", name: "Manuscript", parentId: null });
-    const note = createMarkdown({ workspaceId: "floor", title: "Chapter", folderId: folder.id });
-    updateMarkdownContent(note.id, prose(10), "import");
-    setFolderWordGoal(folder.id, 100);
-    updateMarkdownContent(note.id, prose(2));
-    const stats = getFolderWordGoalStats(folder.id);
-    expect(stats?.today).toBe(0);
-    expect(stats?.sinceStart).toBe(0);
   });
 
   it("counts a new note in full and ignores words written before the goal on the start day", () => {
@@ -207,12 +121,58 @@ describe("folder word goals", () => {
     expect(stats?.sinceStart).toBe(9);
   });
 
+  it("keeps pre-goal words out of since start after the note leaves", () => {
+    createWorkspace({ id: "repro", name: "Repro" });
+    const folder = createFolder({ workspaceId: "repro", name: "Manuscript", parentId: null });
+    const elsewhere = createFolder({ workspaceId: "repro", name: "Loose", parentId: null });
+    const note = createMarkdown({ workspaceId: "repro", title: "Chapter", folderId: folder.id });
+    updateMarkdownContent(note.id, prose(300));
+    setFolderWordGoal(folder.id, 50_000);
+    expect(getFolderWordGoalStats(folder.id)).toMatchObject({ today: 300, sinceStart: 0 });
+    moveItem(note.id, elsewhere.id);
+    const other = createMarkdown({ workspaceId: "repro", title: "Other", folderId: folder.id });
+    updateMarkdownContent(other.id, prose(200));
+    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(200);
+    expect(getFolderWordGoalStats(folder.id)?.today).toBe(500);
+  });
+
+  it("does not inflate since start when words were deleted before the goal", () => {
+    createWorkspace({ id: "trim", name: "Trim" });
+    const folder = createFolder({ workspaceId: "trim", name: "Manuscript", parentId: null });
+    const elsewhere = createFolder({ workspaceId: "trim", name: "Loose", parentId: null });
+    const note = createMarkdown({ workspaceId: "trim", title: "Chapter", folderId: folder.id });
+    updateMarkdownContent(note.id, prose(300));
+    updateMarkdownContent(note.id, prose(100));
+    setFolderWordGoal(folder.id, 50_000);
+    moveItem(note.id, elsewhere.id);
+    const other = createMarkdown({ workspaceId: "trim", title: "Other", folderId: folder.id });
+    updateMarkdownContent(other.id, prose(200));
+    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(200);
+  });
+
+  it("drops a deleted note from since start and from today", () => {
+    createWorkspace({ id: "gone", name: "Gone" });
+    const folder = createFolder({ workspaceId: "gone", name: "Manuscript", parentId: null });
+    setFolderWordGoal(folder.id, 1000);
+    const note = createMarkdown({ workspaceId: "gone", title: "Chapter", folderId: folder.id });
+    updateMarkdownContent(note.id, prose(300));
+    const other = createMarkdown({ workspaceId: "gone", title: "Other", folderId: folder.id });
+    updateMarkdownContent(other.id, prose(50));
+    deleteItem(note.id);
+    expect(ledger(note.id)).toEqual([]);
+    expect(getFolderWordGoalStats(folder.id)).toMatchObject({ sinceStart: 50, today: 50 });
+  });
+
   it("counts a moved-in note only for edits after it arrives", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 8, 12, 0, 0));
     createWorkspace({ id: "move-in", name: "Move in" });
     const elsewhere = createFolder({ workspaceId: "move-in", name: "Elsewhere", parentId: null });
-    const manuscript = createFolder({ workspaceId: "move-in", name: "Manuscript", parentId: null });
+    const manuscript = createFolder({
+      workspaceId: "move-in",
+      name: "Manuscript",
+      parentId: null,
+    });
     const note = createMarkdown({
       workspaceId: "move-in",
       title: "Chapter",
@@ -228,7 +188,23 @@ describe("folder word goals", () => {
     expect(getFolderWordGoalStats(manuscript.id)?.today).toBe(3);
   });
 
-  it("drops moved-out notes and lowers since start when a note is deleted", () => {
+  it("leaves today words in the folder where they were written", () => {
+    createWorkspace({ id: "carry", name: "Carry" });
+    const left = createFolder({ workspaceId: "carry", name: "Left", parentId: null });
+    const right = createFolder({ workspaceId: "carry", name: "Right", parentId: null });
+    setFolderWordGoal(left.id, 1000);
+    setFolderWordGoal(right.id, 1000);
+    const note = createMarkdown({ workspaceId: "carry", title: "Chapter", folderId: left.id });
+    updateMarkdownContent(note.id, prose(400));
+    moveItem(note.id, right.id);
+    expect(getFolderWordGoalStats(left.id)).toMatchObject({ today: 400, sinceStart: 0 });
+    expect(getFolderWordGoalStats(right.id)).toMatchObject({ today: 0, sinceStart: 0 });
+    updateMarkdownContent(note.id, prose(450));
+    expect(getFolderWordGoalStats(left.id)).toMatchObject({ today: 400, sinceStart: 0 });
+    expect(getFolderWordGoalStats(right.id)).toMatchObject({ today: 50, sinceStart: 50 });
+  });
+
+  it("drops moved-out notes from since start and resets the baseline when they return", () => {
     createWorkspace({ id: "delete", name: "Delete" });
     const folder = createFolder({ workspaceId: "delete", name: "Manuscript", parentId: null });
     setFolderWordGoal(folder.id, 1000);
@@ -242,25 +218,29 @@ describe("folder word goals", () => {
     updateMarkdownContent(dropped.id, prose(4));
     expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(14);
     moveItem(dropped.id, null);
-    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(10);
+    expect(getFolderWordGoalStats(folder.id)).toMatchObject({ sinceStart: 10, today: 14 });
     moveItem(dropped.id, folder.id);
-    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(14);
+    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(10);
     deleteItem(dropped.id);
     expect(ledger(dropped.id)).toEqual([]);
-    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(10);
+    expect(getFolderWordGoalStats(folder.id)).toMatchObject({ sinceStart: 10, today: 10 });
   });
 
   it("counts subfolders toward the parent and shows the nearest goal", () => {
     createWorkspace({ id: "nested", name: "Nested" });
     const parent = createFolder({ workspaceId: "nested", name: "Book", parentId: null });
     const child = createFolder({ workspaceId: "nested", name: "Part", parentId: parent.id });
-    const note = createMarkdown({ workspaceId: "nested", title: "Chapter", folderId: child.id });
     setFolderWordGoal(parent.id, 1000);
     setFolderWordGoal(child.id, 100);
+    const note = createMarkdown({ workspaceId: "nested", title: "Chapter", folderId: child.id });
     updateMarkdownContent(note.id, prose(7));
     expect(getNearestWordGoalForItem(note.id)?.folderId).toBe(child.id);
     expect(getFolderWordGoalStats(child.id)?.sinceStart).toBe(7);
     expect(getFolderWordGoalStats(parent.id)?.sinceStart).toBe(7);
+    const outside = createFolder({ workspaceId: "nested", name: "Outside", parentId: null });
+    moveFolder(child.id, outside.id);
+    expect(getFolderWordGoalStats(parent.id)).toMatchObject({ sinceStart: 0, today: 7 });
+    expect(getFolderWordGoalStats(child.id)?.sinceStart).toBe(7);
     const rootNote = createMarkdown({ workspaceId: "nested", title: "Root", folderId: null });
     expect(getNearestWordGoalForItem(rootNote.id)).toBeNull();
   });
@@ -290,19 +270,61 @@ describe("folder word goals", () => {
     expect(getFolderById(folder.id)?.updatedAt).toBe(folderUpdatedAt);
   });
 
-  it("does not count an import as words written today", () => {
-    createWorkspace({ id: "import", name: "Import" });
-    const folder = createFolder({ workspaceId: "import", name: "Manuscript", parentId: null });
-    const note = createMarkdown({ workspaceId: "import", title: "Chapter", folderId: folder.id });
-    setFolderWordGoal(folder.id, 1000);
-    updateMarkdownContent(note.id, prose(20), "import");
-    expect(storedWordCount(note.id)).toBe(20);
-    expect(ledger(note.id)).toEqual([]);
-    expect(getFolderWordGoalStats(folder.id)?.today).toBe(0);
-    expect(getFolderWordGoalStats(folder.id)?.sinceStart).toBe(0);
+  it("rejects a target above the cap", () => {
+    createWorkspace({ id: "cap", name: "Cap" });
+    const folder = createFolder({ workspaceId: "cap", name: "Manuscript", parentId: null });
+    expect(() => setFolderWordGoal(folder.id, MAX_WORD_GOAL_TARGET + 1)).toThrow(/10,000,000/);
   });
 
-  it("keeps a rename rewrite neutral", () => {
+  it("does not bump updatedAt or write a day row when the body is unchanged", () => {
+    createWorkspace({ id: "same", name: "Same" });
+    const folder = createFolder({ workspaceId: "same", name: "Manuscript", parentId: null });
+    setFolderWordGoal(folder.id, 1000);
+    const note = createMarkdown({ workspaceId: "same", title: "Chapter", folderId: folder.id });
+    updateMarkdownContent(note.id, prose(4));
+    const updatedAt = getItemById(note.id)?.updatedAt;
+    const rows = ledger(note.id);
+    updateMarkdownContent(note.id, prose(4));
+    expect(getItemById(note.id)?.updatedAt).toBe(updatedAt);
+    expect(ledger(note.id)).toEqual(rows);
+  });
+
+  it("imports through the real importer without counting the words", async () => {
+    createWorkspace({ id: "import", name: "Import" });
+    const source = mkdtempSync(join(tmpdir(), "hanoki-goal-import-"));
+    mkdirSync(join(source, "Manuscript"));
+    writeFileSync(join(source, "Manuscript", "Chapter.md"), prose(20));
+    const service = createChatTreeService();
+    const result = await importMarkdownNotesFromDirectory(
+      {
+        createFolder(input) {
+          const folder = service.createFolder(input);
+          setFolderWordGoal(folder.id, 1000);
+          return folder;
+        },
+        createMarkdown: (input) => service.createMarkdown(input),
+        queueMarkdownContent: (id, markdown, countMode) =>
+          service.queueMarkdownContent(id, markdown, countMode),
+        flushMarkdownContent: (id) => service.flushMarkdownContent(id),
+        rebuildNoteLinks: (workspaceId) => service.rebuildNoteLinks(workspaceId),
+      },
+      "import",
+      source,
+    );
+    rmSync(source, { recursive: true, force: true });
+    expect(result.noteCount).toBe(1);
+    const note = getAppDatabase()
+      .select()
+      .from(items)
+      .where(and(eq(items.workspaceId, "import"), eq(items.type, "markdown")))
+      .get();
+    expect(note).toBeTruthy();
+    expect(storedWordCount(note!.id)).toBe(20);
+    expect(ledger(note!.id)).toEqual([]);
+    expect(getFolderWordGoalStats(note!.folderId!)).toMatchObject({ today: 0, sinceStart: 0 });
+  });
+
+  it("keeps a rename rewrite neutral through updateItemTitle", () => {
     createWorkspace({ id: "rename", name: "Rename" });
     const folder = createFolder({ workspaceId: "rename", name: "Manuscript", parentId: null });
     const target = createMarkdown({ workspaceId: "rename", title: "Old", folderId: folder.id });
@@ -335,7 +357,7 @@ describe("folder word goals", () => {
       .where(and(eq(items.type, "markdown"), isNull(items.wordCount)))
       .all();
     expect(pending.some((row) => row.id === note.id)).toBe(true);
-    expect(backfillWordCounts(10)).toBe(pending.length);
+    expect(backfillWordCounts(pending.length)).toBe(pending.length);
     expect(storedWordCount(note.id)).toBe(6);
     expect(getItemById(note.id)?.updatedAt).toBe(updatedAt);
     expect(getFolderById(folder.id)?.updatedAt).toBe(folderUpdatedAt);
@@ -344,6 +366,7 @@ describe("folder word goals", () => {
   it("uses the old body when the first counted edit has a null word count", () => {
     createWorkspace({ id: "null-count", name: "Null count" });
     const folder = createFolder({ workspaceId: "null-count", name: "Manuscript", parentId: null });
+    setFolderWordGoal(folder.id, 1000);
     const note = createMarkdown({
       workspaceId: "null-count",
       title: "Chapter",
@@ -356,6 +379,43 @@ describe("folder word goals", () => {
       .run();
     updateMarkdownContent(note.id, prose(6));
     expect(ledger(note.id)).toMatchObject([{ startWords: 4, endWords: 6 }]);
-    expect(getFolderWordGoalStats(folder.id)).toBeNull();
+  });
+
+  it("sets a goal without counting null bodies, and an autosave stays under 10 ms at 20k notes", () => {
+    createWorkspace({ id: "perf", name: "Perf" });
+    const folder = createFolder({ workspaceId: "perf", name: "Manuscript", parentId: null });
+    const sqlite = getAppDatabase().$client;
+    const insert = sqlite.prepare(
+      `INSERT INTO items (
+        id, workspace_id, folder_id, type, title, data, metadata, extensions, word_count, created_at, updated_at
+      ) VALUES (?, 'perf', ?, 'markdown', ?, '{"markdown":"word"}', '{}', '{}', 1, 1, 1)`,
+    );
+    sqlite.exec("BEGIN");
+    for (let index = 0; index < 20_000; index += 1) {
+      insert.run(`perf-note-${index}`, folder.id, `Note ${index}`);
+    }
+    sqlite.exec("COMMIT");
+    const pending = createMarkdown({ workspaceId: "perf", title: "Pending", folderId: folder.id });
+    getAppDatabase()
+      .update(items)
+      .set({ data: { markdown: prose(40) }, wordCount: null })
+      .where(eq(items.id, pending.id))
+      .run();
+
+    const setStarted = performance.now();
+    setFolderWordGoal(folder.id, 50_000);
+    expect(performance.now() - setStarted).toBeLessThan(500);
+    expect(storedWordCount(pending.id)).toBeNull();
+
+    const sample = "perf-note-0";
+    updateMarkdownContent(sample, prose(8));
+    const samples: number[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      const started = performance.now();
+      updateMarkdownContent(sample, prose(8 + index));
+      samples.push(performance.now() - started);
+    }
+    samples.sort((left, right) => left - right);
+    expect(samples[2]).toBeLessThan(10);
   });
 });

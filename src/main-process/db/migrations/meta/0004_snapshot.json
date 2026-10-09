@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "da9cb94e-0e30-4c69-9f8e-23547aa06fcf",
+  "id": "ef3d6bee-4996-4222-8b6f-de8bcf547ac6",
   "prevId": "b2e4add7-768d-423d-93aa-58cde4c263ad",
   "tables": {
     "assets": {
@@ -166,6 +166,61 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "folder_goal_baselines": {
+      "name": "folder_goal_baselines",
+      "columns": {
+        "folder_id": {
+          "name": "folder_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "baseline_words": {
+          "name": "baseline_words",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "folder_goal_baselines_folder_id_folders_id_fk": {
+          "name": "folder_goal_baselines_folder_id_folders_id_fk",
+          "tableFrom": "folder_goal_baselines",
+          "tableTo": "folders",
+          "columnsFrom": ["folder_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "folder_goal_baselines_item_id_items_id_fk": {
+          "name": "folder_goal_baselines_item_id_items_id_fk",
+          "tableFrom": "folder_goal_baselines",
+          "tableTo": "items",
+          "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "folder_goal_baselines_folder_id_item_id_pk": {
+          "columns": ["folder_id", "item_id"],
+          "name": "folder_goal_baselines_folder_id_item_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "folder_word_goals": {
       "name": "folder_word_goals",
       "columns": {
@@ -211,14 +266,6 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
-        },
-        "pre_start_today": {
-          "name": "pre_start_today",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -856,6 +903,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "folder_id": {
+          "name": "folder_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "text",
@@ -893,9 +947,9 @@
         }
       },
       "indexes": {
-        "note_word_days_workspace_day_idx": {
-          "name": "note_word_days_workspace_day_idx",
-          "columns": ["workspace_id", "day"],
+        "note_word_days_folder_day_idx": {
+          "name": "note_word_days_folder_day_idx",
+          "columns": ["folder_id", "day"],
           "isUnique": false
         }
       },
@@ -905,6 +959,15 @@
           "tableFrom": "note_word_days",
           "tableTo": "items",
           "columnsFrom": ["item_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "note_word_days_folder_id_folders_id_fk": {
+          "name": "note_word_days_folder_id_folders_id_fk",
+          "tableFrom": "note_word_days",
+          "tableTo": "folders",
+          "columnsFrom": ["folder_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -920,9 +983,9 @@
         }
       },
       "compositePrimaryKeys": {
-        "note_word_days_item_id_day_pk": {
-          "columns": ["item_id", "day"],
-          "name": "note_word_days_item_id_day_pk"
+        "note_word_days_item_id_day_folder_id_pk": {
+          "columns": ["item_id", "day", "folder_id"],
+          "name": "note_word_days_item_id_day_folder_id_pk"
         }
       },
       "uniqueConstraints": {},

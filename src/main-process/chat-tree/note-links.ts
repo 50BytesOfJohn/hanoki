@@ -26,10 +26,13 @@ export function reindexNoteLinks(itemId: string): void {
   const item = db.select().from(items).where(eq(items.id, itemId)).get();
   if (!item || item.type !== "markdown") return;
 
-  const titles = loadMarkdownTitles(item.workspaceId);
-  const edges = uniqueEdges(readMarkdown(item.data), titles);
+  const markdown = readMarkdown(item.data);
+  const links = findWikilinks(markdown);
   db.transaction((tx) => {
     tx.delete(noteLinks).where(eq(noteLinks.fromItemId, itemId)).run();
+    if (links.length === 0) return;
+    const titles = loadMarkdownTitles(item.workspaceId);
+    const edges = uniqueEdges(markdown, titles);
     if (edges.length === 0) return;
     tx.insert(noteLinks)
       .values(

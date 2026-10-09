@@ -16,7 +16,7 @@ const cases: Array<[string, number]> = [
   ["visit https://example.com/a-b?c=d now", 3],
   ["Hello 世界", 3],
   ["日本語の文章です。", 8],
-  ["안녕하세요 저는 학생입니다", 12],
+  ["안녕하세요 저는 학생입니다", 3],
   ["ไทยภาษา", 2],
   ["> quoted **bold** _it_", 3],
 ];
@@ -64,7 +64,29 @@ describe("countMarkdownWords", () => {
     );
   });
 
-  it("counts a large note quickly enough to debounce", () => {
+  it("does not open a fence when a backtick info string contains a backtick", () => {
+    expect(countMarkdownWords("```x``` one two three\n\nfour five")).toBe(6);
+  });
+
+  it("skips a fenced block inside a blockquote", () => {
+    expect(countMarkdownWords("> ```\n> code words here\n> ```\n> after")).toBe(1);
+  });
+
+  it("does not count keycaps, script blocks, nbsp joins, or footnote markers", () => {
+    expect(countMarkdownWords("1️⃣")).toBe(0);
+    expect(countMarkdownWords("<script>\nhidden words\n</script>\nvisible")).toBe(1);
+    expect(countMarkdownWords("a&nbsp;b")).toBe(2);
+    expect(countMarkdownWords("see [^1] note\n\n[^1]: the note text")).toBe(5);
+    expect(countMarkdownWords("x<y and z>w")).toBe(3);
+  });
+
+  it("counts Korean by whitespace and Japanese per character", () => {
+    expect(countPlainTextWords("안녕하세요 세계")).toBe(2);
+    expect(countMarkdownWords("안녕하세요 세계")).toBe(2);
+    expect(countMarkdownWords("日本語の文章です。")).toBe(8);
+  });
+
+  it("counts 5 MB of prose within the debounce budget", () => {
     const paragraph =
       "Lorem ipsum **dolor** sit [amet](https://x.y), consectetur `adipiscing` elit. [[Some Note|alias]] ";
     const unit = `${paragraph.repeat(20)}\n\n`;
@@ -73,6 +95,15 @@ describe("countMarkdownWords", () => {
     const words = countMarkdownWords(big);
     expect(words).toBeGreaterThan(0);
     expect(performance.now() - started).toBeLessThan(300);
+  });
+
+  it("counts 5 MB of table text without the prose budget", () => {
+    const unit = "| one | two | three |\n| --- | --- | --- |\n| alpha | beta | gamma |\n";
+    const big = unit.repeat(Math.ceil(5_000_000 / unit.length));
+    const started = performance.now();
+    const words = countMarkdownWords(big);
+    expect(words).toBeGreaterThan(0);
+    expect(performance.now() - started).toBeLessThan(1_500);
   });
 });
 

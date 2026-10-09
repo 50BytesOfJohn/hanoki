@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import { MAX_WORD_GOAL_TARGET } from "@shared/markdown/word-goal";
+
 import { foldersApi } from "@/api/folders";
 import { Button } from "@/components/ui/button";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
@@ -126,7 +128,7 @@ function GoalForm({
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (target === null || target < 1) return;
+        if (target === null || target < 1 || target > MAX_WORD_GOAL_TARGET) return;
         setGoal.mutate(target);
       }}
       onKeyDown={(event) => {
@@ -138,13 +140,14 @@ function GoalForm({
         if (event.key !== "Enter") return;
         if (event.target instanceof HTMLButtonElement && event.target.type !== "submit") return;
         event.preventDefault();
-        if (target === null || target < 1) return;
+        if (target === null || target < 1 || target > MAX_WORD_GOAL_TARGET) return;
         setGoal.mutate(target);
       }}
     >
       <PopoverTitle className="text-[13px]">Word goal · {folderName}</PopoverTitle>
       <NumberField
         min={1}
+        max={MAX_WORD_GOAL_TARGET}
         value={target}
         onValueChange={(value) => {
           setTarget(value);
