@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IpcApi, MarkdownInfo } from "@shared/ipc";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -255,6 +256,45 @@ describe("MarkdownEditor", () => {
       expect(onChange).toHaveBeenCalledTimes(2);
     });
     expect(onChange.mock.calls.at(-1)?.[0]).toBe(reloaded);
+  });
+
+  it("does not undo a title rewrite back to the old wikilink", async () => {
+    const onChange = vi.fn();
+    const itemId = "rewritten-wikilink";
+    const rewritten = "See [[New]] here";
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function editor(markdown: string) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <MarkdownEditor
+            itemId={itemId}
+            workspaceId="workspace"
+            folderId={null}
+            markdown={markdown}
+            editable
+            onChange={onChange}
+            onBlur={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+    }
+    const view = render(editor("See [[Old]] here"));
+    await screen.findByLabelText("Markdown rich text editor");
+    // SAFETY: the reload path only calls getItem, which this double implements.
+    window.electronAPI = {
+      getItem: async () => markdownInfo(itemId, rewritten),
+    } as unknown as IpcApi;
+    notifyMarkdownBodiesRewritten([itemId]);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Markdown rich text editor").textContent).toContain("New");
+    });
+    view.rerender(editor(rewritten));
+
+    const richText = registeredMarkdownEditor(itemId);
+    richText?.commands.undo();
+    expect(richText?.getMarkdown() ?? "").not.toContain("Old");
+    expect(screen.getByLabelText("Markdown rich text editor").textContent).toContain("New");
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("writes the original bytes when an edit is undone to the baseline", async () => {

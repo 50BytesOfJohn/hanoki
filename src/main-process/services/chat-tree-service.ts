@@ -400,17 +400,15 @@ export function createChatTreeService(): ChatTreeService {
 
   function flushPendingMarkdownContent(id: string): MarkdownInfo {
     const pending = pendingMarkdownSaves.get(id);
-    if (!pending) {
-      const item = getItemById(id);
-      if (!item) throw new Error(`Item "${id}" does not exist.`);
-      if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-      return toMarkdownInfo(item);
-    }
-
-    if (pending.timeout) clearTimeout(pending.timeout);
-    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
+    if (pending?.timeout) clearTimeout(pending.timeout);
     pendingMarkdownSaves.delete(id);
-    return saved;
+
+    const item = getItemById(id);
+    if (!item) throw new Error(`Item "${id}" does not exist.`);
+    if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
+    if (!pending || item.data.markdown === pending.markdown) return toMarkdownInfo(item);
+
+    return toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
   }
 
   function queuePendingMarkdownContent(id: string, markdown: string): void {
