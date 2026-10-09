@@ -25,4 +25,29 @@ describe("stripRemoteAssistantImages", () => {
     expect(output).toContain("![inline](data:image/png;base64,aaaa)");
     expect(output).toContain('src="data:image/png;base64,bbbb"');
   });
+
+  it("strips file images with a host and keeps empty-host file images", () => {
+    const output = stripRemoteAssistantImages(
+      "![remote](file://evil.example/a.png) ![local](file:///tmp/a.png)",
+    );
+    expect(output).not.toContain("file://evil.example");
+    expect(output).toContain("remote");
+    expect(output).toContain("![local](file:///tmp/a.png)");
+  });
+
+  it("leaves fenced and inline code alone and consumes parenthesized urls", () => {
+    const output = stripRemoteAssistantImages(
+      [
+        "```",
+        "![a](https://example.com/a.png)",
+        "```",
+        "See `![b](https://example.com/b.png)` then ![c](https://example.com/a(b).png).",
+      ].join("\n"),
+    );
+    expect(output).toContain("![a](https://example.com/a.png)");
+    expect(output).toContain("`![b](https://example.com/b.png)`");
+    expect(output).not.toContain("example.com/a(b).png");
+    expect(output).not.toContain("(b).png)");
+    expect(output).toContain("c");
+  });
 });

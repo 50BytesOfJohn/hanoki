@@ -1,20 +1,20 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "../utils";
 
-/**
- * Model-creator logos, served from the LobeHub static icon set on unpkg —
- * the same remote-SVG approach the provider icons already use, but keyed on
- * whatever creator string the provider reported ("mistralai", "x-ai", …).
- *
- * Colored logos are preferred; the mono ones are `fill="currentColor"` SVGs
- * that render black inside an `<img>`, so they get inverted for the dark UI.
- * Anything LobeHub does not carry falls back to an initial.
- */
+const brandIconUrls = import.meta.glob<string>(
+  "../../../../node_modules/@lobehub/icons-static-svg/icons/*.svg",
+  { eager: true, query: "?url", import: "default" },
+);
 
-const ICON_SET_VERSION = "1.94.0";
+const brandIconUrlByFile = new Map(
+  Object.entries(brandIconUrls).map(([file, url]) => {
+    const name = file.slice(file.lastIndexOf("/") + 1);
+    return [name, url] as const;
+  }),
+);
 
-/** Creator names that do not match their LobeHub slug once punctuation is dropped. */
+/** Creator names that do not match their icon file once punctuation is dropped. */
 const SLUG_ALIASES = new Map([
   ["allenai", "ai2"],
   ["amazon", "aws"],
@@ -42,9 +42,9 @@ export function getBrandIconSlug(creator: string | null | undefined): string | n
   return SLUG_ALIASES.get(normalized) ?? normalized;
 }
 
-function buildIconUrl(slug: string, variant: "color" | "mono"): string {
-  const file = variant === "color" ? `${slug}-color` : slug;
-  return `https://unpkg.com/@lobehub/icons-static-svg@${ICON_SET_VERSION}/icons/${file}.svg`;
+export function brandIconUrl(slug: string, variant: "color" | "mono"): string | null {
+  const file = variant === "color" ? `${slug}-color.svg` : `${slug}.svg`;
+  return brandIconUrlByFile.get(file) ?? null;
 }
 
 export interface BrandIconProps {
@@ -56,17 +56,31 @@ export interface BrandIconProps {
 }
 
 export function BrandIcon({ creator, fallbackLabel, className }: BrandIconProps) {
-  const slug = useMemo(() => getBrandIconSlug(creator), [creator]);
+  const slug = getBrandIconSlug(creator);
+  const colorUrl = slug ? brandIconUrl(slug, "color") : null;
+  const monoUrl = slug ? brandIconUrl(slug, "mono") : null;
   const [variant, setVariant] = useState<"color" | "mono" | "none">("color");
-
-  // A different creator means a different logo — restart the color→mono→initial walk.
   const [lastSlug, setLastSlug] = useState(slug);
   if (lastSlug !== slug) {
     setLastSlug(slug);
     setVariant("color");
   }
 
-  if (!slug || variant === "none") {
+  const effective =
+    !slug || variant === "none"
+      ? "none"
+      : variant === "color"
+        ? colorUrl
+          ? "color"
+          : monoUrl
+            ? "mono"
+            : "none"
+        : monoUrl
+          ? "mono"
+          : "none";
+  const src = effective === "color" ? colorUrl : effective === "mono" ? monoUrl : null;
+
+  if (!src) {
     return (
       <span
         aria-hidden="true"
@@ -82,18 +96,18 @@ export function BrandIcon({ creator, fallbackLabel, className }: BrandIconProps)
 
   return (
     <img
-      key={`${slug}-${variant}`}
-      src={buildIconUrl(slug, variant)}
+      key={`${slug}-${effective}`}
+      src={src}
       alt=""
       aria-hidden="true"
       loading="lazy"
       className={cn(
         "size-6 shrink-0 rounded-md object-contain",
-        variant === "mono" && "dark:invert",
+        effective === "mono" && "dark:invert",
         className,
       )}
       onError={() => {
-        setVariant(variant === "color" ? "mono" : "none");
+        setVariant(effective === "color" ? "mono" : "none");
       }}
     />
   );

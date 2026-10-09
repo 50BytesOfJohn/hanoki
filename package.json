@@ -68,6 +68,7 @@
     "@hono/node-server": "^2.1.1",
     "@hugeicons/core-free-icons": "^4.3.3",
     "@hugeicons/react": "^1.1.10",
+    "@lobehub/icons-static-svg": "1.94.0",
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "@streamdown/code": "^1.1.1",
     "@tanstack/react-form": "^1.33.5",

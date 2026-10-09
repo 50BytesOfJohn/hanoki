@@ -1,7 +1,8 @@
 import { app, BrowserWindow, type Session } from "electron";
 import path from "node:path";
 
-import { rendererContentSecurityPolicy } from "./content-security-policy";
+import { isRemoteImageUrl } from "@shared/chat/assistant-images";
+import { rendererHeaderContentSecurityPolicy } from "./content-security-policy";
 import { openExternalUrl } from "./open-external";
 import { currentRendererEntryUrl, isRendererEntryUrl, windowOpenDecision } from "./renderer-entry";
 import { type TrustedSenderRegistry } from "../ipc/trusted-senders";
@@ -10,9 +11,20 @@ import { createPersistentWindowState } from "../lib/persistent-window-state";
 
 let contentSecurityPolicyInstalled = false;
 
-function installRendererContentSecurityPolicy(webSession: Session, policy: string): void {
+function installRendererContentSecurityPolicy(
+  webSession: Session,
+  mode: "dev" | "prod",
+  localServerPort: () => number | null,
+): void {
   if (contentSecurityPolicyInstalled) return;
   contentSecurityPolicyInstalled = true;
+  webSession.webRequest.onBeforeRequest({ urls: ["file://*/*"] }, (details, callback) => {
+    if (details.resourceType === "image" && isRemoteImageUrl(details.url)) {
+      callback({ cancel: true });
+      return;
+    }
+    callback({});
+  });
   webSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.resourceType !== "mainFrame") {
       callback({ responseHeaders: details.responseHeaders });
@@ -21,7 +33,7 @@ function installRendererContentSecurityPolicy(webSession: Session, policy: strin
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": [policy],
+        "Content-Security-Policy": [rendererHeaderContentSecurityPolicy(mode, localServerPort())],
       },
     });
   });
@@ -30,6 +42,7 @@ function installRendererContentSecurityPolicy(webSession: Session, policy: strin
 export interface CreateMainWindowOptions {
   trustedSenders: TrustedSenderRegistry;
   onClosed?: () => void;
+  localServerPort: () => number | null;
 }
 
 function getMainWindowIconPath(): string | undefined {
@@ -96,7 +109,8 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
   const entryUrl = currentRendererEntryUrl();
   installRendererContentSecurityPolicy(
     mainWindow.webContents.session,
-    rendererContentSecurityPolicy(MAIN_WINDOW_VITE_DEV_SERVER_URL ? "dev" : "prod"),
+    MAIN_WINDOW_VITE_DEV_SERVER_URL ? "dev" : "prod",
+    options.localServerPort,
   );
   mainWindow.webContents.setWindowOpenHandler(({ url }) =>
     windowOpenDecision(url, (allowed) => {

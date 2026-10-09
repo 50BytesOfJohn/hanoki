@@ -1,5 +1,19 @@
 import type { ComponentType } from "react";
 import type { ProviderId } from "@shared/providers/catalog";
+import anthropicBlack from "./assets/anthropic_black.svg?url";
+import anthropicWhite from "./assets/anthropic_white.svg?url";
+import cohere from "./assets/cohere.svg?url";
+import deepseek from "./assets/deepseek.svg?url";
+import google from "./assets/google.svg?url";
+import groq from "./assets/groq.svg?url";
+import huggingFace from "./assets/hugging_face.svg?url";
+import mistral from "./assets/mistral-ai_logo.svg?url";
+import openai from "./assets/openai.svg?url";
+import openaiDark from "./assets/openai_dark.svg?url";
+import togetherDark from "./assets/togetherai_dark.svg?url";
+import togetherLight from "./assets/togetherai_light.svg?url";
+import xaiDark from "./assets/xai_dark.svg?url";
+import xaiLight from "./assets/xai_light.svg?url";
 import { OllamaIcon } from "./ollama-icon";
 import { OpenRouterIcon } from "./openrouter-icon";
 import { createRemoteProviderIcon, type ProviderIconProps } from "./remote-provider-icon";
@@ -7,56 +21,56 @@ import { createRemoteProviderIcon, type ProviderIconProps } from "./remote-provi
 export type ProviderIconComponent = ComponentType<ProviderIconProps>;
 
 const OpenAiIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/openai.svg",
-  darkUrl: "https://svgl.app/library/openai_dark.svg",
+  lightUrl: openai,
+  darkUrl: openaiDark,
   alt: "OpenAI",
 });
 
 const AnthropicIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/anthropic_black.svg",
-  darkUrl: "https://svgl.app/library/anthropic_white.svg",
+  lightUrl: anthropicBlack,
+  darkUrl: anthropicWhite,
   alt: "Anthropic",
 });
 
 const GoogleIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/google.svg",
+  lightUrl: google,
   alt: "Google",
 });
 
 const GroqIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/groq.svg",
+  lightUrl: groq,
   alt: "Groq",
 });
 
 const XAiIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/xai_light.svg",
-  darkUrl: "https://svgl.app/library/xai_dark.svg",
+  lightUrl: xaiLight,
+  darkUrl: xaiDark,
   alt: "xAI",
 });
 
 const MistralIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/mistral-ai_logo.svg",
+  lightUrl: mistral,
   alt: "Mistral",
 });
 
 const TogetherAiIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/togetherai_light.svg",
-  darkUrl: "https://svgl.app/library/togetherai_dark.svg",
+  lightUrl: togetherLight,
+  darkUrl: togetherDark,
   alt: "Together AI",
 });
 
 const DeepSeekIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/deepseek.svg",
+  lightUrl: deepseek,
   alt: "DeepSeek",
 });
 
 const CohereIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/cohere.svg",
+  lightUrl: cohere,
   alt: "Cohere",
 });
 
 const HuggingFaceIcon = createRemoteProviderIcon({
-  lightUrl: "https://svgl.app/library/hugging_face.svg",
+  lightUrl: huggingFace,
   alt: "Hugging Face",
 });
 

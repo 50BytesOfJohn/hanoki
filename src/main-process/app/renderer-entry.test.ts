@@ -1,3 +1,4 @@
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -35,5 +36,29 @@ describe("renderer navigation", () => {
     expect(windowOpenDecision("smb://server/share", open)).toEqual({ action: "deny" });
     expect(windowOpenDecision("myapp://open", open)).toEqual({ action: "deny" });
     expect(opened).toEqual(["https://example.com/docs"]);
+  });
+
+  it("treats loadFile and pathToFileURL spellings of the same path as the entry", () => {
+    const paths = [
+      path.join("/tmp", "hanoki pct%", "index.html"),
+      path.join("/tmp", "hanoki brack[et]", "index.html"),
+      path.join("/tmp", "hanoki ca^ret", "index.html"),
+      path.join("/tmp", "hanoki space dir", "index.html"),
+      path.join("/tmp", "hanoki café", "index.html"),
+      path.join("/tmp", "hanoki 日本語", "index.html"),
+    ];
+
+    for (const filePath of paths) {
+      const entry = rendererEntryUrl(undefined, filePath);
+      const loaded = pathToFileURL(filePath)
+        .href.replaceAll("%25", "%")
+        .replaceAll("%5B", "[")
+        .replaceAll("%5D", "]");
+      expect(isRendererEntryUrl(loaded, entry)).toBe(true);
+      expect(isRendererEntryUrl(`${loaded}#/chat/1`, entry)).toBe(true);
+    }
+
+    const entry = rendererEntryUrl(undefined, "/tmp/app/index.html");
+    expect(isRendererEntryUrl("file://evilhost/tmp/app/index.html", entry)).toBe(false);
   });
 });

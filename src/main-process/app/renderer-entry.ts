@@ -19,12 +19,21 @@ export function currentRendererEntryUrl(): string {
   );
 }
 
+function fileUrlIdentity(url: URL): string {
+  const host = url.hostname === "localhost" ? "" : url.hostname;
+  const pathname = url.pathname.replace(/%(?![0-9A-Fa-f]{2})/g, "%25");
+  return `${host}\0${path.posix.normalize(decodeURIComponent(pathname))}\0${url.search}`;
+}
+
 export function isRendererEntryUrl(url: string, entryUrl: string): boolean {
   try {
     const actual = new URL(url);
     const expected = new URL(entryUrl);
     actual.hash = "";
     expected.hash = "";
+    if (actual.protocol === "file:" && expected.protocol === "file:") {
+      return fileUrlIdentity(actual) === fileUrlIdentity(expected);
+    }
     return actual.href === expected.href;
   } catch {
     return false;
