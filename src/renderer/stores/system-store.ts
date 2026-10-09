@@ -4,6 +4,7 @@ import type { SystemEvent, SystemState, UpdateStateSnapshot } from "@shared/even
 interface AiServerState {
   status: "idle" | "starting" | "ready" | "error";
   port: number | null;
+  token: string | null;
   error: string | null;
 }
 
@@ -18,6 +19,7 @@ export const useSystemStore = create<SystemStoreState>((set) => ({
   aiServer: {
     status: "idle",
     port: null,
+    token: null,
     error: null,
   },
   update: {
@@ -31,13 +33,15 @@ export const useSystemStore = create<SystemStoreState>((set) => ({
   handleSystemEvent: (event) => {
     switch (event.type) {
       case "ai-server:starting":
-        set({ aiServer: { status: "starting", port: null, error: null } });
+        set({ aiServer: { status: "starting", port: null, token: null, error: null } });
         break;
       case "ai-server:ready":
-        set({ aiServer: { status: "ready", port: event.port, error: null } });
+        set({
+          aiServer: { status: "ready", port: event.port, token: event.token, error: null },
+        });
         break;
       case "ai-server:error":
-        set({ aiServer: { status: "error", port: null, error: event.error } });
+        set({ aiServer: { status: "error", port: null, token: null, error: event.error } });
         break;
       case "update:state":
         set({ update: event.update });

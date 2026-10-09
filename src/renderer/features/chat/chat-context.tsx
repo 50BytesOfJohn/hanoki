@@ -5,6 +5,8 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { messagesApi } from "@/api/messages";
+import { toolApprovalsApi } from "@/api/tool-approvals";
+import { settleToolApprovalClick } from "@/features/chat/tool-approval-response";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
@@ -24,7 +26,12 @@ type ChatContextState = {
   continuationError: string | null;
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
-  respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
+  respondToToolApproval: (input: {
+    id: string;
+    toolCallId: string;
+    approved: boolean;
+    reason?: string;
+  }) => Promise<string | null>;
   stopGeneration: () => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
@@ -141,22 +148,26 @@ function createChatContextStore({
         body: { ...options?.body, modelId: currentModelId },
       });
     },
-    respondToToolApproval: ({ id, approved, reason }) => {
-      const { modelId: currentModelId } = get();
+    respondToToolApproval: async ({ id, toolCallId, approved, reason }) => {
+      const { modelId: currentModelId, chatId } = get();
       if (!transportRefs.addToolApprovalResponse || !currentModelId) {
-        return;
+        return null;
       }
 
       transportRefs.markTabTouched?.();
 
+      const outcome = await toolApprovalsApi.respond({ chatId, toolCallId, approved });
+      const settled = settleToolApprovalClick(approved, outcome, reason);
+
       // `sendAutomaticallyWhen` resumes the generation as soon as the last
       // approval is answered, so the model id has to ride along with it.
-      void transportRefs.addToolApprovalResponse({
+      await transportRefs.addToolApprovalResponse({
         id,
-        approved,
-        ...(reason ? { reason } : {}),
+        approved: settled.approved,
+        ...(settled.reason ? { reason: settled.reason } : {}),
         options: { body: { modelId: currentModelId } },
       });
+      return settled.notice;
     },
     regenerateMessage: (options) => {
       const {

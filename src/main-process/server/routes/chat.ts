@@ -62,6 +62,7 @@ import {
 } from "../chat-message-persistence";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
 import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
+import { applyServerToolApprovals } from "../tool-approvals";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -262,19 +263,24 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     else if (itemMentions.length > 0) activeTools.push(...HANOKI_READ_TOOL_NAMES);
     if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
 
-    const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
-    if (needsTerminalApproval) {
-      for (const name of TERMINAL_TOOL_NAMES) {
-        toolApproval[name] = "user-approval";
-      }
+    const approvalPolicies: {
+      [Name in keyof typeof tools]?: (input: unknown) => boolean;
+    } = {};
+    for (const name of TERMINAL_TOOL_NAMES) {
+      approvalPolicies[name] = () => !isTerminalEnabledForRequest || needsTerminalApproval;
     }
-    if (isHanokiEnabledForRequest) {
-      for (const name of HANOKI_MUTATING_TOOL_NAMES) {
-        toolApproval[name] = "user-approval";
-      }
+    for (const name of HANOKI_MUTATING_TOOL_NAMES) {
+      approvalPolicies[name] = () => true;
     }
-    const sendMessageApproval = (input: { kick?: boolean; chatId?: string }) =>
-      hanokiSendKickNeedsApproval(chat.id, input) ? ("user-approval" as const) : undefined;
+    approvalPolicies.hanokiSendMessage = (input) =>
+      !isHanokiEnabledForRequest ||
+      hanokiSendKickNeedsApproval(chat.id, input as { kick?: boolean; chatId?: string });
+    const { tools: gatedTools, toolApproval } = applyServerToolApprovals(
+      tools,
+      chat.id,
+      approvalPolicies,
+      activeTools,
+    );
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
@@ -306,16 +312,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         provider.catalogId as ProviderId,
         reasoningEffort,
       ),
-      tools,
+      tools: gatedTools,
       activeTools,
-      ...(Object.keys(toolApproval).length > 0 || isHanokiEnabledForRequest
-        ? {
-            toolApproval: {
-              ...toolApproval,
-              ...(isHanokiEnabledForRequest ? { hanokiSendMessage: sendMessageApproval } : {}),
-            },
-          }
-        : {}),
+      toolApproval,
       stopWhen: isStepCount(100),
       onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
         beginChatGeneration(chat.id);

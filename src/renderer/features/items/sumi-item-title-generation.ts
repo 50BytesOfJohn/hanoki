@@ -1,5 +1,6 @@
 import type { ItemTitleUpdatedEvent } from "@shared/events";
 
+import { localServerFetch } from "@/lib/local-server-fetch";
 import { applyItemTitleUpdate } from "./item-title-events";
 import { flushOpenMarkdownEditors } from "../markdown/markdown-session";
 
@@ -53,7 +54,7 @@ async function requestSumiItemTitle({
   const body: SumiItemTitleRequest = { itemId, mode };
   if (sourcePrompt?.trim()) body.sourcePrompt = sourcePrompt.trim();
 
-  const response = await fetch(`${apiUrl}/title`, {
+  const response = await localServerFetch(`${apiUrl}/title`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -33,6 +33,11 @@ import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
 import {
+  TOOL_APPROVAL_SAVE_ERROR,
+  toolApprovalCardNotice,
+  toolDenialLabel,
+} from "@/features/chat/tool-approval-response";
+import {
   Popover,
   PopoverContent,
   PopoverHeader,
@@ -682,10 +687,12 @@ function approvalNamesFromInput(
 
 function ToolApprovalCard({
   approvalId,
+  toolCallId,
   toolName,
   input,
 }: {
   approvalId: string;
+  toolCallId: string;
   toolName: string;
   input: unknown;
 }) {
@@ -693,6 +700,7 @@ function ToolApprovalCard({
   const respondToToolApproval = useChatRespondToToolApproval();
   const updateChatSettings = useUpdateChatSettings();
   const [hasResponded, setHasResponded] = React.useState(false);
+  const [notice, setNotice] = React.useState<string | null>(null);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const snapshot = queryClient.getQueryData<ChatTreeSnapshot>(
     queryKeys.chatTree.snapshot(workspaceId ?? ""),
@@ -704,10 +712,24 @@ function ToolApprovalCard({
   );
   const canAllowForThisChat = toolName.startsWith("terminal");
   const icon = getToolConfig(toolName).icon;
+  const cardNotice = toolApprovalCardNotice(notice);
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
-    respondToToolApproval({ id: approvalId, approved, ...(reason ? { reason } : {}) });
+    setNotice(null);
+    void respondToToolApproval({
+      id: approvalId,
+      toolCallId,
+      approved,
+      ...(reason ? { reason } : {}),
+    })
+      .then((nextNotice) => {
+        if (nextNotice) setNotice(nextNotice);
+      })
+      .catch(() => {
+        setNotice(TOOL_APPROVAL_SAVE_ERROR);
+        setHasResponded(false);
+      });
   };
 
   return (
@@ -717,36 +739,47 @@ function ToolApprovalCard({
         <p className="text-[13px] font-medium text-foreground">{title}</p>
       </div>
       {body}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={hasResponded}
-          onClick={() => respond(false, "The user did not allow this action.")}
-        >
-          Don&apos;t allow
-        </Button>
-        {canAllowForThisChat ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={hasResponded}
-            onClick={() => {
-              // Persist first: the approval below immediately resumes the
-              // generation, and the server reads this flag on that request.
-              updateChatSettings.mutate(
-                { id: chatId, input: { terminalAutoApprove: true } },
-                { onSettled: () => respond(true) },
-              );
-              setHasResponded(true);
-            }}
-          >
-            Allow for this chat
-          </Button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {cardNotice.kind === "expired" ? (
+            <p className={cardNotice.className}>{cardNotice.text}</p>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={hasResponded}
+                onClick={() => respond(false, "The user did not allow this action.")}
+              >
+                Don&apos;t allow
+              </Button>
+              {canAllowForThisChat ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={hasResponded}
+                  onClick={() => {
+                    // Persist first: the approval below immediately resumes the
+                    // generation, and the server reads this flag on that request.
+                    updateChatSettings.mutate(
+                      { id: chatId, input: { terminalAutoApprove: true } },
+                      { onSettled: () => respond(true) },
+                    );
+                    setHasResponded(true);
+                  }}
+                >
+                  Allow for this chat
+                </Button>
+              ) : null}
+              <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
+                Allow once
+              </Button>
+            </>
+          )}
+        </div>
+        {cardNotice.kind === "save-error" ? (
+          <p className={cardNotice.className}>{cardNotice.text}</p>
         ) : null}
-        <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
-          Allow once
-        </Button>
       </div>
     </div>
   );
@@ -939,7 +972,12 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
     }
 
     return (
-      <ToolApprovalCard approvalId={part.approval.id} toolName={toolName} input={part.input} />
+      <ToolApprovalCard
+        approvalId={part.approval.id}
+        toolCallId={part.toolCallId}
+        toolName={toolName}
+        input={part.input}
+      />
     );
   }
 
@@ -950,7 +988,9 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
           {part.approval.approved ? <Spinner /> : <HugeiconsIcon icon={ShieldBanIcon} />}
         </MarkerIcon>
         <MarkerContent className={part.approval.approved ? "shimmer" : undefined}>
-          {part.approval.approved ? config.pendingLabel(part.input) : "You didn't allow this"}
+          {part.approval.approved
+            ? config.pendingLabel(part.input)
+            : toolDenialLabel(part.approval.reason)}
         </MarkerContent>
       </Marker>
     );
@@ -962,7 +1002,7 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
         <MarkerIcon>
           <HugeiconsIcon icon={ShieldBanIcon} />
         </MarkerIcon>
-        <MarkerContent>You didn&apos;t allow this</MarkerContent>
+        <MarkerContent>{toolDenialLabel(part.approval.reason)}</MarkerContent>
       </Marker>
     );
   }

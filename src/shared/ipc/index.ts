@@ -101,7 +101,20 @@ export const IPC_CHANNELS = {
     install: "updates:install",
     openReleases: "updates:openReleases",
   },
+  toolApprovals: {
+    respond: "toolApprovals:respond",
+  },
 } as const;
+
+export const TOOL_APPROVAL_EXPIRED_REASON = "This request expired. Ask again.";
+
+export type ToolApprovalOutcome = "approved" | "denied" | "expired";
+
+export interface ToolApprovalDecision {
+  chatId: string;
+  toolCallId: string;
+  approved: boolean;
+}
 
 export interface WorkspaceInfo {
   id: string;
@@ -623,6 +636,7 @@ export interface IpcApi {
   updateChatSettings: (id: string, input: ChatSettingsUpdateInput) => Promise<ChatInfo>;
   moveChat: (id: string, folderId: string | null) => Promise<ChatInfo>;
   deleteChat: (id: string) => Promise<void>;
+  respondToToolApproval: (input: ToolApprovalDecision) => Promise<ToolApprovalOutcome>;
   createTerminal: (
     workspaceId: string,
     title: string,

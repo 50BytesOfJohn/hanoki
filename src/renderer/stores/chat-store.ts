@@ -10,6 +10,7 @@ import { create } from "zustand";
 import { chatMessageMetadataSchema, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import { normalizeAssistantTiptapParts } from "@shared/tiptap/extensions";
+import { localServerFetch } from "@/lib/local-server-fetch";
 
 interface ChatStoreState {
   chatEntries: Map<string, Chat<HanokiUiMessage>>;
@@ -20,6 +21,7 @@ interface ChatStoreState {
 export function createChatTransport(apiUrl: string, chatId: string) {
   return new DefaultChatTransport<HanokiUiMessage>({
     api: apiUrl,
+    fetch: localServerFetch,
     prepareSendMessagesRequest: ({ body, trigger, messages, messageId }) => ({
       body: { ...body, chatId, messages, trigger, messageId },
     }),

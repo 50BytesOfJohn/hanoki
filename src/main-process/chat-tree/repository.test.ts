@@ -22,6 +22,8 @@ import {
   resolveAttachedItemPointers,
 } from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
+import { deleteToolApprovalsForChats, recordPendingToolApproval } from "../server/tool-approvals";
+import { getToolApprovalForTests } from "../server/tool-approvals.testing";
 import { createWorkspace } from "../workspaces/repository";
 import {
   createChat,
@@ -1241,5 +1243,46 @@ describe("note links", () => {
     expect(listNoteBacklinks(future.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
+  });
+});
+
+describe("tool approvals on chat delete", () => {
+  it("removes pending tool approvals when the chat is deleted", () => {
+    const workspace = createWorkspace({ id: "approval-cleanup", name: "Approvals" });
+    const chat = createChat({ workspaceId: workspace.id, title: "Gone", folderId: null });
+    const other = createChat({ workspaceId: workspace.id, title: "Stays", folderId: null });
+    recordPendingToolApproval({
+      chatId: chat.id,
+      toolCallId: "call-1",
+      toolName: "danger",
+      args: { path: "a" },
+    });
+    recordPendingToolApproval({
+      chatId: other.id,
+      toolCallId: "call-1",
+      toolName: "danger",
+      args: { path: "a" },
+    });
+
+    createChatTreeService().deleteChat(chat.id);
+
+    expect(getToolApprovalForTests(chat.id, "call-1")).toBeUndefined();
+    expect(getToolApprovalForTests(other.id, "call-1")?.status).toBe("pending");
+    deleteToolApprovalsForChats([other.id]);
+  });
+
+  it("removes pending tool approvals when the chat is deleted from the tree", () => {
+    const workspace = createWorkspace({ id: "approval-tree-cleanup", name: "Approvals" });
+    const chat = createChat({ workspaceId: workspace.id, title: "Tree", folderId: null });
+    recordPendingToolApproval({
+      chatId: chat.id,
+      toolCallId: "call-2",
+      toolName: "danger",
+      args: { path: "b" },
+    });
+
+    createChatTreeService().deleteChatTreeItems(workspace.id, [{ kind: "item", id: chat.id }]);
+
+    expect(getToolApprovalForTests(chat.id, "call-2")).toBeUndefined();
   });
 });
