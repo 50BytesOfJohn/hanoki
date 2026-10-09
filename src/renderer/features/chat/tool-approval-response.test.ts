@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { TOOL_APPROVAL_EXPIRED_REASON } from "@shared/ipc";
 
-import { settleToolApprovalClick, toolDenialLabel } from "./tool-approval-response";
+import {
+  TOOL_APPROVAL_SAVE_ERROR,
+  settleToolApprovalClick,
+  toolDenialLabel,
+} from "./tool-approval-response";
 
 describe("tool approval click", () => {
   it("turns a missing or expired allow into a denial the turn can finish", () => {
@@ -23,6 +27,10 @@ describe("tool approval click", () => {
       },
     );
     expect(toolDenialLabel(undefined)).toBe("You didn't allow this");
+  });
+
+  it("names the inline error when saving the choice fails", () => {
+    expect(TOOL_APPROVAL_SAVE_ERROR).toBe("Couldn't save that choice. Try again.");
   });
 
   it("passes an allow through when the server recorded it", () => {

@@ -2,6 +2,8 @@ import { TOOL_APPROVAL_EXPIRED_REASON, type ToolApprovalOutcome } from "@shared/
 
 const USER_DENIED_LABEL = "You didn't allow this";
 
+export const TOOL_APPROVAL_SAVE_ERROR = "Couldn't save that choice. Try again.";
+
 export function settleToolApprovalClick(
   approved: boolean,
   outcome: ToolApprovalOutcome,

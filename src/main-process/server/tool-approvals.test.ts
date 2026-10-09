@@ -462,6 +462,48 @@ describe("server tool approvals", () => {
     expect(runs).toEqual(["note.txt:written", "note.txt:written"]);
   });
 
+  it("resets an unused approval when the same call arrives again", async () => {
+    const chatId = "chat-carry";
+    const runs: string[] = [];
+    const agent = createAgent(chatId, runs);
+    const first = await agent.generate({ messages: [{ role: "user", content: "write" }] });
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: true })).toBe("approved");
+    expect(getToolApprovalForTests(chatId, "call-1")?.status).toBe("approved");
+
+    const againAgent = createAgent(chatId, runs);
+    const again = await againAgent.generate({
+      messages: [{ role: "user", content: "write again" }],
+    });
+    expect(runs).toEqual([]);
+    expect(getToolApprovalForTests(chatId, "call-1")?.status).toBe("pending");
+
+    const history = [{ role: "user" as const, content: "write" }, ...first.responseMessages];
+    await againAgent.generate({ messages: approvalResponse(history, true).messages });
+    expect(runs).toEqual([]);
+
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: true })).toBe("approved");
+    await againAgent.generate({
+      messages: approvalResponse(
+        [{ role: "user", content: "write again" }, ...again.responseMessages],
+        true,
+      ).messages,
+    });
+    expect(runs).toEqual(["note.txt:written"]);
+  });
+
+  it("does not deny another chat when this chat has no record", async () => {
+    const runs: string[] = [];
+    const agent = createAgent("chat-owner", runs);
+    await agent.generate({ messages: [{ role: "user", content: "write" }] });
+    expect(getToolApprovalForTests("chat-owner", "call-1")?.status).toBe("pending");
+
+    expect(
+      decideToolApproval({ chatId: "chat-other", toolCallId: "call-1", approved: false }),
+    ).toBe("denied");
+    expect(getToolApprovalForTests("chat-owner", "call-1")?.status).toBe("pending");
+    expect(getToolApprovalForTests("chat-other", "call-1")).toBeUndefined();
+  });
+
   it("runs an automatic tool when a previous turn used the same call id", async () => {
     const chatId = "chat-reuse-auto";
     const runs: string[] = [];

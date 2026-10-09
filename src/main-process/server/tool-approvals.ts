@@ -40,7 +40,9 @@ type ToolWithExecute = {
 
 const records = new Map<string, ToolApprovalRecord>();
 
-export const toolApprovalRecords = records;
+if (process.env.VITEST === "true") {
+  Reflect.set(globalThis, "hanokiToolApprovalRecords", records);
+}
 
 function recordKey(chatId: string, toolCallId: string): string {
   return `${chatId}\0${toolCallId}`;
@@ -120,7 +122,8 @@ export function recordPendingToolApproval(input: {
   const argsHash = hashToolArgs(input.args);
   if (
     live &&
-    (live.status === "pending" || live.status === "approved") &&
+    live.status === "pending" &&
+    live.chatId === input.chatId &&
     live.toolName === input.toolName &&
     live.argsHash === argsHash
   ) {
@@ -144,7 +147,11 @@ export function decideToolApproval(input: {
   sweepExpiredToolApprovals();
   const record = liveRecord(input.chatId, input.toolCallId);
   if (!input.approved) {
-    if (record && (record.status === "pending" || record.status === "approved")) {
+    if (
+      record &&
+      record.chatId === input.chatId &&
+      (record.status === "pending" || record.status === "approved")
+    ) {
       record.status = "denied";
     }
     return "denied";

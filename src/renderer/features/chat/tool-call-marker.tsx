@@ -32,7 +32,7 @@ import {
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
-import { toolDenialLabel } from "@/features/chat/tool-approval-response";
+import { TOOL_APPROVAL_SAVE_ERROR, toolDenialLabel } from "@/features/chat/tool-approval-response";
 import {
   Popover,
   PopoverContent,
@@ -722,6 +722,7 @@ function ToolApprovalCard({
         if (nextNotice) setNotice(nextNotice);
       })
       .catch(() => {
+        setNotice(TOOL_APPROVAL_SAVE_ERROR);
         setHasResponded(false);
       });
   };
