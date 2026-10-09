@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { stripRemoteAssistantImages } from "./assistant-images";
 
 describe("stripRemoteAssistantImages", () => {
-  it("removes remote markdown and html images from assistant output", () => {
+  it("keeps http images and strips other remote images", () => {
     const output = stripRemoteAssistantImages(
       [
         "See ![cat](https://example.com/cat.png) and ![dog](http://example.com/dog.png).",
@@ -14,13 +14,10 @@ describe("stripRemoteAssistantImages", () => {
       ].join("\n"),
     );
 
-    expect(output).not.toContain("https://example.com/cat.png");
-    expect(output).not.toContain("http://example.com/dog.png");
-    expect(output).not.toContain("https://cdn.example/a.png");
+    expect(output).toContain("![cat](https://example.com/cat.png)");
+    expect(output).toContain("![dog](http://example.com/dog.png)");
+    expect(output).toContain('src="https://cdn.example/a.png"');
     expect(output).not.toContain("//cdn.example/x.png");
-    expect(output).toContain("cat");
-    expect(output).toContain("dog");
-    expect(output).toContain("remote");
     expect(output).toContain("![local](./shot.png)");
     expect(output).toContain("![inline](data:image/png;base64,aaaa)");
     expect(output).toContain('src="data:image/png;base64,bbbb"');
@@ -41,14 +38,15 @@ describe("stripRemoteAssistantImages", () => {
         "```",
         "![a](https://example.com/a.png)",
         "```",
-        "See `![b](https://example.com/b.png)` then ![c](https://example.com/a(b).png).",
+        "See `![b](https://example.com/b.png)` then ![c](//cdn.example/a(b).png).",
+        "Keep ![d](https://example.com/a(b).png).",
       ].join("\n"),
     );
     expect(output).toContain("![a](https://example.com/a.png)");
     expect(output).toContain("`![b](https://example.com/b.png)`");
-    expect(output).not.toContain("example.com/a(b).png");
-    expect(output).not.toContain("(b).png)");
-    expect(output).toContain("c");
+    expect(output).not.toContain("//cdn.example/a(b).png");
+    expect(output).toContain("then c.");
+    expect(output).toContain("![d](https://example.com/a(b).png)");
   });
 
   it("keeps a private-use placeholder that is not this call's marker", () => {
@@ -58,7 +56,7 @@ describe("stripRemoteAssistantImages", () => {
     );
     expect(output).toContain(decoy);
     expect(output.match(/\uE0000\uE001/g)).toHaveLength(2);
-    expect(output).not.toContain("example.com/a.png");
+    expect(output).toContain("![a](https://example.com/a.png)");
     expect(output).toContain("```\n\uE0000\uE001\n```");
   });
 });

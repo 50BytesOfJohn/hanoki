@@ -1,5 +1,4 @@
-import { Image02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { useLayoutEffect, useRef } from "react";
 import {
   mergeAttributes,
   type MarkdownParseHelpers,
@@ -12,7 +11,9 @@ import Paragraph from "@tiptap/extension-paragraph";
 import { TableKit } from "@tiptap/extension-table";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { isRemoteImageUrl } from "@shared/chat/assistant-images";
+import { isHttpImageUrl, isRemoteImageUrl } from "@shared/chat/assistant-images";
+
+import { RemoteImagePlaceholder } from "@/components/remote-image-placeholder";
 
 const parseParagraph = Paragraph.config.parseMarkdown;
 
@@ -38,28 +39,39 @@ export const NOTE_LINK_OPTIONS = {
   },
 };
 
-function remoteImageHost(url: string): string {
-  const trimmed = url.trim();
-  try {
-    const parsed = trimmed.startsWith("//") ? new URL(`https:${trimmed}`) : new URL(trimmed);
-    return parsed.host;
-  } catch {
-    return "";
-  }
+function imageIsBlock(
+  editor: ReactNodeViewProps["editor"],
+  getPos: ReactNodeViewProps["getPos"],
+): boolean {
+  const pos = getPos();
+  if (typeof pos !== "number") return false;
+  const parent = editor.state.doc.resolve(pos).parent;
+  if (parent.type.name !== "paragraph") return false;
+  let count = 0;
+  parent.forEach((child) => {
+    if (child.isText && !(child.text ?? "").trim()) return;
+    count += 1;
+  });
+  return count === 1;
 }
 
-function RemoteImagePlaceholder({ node }: ReactNodeViewProps) {
+function RemoteImageNode({ node, editor, getPos }: ReactNodeViewProps) {
   const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
-  const alt = typeof node.attrs.alt === "string" ? node.attrs.alt.trim() : "";
-  const label = alt.length > 0 ? alt : "Image";
+  const alt = typeof node.attrs.alt === "string" ? node.attrs.alt : "";
+  const block = imageIsBlock(editor, getPos);
+  const ref = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    const outer = ref.current?.parentElement;
+    if (!outer) return;
+    outer.classList.add("cursor-default");
+    outer.classList.toggle("block", block);
+    outer.classList.toggle("w-full", block);
+  }, [block]);
+
   return (
-    <NodeViewWrapper
-      as="span"
-      data-remote-image=""
-      className="flex w-full items-center gap-1.5 text-[12px] text-muted-foreground"
-    >
-      <HugeiconsIcon icon={Image02Icon} className="size-3 shrink-0" />
-      <span>{`${label} · ${remoteImageHost(src)}`}</span>
+    <NodeViewWrapper ref={ref} as="span" className={block ? "block w-full" : undefined}>
+      <RemoteImagePlaceholder src={src} alt={alt} layout={block ? "block" : "inline"} />
     </NodeViewWrapper>
   );
 }
@@ -75,19 +87,16 @@ function localImageDom(node: NodeViewRendererProps["node"]): HTMLElement {
   return img;
 }
 
-const remoteImageView = ReactNodeViewRenderer(RemoteImagePlaceholder, {
-  as: "span",
-  className: "block w-full",
-});
+const remoteImageView = ReactNodeViewRenderer(RemoteImageNode, { as: "span" });
 
 const RichTextImage = Image.extend({
   addNodeView() {
     return (props: NodeViewRendererProps) => {
       const src = props.node.attrs.src;
-      if (typeof src !== "string" || !isRemoteImageUrl(src)) {
-        return { dom: localImageDom(props.node) };
-      }
-      return remoteImageView(props);
+      if (typeof src === "string" && isHttpImageUrl(src)) return remoteImageView(props);
+      if (typeof src === "string" && isRemoteImageUrl(src))
+        return { dom: document.createElement("span") };
+      return { dom: localImageDom(props.node) };
     };
   },
 

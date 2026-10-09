@@ -260,6 +260,10 @@
   box-shadow: 0 0 0 1px var(--focus);
 }
 
+.ProseMirror[contenteditable="true"] .ProseMirror-selectednode:has([data-remote-image]) {
+  box-shadow: 0 0 0 1px var(--focus);
+}
+
 .tiptap-wikilink button {
   display: inline;
   border: 0;
