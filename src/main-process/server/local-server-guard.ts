@@ -8,17 +8,13 @@ const ALLOWED_METHODS = new Set(["POST"]);
 const ALLOWED_REQUEST_HEADERS = new Set(["content-type", LOCAL_SERVER_TOKEN_HEADER.toLowerCase()]);
 const PREFLIGHT_MAX_AGE_SECONDS = 600;
 
-function allowOriginHeader(origin: string | null): string {
-  return origin ?? "null";
-}
-
 function hostAllowed(host: string | undefined, port: number): boolean {
-  if (!port) return true;
+  if (!port) return false;
   if (!host) return false;
   const separator = host.lastIndexOf(":");
   if (separator <= 0) return false;
   const hostname = host.slice(0, separator);
-  if (hostname !== "127.0.0.1" && hostname !== "localhost") return false;
+  if (hostname !== "127.0.0.1") return false;
   return host.slice(separator + 1) === String(port);
 }
 
@@ -71,13 +67,16 @@ export function localServerGuard(options: {
         return c.body(null, 403);
       }
 
-      return c.body(null, 204, {
-        "Access-Control-Allow-Origin": allowOriginHeader(origin),
+      const headers: Record<string, string> = {
         "Access-Control-Allow-Headers": `Content-Type, ${LOCAL_SERVER_TOKEN_HEADER}`,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Max-Age": String(PREFLIGHT_MAX_AGE_SECONDS),
-        Vary: "Origin",
-      });
+      };
+      if (origin !== null) {
+        headers["Access-Control-Allow-Origin"] = origin;
+        headers.Vary = "Origin";
+      }
+      return c.body(null, 204, headers);
     }
 
     if (!localServerTokensMatch(token, c.req.header(LOCAL_SERVER_TOKEN_HEADER))) {
@@ -85,7 +84,9 @@ export function localServerGuard(options: {
     }
 
     await next();
-    c.res.headers.set("Access-Control-Allow-Origin", allowOriginHeader(origin));
+    if (origin === null) return;
+
+    c.res.headers.set("Access-Control-Allow-Origin", origin);
     if (
       !c.res.headers
         .get("Vary")

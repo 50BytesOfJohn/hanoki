@@ -8,15 +8,17 @@ import { localServerGuard } from "./local-server-guard";
 
 const TOKEN = "test-token";
 const ORIGIN = "http://localhost:5173";
+const PORT = 40123;
+const HOST = `127.0.0.1:${PORT}`;
 
 function chatApp() {
-  return createLocalServerApp({ token: TOKEN, origin: ORIGIN });
+  return createLocalServerApp({ token: TOKEN, origin: ORIGIN, port: PORT });
 }
 
 function post(app: Hono, path: string, headers: Record<string, string>, body: unknown = {}) {
   return app.request(path, {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: { "content-type": "application/json", host: HOST, ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -68,11 +70,19 @@ describe("local server auth", () => {
     expect(PACKAGED_RENDERER_ORIGIN).toBeNull();
 
     const app = new Hono();
-    app.use("*", localServerGuard({ token: TOKEN, origin: PACKAGED_RENDERER_ORIGIN }));
+    app.use("*", localServerGuard({ token: TOKEN, origin: PACKAGED_RENDERER_ORIGIN, port: PORT }));
     app.post("/api/chat", (c) => c.json({ ok: true }));
 
     const allowed = await post(app, "/api/chat", {
       [LOCAL_SERVER_TOKEN_HEADER]: TOKEN,
+    });
+    const preflight = await app.request("/api/chat", {
+      method: "OPTIONS",
+      headers: {
+        host: HOST,
+        "access-control-request-method": "POST",
+        "access-control-request-headers": LOCAL_SERVER_TOKEN_HEADER,
+      },
     });
     const nullOrigin = await post(app, "/api/chat", {
       origin: "null",
@@ -84,7 +94,11 @@ describe("local server auth", () => {
     });
 
     expect(allowed.status).toBe(200);
-    expect(corsOrigin(allowed)).toBe("null");
+    expect(corsOrigin(allowed)).toBeNull();
+    expect(allowed.headers.get("vary")).toBeNull();
+    expect(preflight.status).toBe(204);
+    expect(corsOrigin(preflight)).toBeNull();
+    expect(preflight.headers.get("vary")).toBeNull();
     expect(nullOrigin.status).toBe(403);
     expect(corsOrigin(nullOrigin)).toBeNull();
     expect(fileOrigin.status).toBe(403);
@@ -138,6 +152,7 @@ describe("local server auth", () => {
     const response = await chatApp().request("/api/chat", {
       method: "OPTIONS",
       headers: {
+        host: HOST,
         origin: ORIGIN,
         "access-control-request-method": "POST",
         "access-control-request-headers": "content-type, x-hanoki-token",
@@ -157,6 +172,7 @@ describe("local server auth", () => {
     const response = await chatApp().request("/api/chat", {
       method: "OPTIONS",
       headers: {
+        host: HOST,
         origin: ORIGIN,
         "access-control-request-method": "GET",
         "access-control-request-headers": LOCAL_SERVER_TOKEN_HEADER,
@@ -171,6 +187,7 @@ describe("local server auth", () => {
     const response = await chatApp().request("/api/sumi", {
       method: "OPTIONS",
       headers: {
+        host: HOST,
         origin: "https://example.com",
         "access-control-request-method": "POST",
         "access-control-request-headers": LOCAL_SERVER_TOKEN_HEADER,
@@ -185,6 +202,7 @@ describe("local server auth", () => {
     const response = await chatApp().request("/api/chat", {
       method: "OPTIONS",
       headers: {
+        host: HOST,
         origin: ORIGIN,
         "access-control-request-method": "POST",
         "access-control-request-headers": "x-hanoki-token, x-other",
@@ -212,7 +230,7 @@ describe("local server auth", () => {
 
   it("adds CORS headers to an authorized error response and a streaming response", async () => {
     const app = new Hono();
-    app.use("*", localServerGuard({ token: TOKEN, origin: ORIGIN }));
+    app.use("*", localServerGuard({ token: TOKEN, origin: ORIGIN, port: PORT }));
     app.onError((_error, c) => c.json({ error: "Internal server error" }, 500));
     app.post("/boom", () => {
       throw new Error("boom");
@@ -245,14 +263,26 @@ describe("local server auth", () => {
     const localhost = await post(app, "/api/chat", { ...headers, host: `localhost:${port}` });
     const wrongHost = await post(app, "/api/chat", { ...headers, host: `example.com:${port}` });
     const wrongPort = await post(app, "/api/chat", { ...headers, host: "127.0.0.1:9" });
-    const missingHost = await post(app, "/api/chat", headers);
+    const missingHost = await app.request("/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: "{}",
+    });
+
+    const unbound = new Hono();
+    unbound.use("*", localServerGuard({ token: TOKEN, origin: ORIGIN, port: 0 }));
+    unbound.post("/api/chat", (c) => c.json({ ok: true }));
+    const portZero = await post(unbound, "/api/chat", { ...headers, host: "127.0.0.1:0" });
 
     expect(ipv4.status).toBe(200);
-    expect(localhost.status).toBe(200);
+    expect(localhost.status).toBe(403);
+    expect(corsOrigin(localhost)).toBeNull();
     expect(wrongHost.status).toBe(403);
     expect(corsOrigin(wrongHost)).toBeNull();
     expect(wrongPort.status).toBe(403);
     expect(corsOrigin(wrongPort)).toBeNull();
     expect(missingHost.status).toBe(403);
+    expect(portZero.status).toBe(403);
+    expect(corsOrigin(portZero)).toBeNull();
   });
 });
