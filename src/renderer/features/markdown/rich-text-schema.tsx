@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import {
+  mergeAttributes,
   type MarkdownParseHelpers,
   type MarkdownToken,
   type NodeViewRendererProps,
@@ -8,9 +9,16 @@ import Image from "@tiptap/extension-image";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import Paragraph from "@tiptap/extension-paragraph";
 import { TableKit } from "@tiptap/extension-table";
+import {
+  DOMSerializer,
+  type DOMOutputSpec,
+  type Node as PmNode,
+  type Schema,
+} from "@tiptap/pm/model";
+import { Plugin } from "@tiptap/pm/state";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { isHttpImageUrl, isRemoteImageUrl } from "@shared/chat/assistant-images";
+import { isRemoteImageUrl } from "@shared/chat/assistant-images";
 
 import { RemoteImagePlaceholder } from "@/components/remote-image-placeholder";
 
@@ -94,15 +102,48 @@ function localImageDom(node: NodeViewRendererProps["node"]): HTMLElement {
 
 const remoteImageView = ReactNodeViewRenderer(RemoteImageNode, { as: "span" });
 
+function imageSpecWithSrc(render: (node: PmNode) => DOMOutputSpec, node: PmNode): DOMOutputSpec {
+  const spec = render(node);
+  const src = node.attrs.src;
+  if (!Array.isArray(spec) || typeof src !== "string") return spec;
+  const attrs = spec[1];
+  if (!attrs || typeof attrs !== "object" || Array.isArray(attrs) || "nodeType" in attrs) {
+    return spec;
+  }
+  return [spec[0], { ...attrs, src }, ...spec.slice(2)];
+}
+
+function remoteImageClipboardPlugin(schema: Schema) {
+  const nodes = DOMSerializer.nodesFromSchema(schema);
+  const render = nodes.image;
+  if (render) nodes.image = (node) => imageSpecWithSrc(render, node);
+  return new Plugin({
+    props: {
+      clipboardSerializer: new DOMSerializer(nodes, DOMSerializer.marksFromSchema(schema)),
+    },
+  });
+}
+
 const RichTextImage = Image.extend({
   addNodeView() {
     return (props: NodeViewRendererProps) => {
       const src = props.node.attrs.src;
-      if (typeof src === "string" && isHttpImageUrl(src)) return remoteImageView(props);
-      if (typeof src === "string" && isRemoteImageUrl(src))
-        return { dom: document.createElement("span") };
+      if (typeof src === "string" && isRemoteImageUrl(src)) return remoteImageView(props);
       return { dom: localImageDom(props.node) };
     };
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    const src = HTMLAttributes.src;
+    const attributes =
+      typeof src === "string" && isRemoteImageUrl(src)
+        ? { ...HTMLAttributes, src: null }
+        : HTMLAttributes;
+    return ["img", mergeAttributes(this.options.HTMLAttributes, attributes)];
+  },
+
+  addProseMirrorPlugins() {
+    return [remoteImageClipboardPlugin(this.editor.schema)];
   },
 });
 

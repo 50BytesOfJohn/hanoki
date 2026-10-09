@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { isRemoteImageUrl } from "@shared/chat/assistant-images";
 import { JSDOM } from "jsdom";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -221,6 +222,62 @@ describe("guarded rich text saves", () => {
     expect(readItem(stored.id).data.markdown.startsWith(FRONTMATTER)).toBe(true);
   });
 
+  it("does not insert a remote image src when leaving rich text", async () => {
+    installApi();
+    const images = [
+      "![one](https://cdn.example.com/one.png)",
+      "",
+      "![two](//cdn.example.com/two.png)",
+      "",
+      "![three](file://host/three.png)",
+    ].join("\n");
+    const first = seed(images);
+    const second = seed(images);
+    const seen: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const nodes = record.type === "attributes" ? [record.target] : [...record.addedNodes];
+        for (const node of nodes) noteRemoteImage(node, seen);
+      }
+    });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src"],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const pane = (itemId: string) => (
+      <QueryClientProvider client={client}>
+        <MarkdownPaneProvider key={itemId}>
+          <ModeButtons />
+          <MarkdownPane itemId={itemId} />
+        </MarkdownPaneProvider>
+      </QueryClientProvider>
+    );
+    const view = render(pane(first.id));
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(document.querySelectorAll("[data-remote-image]")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "mode-source" }));
+    await screen.findByLabelText("Markdown source");
+    await flushMutations();
+
+    fireEvent.click(screen.getByRole("button", { name: "mode-rich-text" }));
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(document.querySelectorAll("[data-remote-image]")).toHaveLength(3);
+
+    view.rerender(pane(second.id));
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(document.querySelectorAll("[data-remote-image]")).toHaveLength(3);
+    await flushMutations();
+
+    view.unmount();
+    await flushMutations();
+    observer.disconnect();
+    expect(seen).toEqual([]);
+  });
+
   it("keeps Markdown mode editable and restores scroll from the banner", async () => {
     installApi();
     const stored = seed(GUARDED_TABLE);
@@ -242,6 +299,19 @@ describe("guarded rich text saves", () => {
     });
   });
 });
+
+function noteRemoteImage(node: Node, seen: string[]) {
+  if (!(node instanceof Element)) return;
+  const images = node.matches("img") ? [node] : [...node.querySelectorAll("img")];
+  for (const image of images) {
+    const src = image.getAttribute("src");
+    if (src && isRemoteImageUrl(src)) seen.push(src);
+  }
+}
+
+function flushMutations() {
+  return new Promise((resolve) => setTimeout(resolve, 30));
+}
 
 function ModeButtons() {
   const { setMode } = useMarkdownPane();

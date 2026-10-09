@@ -627,7 +627,7 @@ describe("MarkdownEditor", () => {
     },
   );
 
-  it("does not fetch a non-http remote image", async () => {
+  it("shows a placeholder for protocol-relative and file host images", async () => {
     const onChange = vi.fn();
     render(
       <MarkdownEditor
@@ -641,7 +641,12 @@ describe("MarkdownEditor", () => {
       />,
     );
     const surface = await screen.findByLabelText("Markdown rich text editor");
-    expect(surface.querySelector("[data-remote-image]")).toBeNull();
+    const rows = surface.querySelectorAll("[data-remote-image]");
+    expect(rows[0]?.textContent).toBe("alt · cdn.example.com");
+    expect(rows[0]?.getAttribute("aria-label")).toBe("Image not loaded: alt, from cdn.example.com");
+    expect(rows[1]?.textContent).toBe("alt · host");
+    expect(rows[1]?.getAttribute("aria-label")).toBe("Image not loaded: alt, from host");
+    expect(rows).toHaveLength(2);
     expect(
       surface.querySelector("img[src^='//'], img[src^='file://'], img[src^='http']"),
     ).toBeNull();

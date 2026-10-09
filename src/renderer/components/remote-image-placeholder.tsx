@@ -16,7 +16,7 @@ type HastNode = {
 
 function remoteImageHost(url: string): string {
   try {
-    return new URL(url.trim()).hostname.replace(/^www\./i, "");
+    return new URL(url.trim(), "https://hanoki.invalid").hostname.replace(/^www\./i, "");
   } catch {
     return "";
   }
