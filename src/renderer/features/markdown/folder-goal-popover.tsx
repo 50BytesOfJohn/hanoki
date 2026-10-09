@@ -16,31 +16,22 @@ import { queryKeys } from "@/queries/keys";
 
 const DEFAULT_TARGET = 50_000;
 const GOAL_INPUT_ERROR = "Enter a goal of 1 or more";
+const GOAL_ACTION_CLASS = "h-7 w-full";
 const numberFormat = new Intl.NumberFormat();
 
-function goalInputError(raw: string): string | null {
-  const normalized = raw.trim().replace(/[\s,\u00a0\u202f]/g, "");
-  if (!/^[+]?\d+$/.test(normalized)) return GOAL_INPUT_ERROR;
-  const value = Number(normalized);
-  if (!Number.isInteger(value) || value < 1) return GOAL_INPUT_ERROR;
+function goalNumberError(value: number | null): string | null {
+  if (value === null || !Number.isInteger(value) || value < 1) return GOAL_INPUT_ERROR;
   if (value > MAX_WORD_GOAL_TARGET) {
     return `Enter a goal of ${MAX_WORD_GOAL_TARGET.toLocaleString("en-US")} or fewer`;
   }
   return null;
 }
 
-function goalInputValue(form: HTMLFormElement) {
-  const field = form.querySelector('[aria-label="Word goal target"]');
-  const raw = field instanceof HTMLInputElement ? field.value : "";
-  const error = goalInputError(raw);
-  if (error) return { raw, value: null };
-  return { raw, value: Number(raw.trim().replace(/[\s,\u00a0\u202f]/g, "")) };
-}
-
 export function FolderGoalPopover({
   folderId,
   folderName,
   stats,
+  locale,
   label,
   anchor,
   open,
@@ -50,6 +41,7 @@ export function FolderGoalPopover({
   folderId: string;
   folderName: string;
   stats?: FolderWordGoalStats;
+  locale?: Intl.LocalesArgument;
   label?: string;
   anchor?: HTMLElement | null;
   open?: boolean;
@@ -81,6 +73,7 @@ export function FolderGoalPopover({
             folderId={folderId}
             folderName={folderName}
             stats={stats}
+            locale={locale}
             onClose={() => setOpen(false)}
           />
         ) : null}
@@ -93,11 +86,13 @@ function GoalForm({
   folderId,
   folderName,
   stats: statsProp,
+  locale,
   onClose,
 }: {
   folderId: string;
   folderName: string;
   stats?: FolderWordGoalStats;
+  locale?: Intl.LocalesArgument;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -108,12 +103,15 @@ function GoalForm({
   });
   const stats = statsProp ?? fetched.data;
   const [target, setTarget] = React.useState<number | null>(DEFAULT_TARGET);
+  const targetRef = React.useRef<number | null>(DEFAULT_TARGET);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const copiedTimer = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    setTarget(stats?.targetWords ?? DEFAULT_TARGET);
+    const next = stats?.targetWords ?? DEFAULT_TARGET;
+    targetRef.current = next;
+    setTarget(next);
   }, [stats?.targetWords]);
 
   React.useEffect(
@@ -153,12 +151,12 @@ function GoalForm({
     },
   });
 
-  const submitGoal = (form: HTMLFormElement) => {
-    const parsed = goalInputValue(form);
-    const message = goalInputError(parsed.raw);
+  const submitGoal = () => {
+    const value = targetRef.current;
+    const message = goalNumberError(value);
     setError(message);
-    if (message || parsed.value === null) return;
-    setGoal.mutate(parsed.value);
+    if (message || value === null) return;
+    setGoal.mutate(value);
   };
 
   return (
@@ -166,7 +164,7 @@ function GoalForm({
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        submitGoal(event.currentTarget);
+        submitGoal();
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -177,14 +175,16 @@ function GoalForm({
         if (event.key !== "Enter") return;
         if (event.target instanceof HTMLButtonElement && event.target.type !== "submit") return;
         event.preventDefault();
-        if (event.currentTarget instanceof HTMLFormElement) submitGoal(event.currentTarget);
+        submitGoal();
       }}
     >
       <PopoverTitle className="text-[13px]">Word goal · {folderName}</PopoverTitle>
       <NumberField
+        locale={locale}
         step="any"
         value={target}
         onValueChange={(value) => {
+          targetRef.current = value;
           setTarget(value);
           setError(null);
         }}
@@ -207,7 +207,10 @@ function GoalForm({
         <div className="flex flex-col gap-1 text-[11px] text-muted-foreground tabular-nums">
           <div className="flex items-center justify-between gap-2">
             <span>Since start</span>
-            <span>{numberFormat.format(stats.sinceStart)}</span>
+            <span className="inline-flex items-center gap-1">
+              {numberFormat.format(stats.sinceStart)}
+              <span className="size-6 shrink-0" aria-hidden="true" />
+            </span>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span>Today</span>
@@ -242,7 +245,7 @@ function GoalForm({
         type="submit"
         variant="secondary"
         size="sm"
-        className="w-full"
+        className={GOAL_ACTION_CLASS}
         disabled={setGoal.isPending}
       >
         Set goal
@@ -254,7 +257,7 @@ function GoalForm({
             type="button"
             variant="ghost"
             size="sm"
-            className="w-full text-destructive hover:text-destructive"
+            className={`${GOAL_ACTION_CLASS} text-destructive hover:text-destructive`}
             disabled={clearGoal.isPending}
             onClick={() => clearGoal.mutate()}
           >

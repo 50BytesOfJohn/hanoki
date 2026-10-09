@@ -22,6 +22,7 @@ import {
   updateItemTitle,
   updateMarkdownContent,
 } from "./repository";
+import * as chatTreeRepository from "./repository";
 import {
   backfillWordCounts,
   clearFolderWordGoal,
@@ -440,5 +441,41 @@ describe("folder word goals", () => {
     expect(delta).toBe(5);
     expect(popover).toMatchObject({ sinceStart: delta, today: delta });
     expect(footer).toMatchObject({ sinceStart: delta, today: delta });
+  });
+
+  it("returns the last saved goal stats when a pending save cannot be flushed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 8, 12, 0, 0));
+    createWorkspace({ id: "flush-fail", name: "Flush" });
+    const folder = createFolder({ workspaceId: "flush-fail", name: "Manuscript", parentId: null });
+    const note = createMarkdown({
+      workspaceId: "flush-fail",
+      title: "Chapter",
+      folderId: folder.id,
+    });
+    updateMarkdownContent(note.id, prose(120));
+    vi.setSystemTime(new Date(2026, 9, 9, 12, 0, 0));
+    setFolderWordGoal(folder.id, 1000);
+    const service = createChatTreeService();
+    const update = vi.spyOn(chatTreeRepository, "updateMarkdownContent").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    service.queueMarkdownContent(note.id, prose(125));
+
+    expect(service.getNearestWordGoalForItem(note.id)).toMatchObject({ sinceStart: 0, today: 0 });
+    expect(service.getFolderWordGoalStats(folder.id)).toMatchObject({ sinceStart: 0, today: 0 });
+    expect(logged).toHaveBeenCalled();
+    logged.mockClear();
+    expect(service.getNearestWordGoalForItem(note.id)).toMatchObject({ sinceStart: 0, today: 0 });
+    expect(logged).not.toHaveBeenCalled();
+
+    update.mockRestore();
+    vi.advanceTimersByTime(500);
+    expect(service.getNearestWordGoalForItem(note.id)).toMatchObject({ sinceStart: 5, today: 5 });
+    expect(ledger(note.id).filter((row) => row.day === "2026-10-09")).toMatchObject([
+      { startWords: 120, endWords: 125 },
+    ]);
+    logged.mockRestore();
   });
 });

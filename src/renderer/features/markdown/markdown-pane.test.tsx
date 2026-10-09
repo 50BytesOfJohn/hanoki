@@ -288,8 +288,13 @@ describe("folder goal popover", () => {
       </FolderGoalPopover>,
     );
 
-    expect(await screen.findByRole("button", { name: "Clear goal" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Clear goal" }).className).toContain("w-full");
+    const clearGoal = await screen.findByRole("button", { name: "Clear goal" });
+    const setGoal = screen.getByRole("button", { name: "Set goal" });
+    expect(clearGoal.className).toContain("h-7");
+    expect(clearGoal.className).toContain("w-full");
+    expect(setGoal.className).toContain("h-7");
+    expect(setGoal.className).toContain("w-full");
+    expect(screen.getByText("Since start").parentElement?.querySelector(".size-6")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Copy today's word count" }));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("1667");
@@ -346,13 +351,9 @@ describe("folder goal popover", () => {
   });
 
   it("shows the footer goal numbers in the popover", async () => {
-    const stats = goalStats({ sinceStart: 5, today: 5, targetWords: 1000 });
-    installApi({
-      getNearestWordGoal: vi.fn(async () =>
-        goalStats({ sinceStart: 6, today: 6, targetWords: 1000 }),
-      ),
-      getFolderWordGoal: vi.fn(async () => stats),
-    });
+    const nearest = vi.fn(async () => goalStats({ sinceStart: 5, today: 5, targetWords: 1000 }));
+    const byFolder = vi.fn(async () => goalStats({ sinceStart: 6, today: 6, targetWords: 1000 }));
+    installApi({ getNearestWordGoal: nearest, getFolderWordGoal: byFolder });
     renderWithQuery(
       <MarkdownPaneProvider>
         <ModeHarness />
@@ -364,5 +365,25 @@ describe("folder goal popover", () => {
     expect(await screen.findByText("Since start")).toBeTruthy();
     expect(screen.getAllByText(format.format(5)).length).toBeGreaterThan(0);
     expect(screen.queryByText(format.format(6))).toBeNull();
+    expect(byFolder).not.toHaveBeenCalled();
+    expect(nearest).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["en-US", "de-DE", "fr-FR", "de-CH", "ru-RU"])(
+    "saves a %s grouped goal from the parsed number",
+    async (locale) => {
+      const api = installApi();
+      renderWithQuery(
+        <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" locale={locale} open>
+          <span>Goal</span>
+        </FolderGoalPopover>,
+      );
+      const input = await screen.findByLabelText("Word goal target");
+      fireEvent.change(input, { target: { value: new Intl.NumberFormat(locale).format(1_000) } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() => {
+        expect(api.setFolderWordGoal).toHaveBeenCalledWith(FOLDER_ID, 1_000);
+      });
+    },
+  );
 });

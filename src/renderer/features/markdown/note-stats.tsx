@@ -41,15 +41,9 @@ export function NoteStatsFooter({
   const wait = markdown.length > 1_000_000 ? 1000 : 250;
   const [debouncedMarkdown] = useDebouncedValue(markdown, { wait });
   const words = React.useMemo(() => countMarkdownWords(debouncedMarkdown), [debouncedMarkdown]);
-  const nearest = useQuery({
+  const goal = useQuery({
     queryKey: queryKeys.wordGoals.nearest(itemId),
     queryFn: () => foldersApi.nearestWordGoal(itemId),
-  });
-  const folderId = nearest.data?.folderId;
-  const goal = useQuery({
-    queryKey: queryKeys.wordGoals.byFolder(folderId ?? ""),
-    queryFn: () => foldersApi.getWordGoal(folderId ?? ""),
-    enabled: Boolean(folderId),
   });
   useInvalidateWordGoalsOnDayChange();
 
