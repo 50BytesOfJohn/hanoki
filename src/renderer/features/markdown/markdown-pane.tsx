@@ -22,6 +22,8 @@ import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
+import { RichTextReadonlyBanner } from "./rich-text-readonly-banner";
+import { inspectRichText, type RichTextInspection } from "./rich-text-safety";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
@@ -175,6 +177,20 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   );
 
   const markdown = document?.itemId === itemId ? document.markdown : null;
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  const restoreScrollRef = React.useRef<number | null>(null);
+
+  function editInMarkdown() {
+    restoreScrollRef.current = scrollerRef.current?.scrollTop ?? 0;
+    setMode("source");
+  }
+
+  React.useLayoutEffect(() => {
+    const top = restoreScrollRef.current;
+    if (top === null) return;
+    restoreScrollRef.current = null;
+    if (scrollerRef.current) scrollerRef.current.scrollTop = top;
+  }, [mode]);
 
   React.useEffect(() => {
     return registerMarkdownSaver(itemId, {
@@ -199,7 +215,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollerRef} data-markdown-scroller className="min-h-0 flex-1 overflow-auto">
         {mode === "source" ? (
           <textarea
             autoFocus
@@ -218,6 +234,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
             folderId={markdownItem.folderId}
             markdown={markdown}
             editable={mode === "rich-text"}
+            onEditInMarkdown={editInMarkdown}
             onChange={updateMarkdown}
             onBlur={() => void saver.flush()}
           />
@@ -249,57 +266,116 @@ export function MarkdownEditor({
   folderId,
   markdown,
   editable,
+  onEditInMarkdown,
   onChange,
   onBlur,
+  inspect = inspectRichText,
 }: {
   itemId: string;
   workspaceId: string;
   folderId: string | null;
   markdown: string;
   editable: boolean;
+  onEditInMarkdown?: () => void;
   onChange: (markdown: string) => void;
   onBlur: () => void;
+  inspect?: (markdown: string) => RichTextInspection;
 }) {
+  const emittedRef = React.useRef<string | null>(null);
+  const inspectedSourceRef = React.useRef<string | null>(null);
+  const safetyRef = React.useRef<RichTextInspection>({ losesContent: false, summary: null });
+  const originalRef = React.useRef(markdown);
+  if (markdown !== emittedRef.current && markdown !== inspectedSourceRef.current) {
+    inspectedSourceRef.current = markdown;
+    originalRef.current = markdown;
+    safetyRef.current = inspect(markdown);
+  }
+  const safety = safetyRef.current;
+  const locked = editable && safety.losesContent;
+  const canEdit = editable && !safety.losesContent;
+  const onChangeRef = React.useRef(onChange);
+  const baselineRef = React.useRef<string | null>(null);
+  const emittedSinceBaselineRef = React.useRef(false);
+  onChangeRef.current = onChange;
+
   const editor = useEditor({
     extensions: MARKDOWN_EXTENSIONS,
     content: markdown,
     contentType: "markdown",
-    editable,
+    editable: canEdit,
     immediatelyRender: false,
     shouldRerenderOnTransaction: false,
     editorProps: {
       attributes: {
-        "aria-label": editable ? "Markdown rich text editor" : "Markdown preview",
+        "aria-label": editorLabel(canEdit, locked),
         class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
       },
     },
-    onUpdate: ({ editor: currentEditor }) => {
-      if (currentEditor.isEditable) onChange(currentEditor.getMarkdown());
+    onUpdate: ({ editor: currentEditor, transaction }) => {
+      if (!transaction.docChanged || baselineRef.current === null || !currentEditor.isEditable) {
+        return;
+      }
+      const next = currentEditor.getMarkdown();
+      if (next === baselineRef.current) {
+        if (!emittedSinceBaselineRef.current) return;
+        emittedSinceBaselineRef.current = false;
+        emittedRef.current = originalRef.current;
+        onChangeRef.current(originalRef.current);
+        return;
+      }
+      emittedSinceBaselineRef.current = true;
+      emittedRef.current = next;
+      onChangeRef.current(next);
     },
     onBlur,
   });
 
-  React.useEffect(() => {
+  const captureBaseline = React.useCallback(() => {
     if (!editor) return;
-    editor.setEditable(editable, false);
-    if (editable) editor.commands.focus("end");
-  }, [editable, editor]);
+    baselineRef.current = editor.getMarkdown();
+    emittedSinceBaselineRef.current = false;
+  }, [editor]);
+
+  React.useLayoutEffect(() => {
+    if (!editor) return;
+    baselineRef.current = null;
+    editor.setEditable(canEdit, false);
+    editor.view.dom.setAttribute("aria-label", editorLabel(canEdit, locked));
+    if (canEdit) editor.commands.focus("end");
+    captureBaseline();
+  }, [canEdit, captureBaseline, editor, locked]);
 
   React.useEffect(() => {
     if (!editor) return;
     setWikilinkEditorContext(editor, workspaceId, folderId);
-    return registerMarkdownEditor(itemId, editor);
-  }, [editor, folderId, itemId, workspaceId]);
+    return registerMarkdownEditor(itemId, editor, captureBaseline);
+  }, [captureBaseline, editor, folderId, itemId, workspaceId]);
 
-  React.useEffect(() => {
-    if (!editor || editable) return;
+  React.useLayoutEffect(() => {
+    if (!editor || canEdit) return;
+    baselineRef.current = null;
     editor.commands.setContent(markdown, { contentType: "markdown", emitUpdate: false });
-  }, [editable, editor, markdown]);
+    captureBaseline();
+  }, [canEdit, captureBaseline, editor, markdown]);
 
   return (
-    <EditorContent
-      editor={editor}
-      className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
-    />
+    <>
+      {locked ? (
+        <RichTextReadonlyBanner
+          summary={safety.summary}
+          onEditInMarkdown={onEditInMarkdown ?? (() => {})}
+        />
+      ) : null}
+      <EditorContent
+        editor={editor}
+        className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
+      />
+    </>
   );
+}
+
+function editorLabel(canEdit: boolean, locked: boolean): string {
+  if (locked) return "Markdown rich text, read only";
+  if (canEdit) return "Markdown rich text editor";
+  return "Markdown preview";
 }
