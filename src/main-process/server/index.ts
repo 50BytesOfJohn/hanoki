@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
+
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { createChatRoute } from "./routes/chat";
+import { localServerGuard } from "./local-server-guard";
 import { createSumiRoute } from "./routes/sumi";
 import type {
   ChatGenerationRequestedEvent,
@@ -10,6 +12,8 @@ import type {
 } from "@shared/events";
 
 interface CreateAiServerOptions {
+  origin: string;
+  onChatRequest?: () => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
@@ -22,13 +26,14 @@ interface CreateAiServerOptions {
   };
 }
 
-export async function createAiServer(options?: CreateAiServerOptions): Promise<{
-  port: number;
-  close: () => void;
-}> {
+export function createLocalServerToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+export function createLocalServerApp(options: CreateAiServerOptions & { token: string }) {
   const app = new Hono();
 
-  app.use("*", cors({ origin: "*" }));
+  app.use("*", localServerGuard({ token: options.token, origin: options.origin }));
   app.onError((error, c) => {
     console.error(`[ai-server] ${c.req.method} ${c.req.path} failed.`, error);
     return c.json({ error: "Internal server error" }, 500);
@@ -36,13 +41,25 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
   app.route(
     "/",
     createChatRoute({
-      onChatTreeChanged: options?.onChatTreeChanged,
-      onChatMessagesChanged: options?.onChatMessagesChanged,
-      onChatGenerationRequested: options?.onChatGenerationRequested,
-      flushMarkdownContent: options?.flushMarkdownContent,
+      onChatRequest: options.onChatRequest,
+      onChatTreeChanged: options.onChatTreeChanged,
+      onChatMessagesChanged: options.onChatMessagesChanged,
+      onChatGenerationRequested: options.onChatGenerationRequested,
+      flushMarkdownContent: options.flushMarkdownContent,
     }),
   );
   app.route("/", createSumiRoute());
+
+  return app;
+}
+
+export async function createAiServer(options: CreateAiServerOptions): Promise<{
+  port: number;
+  token: string;
+  close: () => void;
+}> {
+  const token = createLocalServerToken();
+  const app = createLocalServerApp({ ...options, token });
 
   return new Promise((resolve) => {
     const server = serve(
@@ -55,6 +72,7 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
         const port = info.port;
         resolve({
           port,
+          token,
           close: () => {
             server.close();
           },

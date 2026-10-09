@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { localServerFetch } from "@/lib/local-server-fetch";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 
@@ -61,6 +62,7 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
   const api = port ? `http://127.0.0.1:${port}/api/sumi` : "";
   const { completion, complete, error, isLoading, setCompletion, stop } = useCompletion({
     api,
+    fetch: localServerFetch,
     streamProtocol: "text",
     throttle: 30,
   });

@@ -18,6 +18,14 @@ import {
 const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = getDefaultAppIdentifier();
 
+function rendererOrigin(): string {
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    return new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin;
+  }
+  // Packaged pages are loaded from a file URL, so cross-origin requests use this origin.
+  return "null";
+}
+
 app.setName(APP_NAME);
 app.setPath("userData", path.join(app.getPath("appData"), APP_IDENTIFIER));
 
@@ -43,10 +51,15 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   let mainWindow: BrowserWindow | null = null;
   let backend: ReturnType<typeof bootstrapBackend> | null = null;
-  let aiServer: { port: number; close: () => void } | null = null;
+  let aiServer: { port: number; token: string; close: () => void } | null = null;
   let shutdownStarted = false;
   let readyToQuit = false;
-  let aiServerState: SystemState["aiServer"] = { status: "idle", port: null, error: null };
+  let aiServerState: SystemState["aiServer"] = {
+    status: "idle",
+    port: null,
+    token: null,
+    error: null,
+  };
 
   function broadcastSystemEvent(event: SystemEvent) {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -60,10 +73,11 @@ if (!app.requestSingleInstanceLock()) {
 
   async function startAiServer() {
     try {
-      aiServerState = { status: "starting", port: null, error: null };
+      aiServerState = { status: "starting", port: null, token: null, error: null };
       broadcastSystemEvent({ type: "ai-server:starting" });
       const { createAiServer } = await import("./main-process/server");
       aiServer = await createAiServer({
+        origin: rendererOrigin(),
         onChatTreeChanged: (event) => {
           broadcastSystemEvent({ type: "chat-tree:changed", ...event });
         },
@@ -78,12 +92,21 @@ if (!app.requestSingleInstanceLock()) {
           return backend.services.chatTree.flushMarkdownContent(id);
         },
       });
-      aiServerState = { status: "ready", port: aiServer.port, error: null };
-      broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });
+      aiServerState = {
+        status: "ready",
+        port: aiServer.port,
+        token: aiServer.token,
+        error: null,
+      };
+      broadcastSystemEvent({
+        type: "ai-server:ready",
+        port: aiServer.port,
+        token: aiServer.token,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[ai-server] Failed to start:", message);
-      aiServerState = { status: "error", port: null, error: message };
+      aiServerState = { status: "error", port: null, token: null, error: message };
       broadcastSystemEvent({ type: "ai-server:error", error: message });
     }
   }
