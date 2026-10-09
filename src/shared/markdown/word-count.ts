@@ -4,7 +4,7 @@ const SEGMENTED_SCRIPT_RE = /[\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Sc
 const WORD_CHAR_RE = /[\p{L}\p{N}]/u;
 const KEYCAP_RE = /[#*0-9]\uFE0F?\u20E3/gu;
 const PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/gu;
-const NBSP_RE = /&nbsp;|&#0*160;|&#x0*a0;/gi;
+const HTML_ENTITY_RE = /&(?:#x[0-9a-f]+|#\d+|[a-z][a-z0-9]+);/gi;
 const RAW_BLOCK_OPEN_RE = /<(script|style)\b[^>]*>/gi;
 const FOOTNOTE_DEF_RE = /^ {0,3}\[\^[^\]]+\]:[ \t]?(.*)$/;
 const FOOTNOTE_REF_RE = /\[\^[^\]]+\]/g;
@@ -71,7 +71,8 @@ let segmenter: Intl.Segmenter | undefined;
 
 export function countPlainTextWords(text: string): number {
   let count = 0;
-  const source = text.includes("&") ? text.replace(NBSP_RE, " ") : text;
+  HTML_ENTITY_RE.lastIndex = 0;
+  const source = text.includes("&") ? text.replace(HTML_ENTITY_RE, " ") : text;
   for (const token of source.split(/\s+/)) {
     if (token.length === 0) continue;
     const plain = token
@@ -233,8 +234,8 @@ function takeVisibleText(line: string, inComment: boolean): { text: string; inCo
 function stripInline(line: string): string {
   let text = line;
   if (text.includes("&")) {
-    NBSP_RE.lastIndex = 0;
-    text = text.replace(NBSP_RE, " ");
+    HTML_ENTITY_RE.lastIndex = 0;
+    text = text.replace(HTML_ENTITY_RE, " ");
   }
   if (text.includes("`")) {
     INLINE_CODE_RE.lastIndex = 0;

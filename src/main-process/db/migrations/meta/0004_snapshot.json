@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ef3d6bee-4996-4222-8b6f-de8bcf547ac6",
+  "id": "6c5ddc68-8736-4507-8367-38c9124d0e51",
   "prevId": "b2e4add7-768d-423d-93aa-58cde4c263ad",
   "tables": {
     "assets": {
@@ -191,7 +191,13 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "folder_goal_baselines_item_id_idx": {
+          "name": "folder_goal_baselines_item_id_idx",
+          "columns": ["item_id"],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "folder_goal_baselines_folder_id_folders_id_fk": {
           "name": "folder_goal_baselines_folder_id_folders_id_fk",

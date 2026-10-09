@@ -149,6 +149,9 @@ beforeAll(() => {
   `),
   );
   db.run(
+    sql.raw("create index folder_goal_baselines_item_id_idx on folder_goal_baselines (item_id)"),
+  );
+  db.run(
     sql.raw(`
     create table messages (
       id text primary key,

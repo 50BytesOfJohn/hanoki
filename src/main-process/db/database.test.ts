@@ -64,6 +64,13 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'note_links'")
         .get(),
     ).toEqual({ name: "note_links" });
+    expect(
+      sqlite
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'folder_goal_baselines_item_id_idx'",
+        )
+        .get(),
+    ).toEqual({ name: "folder_goal_baselines_item_id_idx" });
     expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     sqlite

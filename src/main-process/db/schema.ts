@@ -128,7 +128,10 @@ export const folderGoalBaselines = sqliteTable(
       .references(() => items.id, { onDelete: "cascade" }),
     baselineWords: integer("baseline_words").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.folderId, table.itemId] })],
+  (table) => [
+    primaryKey({ columns: [table.folderId, table.itemId] }),
+    index("folder_goal_baselines_item_id_idx").on(table.itemId),
+  ],
 );
 
 export const noteWordDays = sqliteTable(

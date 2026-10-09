@@ -7,6 +7,7 @@ CREATE TABLE `folder_goal_baselines` (
 	FOREIGN KEY (`item_id`) REFERENCES `items`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `folder_goal_baselines_item_id_idx` ON `folder_goal_baselines` (`item_id`);--> statement-breakpoint
 CREATE TABLE `folder_word_goals` (
 	`folder_id` text PRIMARY KEY NOT NULL,
 	`workspace_id` text NOT NULL,
