@@ -7,8 +7,8 @@ import { jsonSchema, tool } from "ai";
 
 /**
  * Real shell access: commands run in the user's login shell, against their real
- * filesystem, with no sandbox. The safety boundary is the approval flow in the
- * chat UI (see `toolApproval` in the chat route), not this module.
+ * filesystem, with no sandbox. The safety boundary is the approval record the
+ * chat route checks before `execute` runs, not this module.
  */
 
 const DEFAULT_TIMEOUT_MS = 120_000;

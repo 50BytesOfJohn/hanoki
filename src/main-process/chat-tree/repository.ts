@@ -11,6 +11,7 @@ import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
 import { getWorkspaceById } from "../workspaces/repository";
 import { listAllMessagesByChatId, upsertMessage } from "../messages/repository";
+import { deleteToolApprovalsForChats } from "../server/tool-approvals";
 
 type FolderTableRow = typeof folders.$inferSelect;
 type ItemTableRow = typeof items.$inferSelect;
@@ -959,6 +960,7 @@ export function deleteChatTreeItems(
       deletedFolderIds: sortedDeletedFolderIds,
     };
   });
+  deleteToolApprovalsForChats(deleted.deletedItemIds);
   resolveOpenNoteLinks(workspaceId);
   return deleted;
 }
@@ -1146,6 +1148,7 @@ export function deleteItem(id: string): ItemRow {
   const item = requireItemById(id);
   getAppDatabase().delete(items).where(eq(items.id, id)).run();
   if (item.type === "markdown") resolveOpenNoteLinks(item.workspaceId);
+  if (item.type === "chat") deleteToolApprovalsForChats([item.id]);
   return item;
 }
 
@@ -1307,6 +1310,7 @@ export function moveChat(id: string, folderId: string | null): ChatRow {
 export function deleteChat(id: string): ChatRow {
   const chat = requireChatById(id);
   getAppDatabase().delete(items).where(eq(items.id, id)).run();
+  deleteToolApprovalsForChats([chat.id]);
   return chat;
 }
 

@@ -12,6 +12,7 @@ import { createProvidersApi } from "./providers";
 import { createSettingsApi } from "./settings";
 import { createUpdatesApi } from "./updates";
 import { createTerminalsApi } from "./terminals";
+import { createToolApprovalsApi } from "./tool-approvals";
 import { createWorkspaceApi } from "./workspaces";
 
 export function createElectronApi(): IpcApi {
@@ -27,6 +28,7 @@ export function createElectronApi(): IpcApi {
     ...createChatsApi(),
     ...createMessagesApi(),
     ...createTerminalsApi(),
+    ...createToolApprovalsApi(),
     ...createModelsApi(),
     ...createProvidersApi(),
     ...createUpdatesApi(),

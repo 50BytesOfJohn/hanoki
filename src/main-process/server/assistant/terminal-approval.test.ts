@@ -6,10 +6,11 @@ import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "./terminal-tools";
+import { applyServerToolApprovals, decideToolApproval } from "../tool-approvals";
 
 /*
- * Guards the safety boundary: with `toolApproval` set, a terminal tool call
- * must not touch the disk until an approval response comes back.
+ * A terminal tool call must not touch the disk until the server approval
+ * record is marked approved.
  */
 
 const isWindows = process.platform === "win32";
@@ -60,19 +61,20 @@ function createAgent(options: {
   input: unknown;
   withApproval: boolean;
 }) {
-  return new ToolLoopAgent({
-    model: createToolCallingModel(options.toolName, options.input),
-    tools: createTerminalTools({
+  const gated = applyServerToolApprovals(
+    createTerminalTools({
       chatId: options.chatId,
       configuredCwd: options.configuredCwd,
     }),
-    ...(options.withApproval
-      ? {
-          toolApproval: Object.fromEntries(
-            TERMINAL_TOOL_NAMES.map((name) => [name, "user-approval" as const]),
-          ),
-        }
-      : {}),
+    options.chatId,
+    options.withApproval
+      ? Object.fromEntries(TERMINAL_TOOL_NAMES.map((name) => [name, () => true]))
+      : {},
+  );
+  return new ToolLoopAgent({
+    model: createToolCallingModel(options.toolName, options.input),
+    tools: gated.tools,
+    ...(options.withApproval ? { toolApproval: gated.toolApproval } : {}),
     stopWhen: isStepCount(5),
   });
 }
@@ -85,8 +87,9 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
   it("does not write the file until the approval is granted", async () => {
     const cwd = await makeTempDir();
     const target = path.join(cwd, "note.txt");
+    const chatId = `chat-${crypto.randomUUID()}`;
     const agent = createAgent({
-      chatId: `chat-${crypto.randomUUID()}`,
+      chatId,
       configuredCwd: cwd,
       toolName: "terminalWriteFile",
       input: { path: target, content: "written" },
@@ -109,6 +112,7 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
         approved: true,
       })),
     });
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: true })).toBe(true);
 
     await agent.generate({ messages });
     await expect(readFile(target, "utf8")).resolves.toBe("written");
@@ -117,8 +121,9 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
   it("never runs the command when the approval is denied", async () => {
     const cwd = await makeTempDir();
     const target = path.join(cwd, "denied.txt");
+    const chatId = `chat-${crypto.randomUUID()}`;
     const agent = createAgent({
-      chatId: `chat-${crypto.randomUUID()}`,
+      chatId,
       configuredCwd: cwd,
       toolName: "terminalRun",
       input: { command: `echo nope > ${JSON.stringify(target)}` },
@@ -141,6 +146,7 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
         } satisfies ToolApprovalResponse,
       ],
     });
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: false })).toBe(true);
 
     await agent.generate({ messages });
     await expect(readFile(target, "utf8")).rejects.toThrow();

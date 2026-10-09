@@ -11,6 +11,7 @@ import { registerProvidersIpcModule } from "./modules/providers";
 import { registerSettingsIpcModule } from "./modules/settings";
 import { registerUpdatesIpcModule } from "./modules/updates";
 import { registerTerminalsIpcModule } from "./modules/terminals";
+import { registerToolApprovalsIpcModule } from "./modules/tool-approvals";
 import { registerWorkspaceIpcModule } from "./modules/workspaces";
 
 export function registerIpcHandlers(context: IpcHandlerContext): void {
@@ -28,4 +29,5 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   registerModelsIpcModule(context, registeredChannels);
   registerProvidersIpcModule(context, registeredChannels);
   registerUpdatesIpcModule(context, registeredChannels);
+  registerToolApprovalsIpcModule(context, registeredChannels);
 }

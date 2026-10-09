@@ -682,10 +682,12 @@ function approvalNamesFromInput(
 
 function ToolApprovalCard({
   approvalId,
+  toolCallId,
   toolName,
   input,
 }: {
   approvalId: string;
+  toolCallId: string;
   toolName: string;
   input: unknown;
 }) {
@@ -707,7 +709,14 @@ function ToolApprovalCard({
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
-    respondToToolApproval({ id: approvalId, approved, ...(reason ? { reason } : {}) });
+    void respondToToolApproval({
+      id: approvalId,
+      toolCallId,
+      approved,
+      ...(reason ? { reason } : {}),
+    }).catch(() => {
+      setHasResponded(false);
+    });
   };
 
   return (
@@ -939,7 +948,12 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
     }
 
     return (
-      <ToolApprovalCard approvalId={part.approval.id} toolName={toolName} input={part.input} />
+      <ToolApprovalCard
+        approvalId={part.approval.id}
+        toolCallId={part.toolCallId}
+        toolName={toolName}
+        input={part.input}
+      />
     );
   }
 
