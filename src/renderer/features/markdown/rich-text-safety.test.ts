@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { inspectRichText, richTextRoundTripLosesContent } from "./rich-text-safety";
+import {
+  inspectRichText,
+  RICH_TEXT_CHECK_LIMIT,
+  richTextRoundTripLosesContent,
+} from "./rich-text-safety";
 
 const lossy = {
   frontmatter: "---\ntitle: x\ntags: [a, b]\n---\nBody text",
@@ -19,6 +23,7 @@ const lossy = {
   "image reference": "![shot][pic]",
   "reference link": "See [docs][1].\n\n[1]: https://example.com",
   escapes: "1\\. not a list and \\*not em\\*",
+  "tilde fence around backticks": "~~~\n```\ninner\n```\n~~~",
 } as const;
 
 const safe = {
@@ -99,6 +104,14 @@ describe("inspectRichText", () => {
       expect(richTextRoundTripLosesContent(source, collapsed)).toBe(true);
       expect(inspectRichText(source).losesContent).toBe(true);
     }
+  });
+
+  it("locks notes above the check limit without parsing them", () => {
+    const started = performance.now();
+    const inspection = inspectRichText(`${"a".repeat(RICH_TEXT_CHECK_LIMIT + 1)}`);
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(inspection).toEqual({ losesContent: true, summary: null });
+    expect(inspectRichText("a".repeat(RICH_TEXT_CHECK_LIMIT)).losesContent).toBe(false);
   });
 
   it("names the detected constructs without putting them in the banner copy", () => {

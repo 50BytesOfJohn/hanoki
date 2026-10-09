@@ -23,7 +23,7 @@ import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generati
 import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
 import { RichTextReadonlyBanner } from "./rich-text-readonly-banner";
-import { inspectRichText } from "./rich-text-safety";
+import { inspectRichText, type RichTextInspection } from "./rich-text-safety";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
@@ -282,6 +282,7 @@ export function MarkdownEditor({
   onEditInMarkdown,
   onChange,
   onBlur,
+  inspect = inspectRichText,
 }: {
   itemId: string;
   workspaceId: string;
@@ -291,12 +292,23 @@ export function MarkdownEditor({
   onEditInMarkdown?: () => void;
   onChange: (markdown: string) => void;
   onBlur: () => void;
+  inspect?: (markdown: string) => RichTextInspection;
 }) {
-  const safety = React.useMemo(() => inspectRichText(markdown), [markdown]);
+  const emittedRef = React.useRef<string | null>(null);
+  const inspectedSourceRef = React.useRef<string | null>(null);
+  const safetyRef = React.useRef<RichTextInspection>({ losesContent: false, summary: null });
+  const originalRef = React.useRef(markdown);
+  if (markdown !== emittedRef.current && markdown !== inspectedSourceRef.current) {
+    inspectedSourceRef.current = markdown;
+    originalRef.current = markdown;
+    safetyRef.current = inspect(markdown);
+  }
+  const safety = safetyRef.current;
   const locked = editable && safety.losesContent;
   const canEdit = editable && !safety.losesContent;
   const onChangeRef = React.useRef(onChange);
   const baselineRef = React.useRef<string | null>(null);
+  const emittedSinceBaselineRef = React.useRef(false);
   onChangeRef.current = onChange;
 
   const editor = useEditor({
@@ -320,7 +332,15 @@ export function MarkdownEditor({
         return;
       }
       const next = currentEditor.getMarkdown();
-      if (next === baselineRef.current) return;
+      if (next === baselineRef.current) {
+        if (!emittedSinceBaselineRef.current) return;
+        emittedSinceBaselineRef.current = false;
+        emittedRef.current = originalRef.current;
+        onChangeRef.current(originalRef.current);
+        return;
+      }
+      emittedSinceBaselineRef.current = true;
+      emittedRef.current = next;
       onChangeRef.current(next);
     },
     onBlur,
@@ -329,6 +349,7 @@ export function MarkdownEditor({
   const captureBaseline = React.useCallback(() => {
     if (!editor) return;
     baselineRef.current = editor.getMarkdown();
+    emittedSinceBaselineRef.current = false;
   }, [editor]);
 
   React.useLayoutEffect(() => {

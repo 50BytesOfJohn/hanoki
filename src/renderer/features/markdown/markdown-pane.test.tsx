@@ -9,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { notifyMarkdownBodiesRewritten } from "../items/item-title-events";
 import { MarkdownEditor } from "./markdown-pane";
 import { registeredMarkdownEditor } from "./markdown-session";
+import { inspectRichText } from "./rich-text-safety";
 
 function openedExternalLinks(): string[] {
   const opened: string[] = [];
@@ -217,8 +218,10 @@ describe("MarkdownEditor", () => {
 
   it("resets the baseline when the note is reloaded externally", async () => {
     const onChange = vi.fn();
+    const inspect = vi.fn(inspectRichText);
     const itemId = "reloaded-note";
-    render(
+    const reloaded = "- alpha\n- beta";
+    const view = render(
       <MarkdownEditor
         itemId={itemId}
         workspaceId="workspace"
@@ -227,17 +230,32 @@ describe("MarkdownEditor", () => {
         editable
         onChange={onChange}
         onBlur={vi.fn()}
+        inspect={inspect}
       />,
     );
     await screen.findByLabelText("Markdown rich text editor");
     // SAFETY: the reload path only calls getItem, which this double implements.
     window.electronAPI = {
-      getItem: async () => markdownInfo(itemId, "- alpha\n- beta"),
+      getItem: async () => markdownInfo(itemId, reloaded),
     } as unknown as IpcApi;
     notifyMarkdownBodiesRewritten([itemId]);
     await waitFor(() => {
       expect(screen.getByLabelText("Markdown rich text editor").textContent).toContain("alpha");
     });
+    const callsAfterLoad = inspect.mock.calls.length;
+    view.rerender(
+      <MarkdownEditor
+        itemId={itemId}
+        workspaceId="workspace"
+        folderId={null}
+        markdown={reloaded}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+        inspect={inspect}
+      />,
+    );
+    expect(inspect.mock.calls.length).toBe(callsAfterLoad + 1);
     expect(onChange).not.toHaveBeenCalled();
 
     const editor = registeredMarkdownEditor(itemId);
@@ -247,8 +265,36 @@ describe("MarkdownEditor", () => {
       expect(onChange).toHaveBeenCalledTimes(1);
     });
     editor?.commands.undo();
-    await Promise.resolve();
-    expect(onChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+    expect(onChange.mock.calls.at(-1)?.[0]).toBe(reloaded);
+  });
+
+  it("writes the original bytes when an edit is undone to the baseline", async () => {
+    const onChange = vi.fn();
+    const original = "Hello\n";
+    render(
+      <MarkdownEditor
+        itemId="undo-note"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={original}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Markdown rich text editor");
+    const editor = registeredMarkdownEditor("undo-note");
+    editor?.commands.insertContent("!");
+    await waitFor(() => {
+      expect(String(onChange.mock.calls.at(-1)?.[0])).toContain("!");
+    });
+    editor?.commands.undo();
+    await waitFor(() => {
+      expect(onChange.mock.calls.at(-1)?.[0]).toBe(original);
+    });
   });
 
   it("exposes the Markdown button to the keyboard with a focus ring", async () => {
