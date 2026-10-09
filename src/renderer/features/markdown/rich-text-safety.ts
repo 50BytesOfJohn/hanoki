@@ -19,19 +19,21 @@ function freshMarked(): typeof marked {
   return instance as unknown as typeof marked;
 }
 
-const HTML_TAGS = new Set(
-  "a abbr address article aside audio b bdi bdo big blockquote br button canvas caption center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 header hgroup hr i iframe img input ins kbd label legend li link main map mark math menu meta meter mi mn mo mfrac mrow msub msup nav nobr noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr".split(
-    " ",
-  ),
-);
-
 const FENCE = /^( {0,3})(`{3,}|~{3,})([^`~]*)$/;
 const FOOTNOTE = /\[\^[^\]]+\]|\^\[[^\]]+\]/;
 const MATH = /\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?!\s)(?:\\.|[^$\n\\])+?(?<!\s)\$(?!\$)/;
 const ORDERED_TASK = /^ {0,3}\d+[.)] \[[ xX]\]/;
 const EMPTY_TASK = /^ {0,3}[-*+] \[[ xX]\]$/;
+const NESTED_EMPTY_TASK = /^ {4,}[-*+] \[[ xX]\]$/;
+const LIST_LINE = /^(?: {0,3}(?:[-*+]|\d+[.)]) | {4,}[-*+] )/;
 const HASH_TAG = /#[A-Za-z0-9][A-Za-z0-9/_-]*_[A-Za-z0-9/_-]*/g;
-const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+const NAMED_ENTITY = /&(?!(?:amp|lt|gt|quot|apos);)[A-Za-z][A-Za-z0-9]*;/;
+const HTML_TAGS = new Set(
+  "a abbr address article aside audio b bdi bdo big blockquote br button canvas caption center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 header hgroup hr i iframe img input ins kbd label legend li link main map mark math menu meta meter mi mn mo mfrac mrow msub msup nav nobr noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr".split(
+    " ",
+  ),
+);
 const WIKILINK = /(!?)\[\[([^\]\n]*)\]\]/g;
 const ESCAPED_ORDERED_MARKER = /^ {0,3}\d+\\\./;
 
@@ -144,13 +146,17 @@ function lostHashTag(source: string, serialized: string): boolean {
 }
 
 function lostEmptyTask(source: string, serialized: string): boolean {
-  return countLines(stripCode(source), EMPTY_TASK) > countLines(stripCode(serialized), EMPTY_TASK);
+  return countEmptyTasks(stripCode(source)) > countEmptyTasks(stripCode(serialized));
 }
 
-function countLines(markdown: string, pattern: RegExp): number {
+function countEmptyTasks(markdown: string): number {
   let count = 0;
+  let previous = "";
   for (const line of markdown.split("\n")) {
-    if (pattern.test(line)) count += 1;
+    if (EMPTY_TASK.test(line) || (NESTED_EMPTY_TASK.test(line) && LIST_LINE.test(previous))) {
+      count += 1;
+    }
+    if (line.trim() !== "") previous = line;
   }
   return count;
 }
@@ -204,6 +210,8 @@ function scan(markdown: string, tokens: Token[]): ScanHits {
     toml: false,
     unknown: false,
   };
+  const visible = stripCode(markdown);
+  if (htmlIsLossy(visible) || NAMED_ENTITY.test(visible)) hits.html = true;
   scanLines(markdown, hits);
   scanTokens(tokens, hits);
   return hits;
@@ -314,11 +322,19 @@ function noteProse(text: string, hits: ScanHits) {
 function htmlIsLossy(raw: string): boolean {
   if (/<!--[\s\S]*?-->/.test(raw) || /<!DOCTYPE\b/i.test(raw)) return true;
   if (/<\?/.test(raw) || /<!\[CDATA\[/i.test(raw)) return true;
-  const tags = new RegExp("</?([A-Za-z][A-Za-z0-9-]*)\\b([^<>]*)>", "g");
+  const tags = new RegExp("</?([A-Za-z][A-Za-z0-9-]*)([^<>]*)>", "g");
   for (const match of raw.matchAll(tags)) {
     const name = (match[1] ?? "").toLowerCase();
-    const attrs = match[2] ?? "";
-    if (attrs.includes("=") || HTML_TAGS.has(name)) return true;
+    const rest = match[2] ?? "";
+    if (
+      HTML_TAGS.has(name) ||
+      name.includes("-") ||
+      rest.includes("=") ||
+      rest.trim() === "" ||
+      /\/\s*$/.test(rest)
+    ) {
+      return true;
+    }
   }
   return false;
 }
@@ -385,9 +401,15 @@ function tildeFenceContainsBacktickFence(markdown: string): boolean {
 }
 
 function noteTable(line: string, previous: string, hits: ScanHits) {
-  if (TABLE_SEPARATOR.test(line)) {
-    const cells = tableCellCount(line);
-    if (cells !== null) hits.tableColumns = cells;
+  if (isTableSeparator(line)) {
+    const columns = separatorColumns(line);
+    const headerCells = tableCellCount(previous);
+    const plainHeader = previous.trim().length > 0 && headerCells === null;
+    if (headerCells !== columns && !(plainHeader && columns === 1)) {
+      hits.tableColumns = undefined;
+      return;
+    }
+    hits.tableColumns = columns;
     if (line.includes("\\|") || previous.includes("\\|")) hits.tableLoss = true;
     return;
   }
@@ -430,7 +452,19 @@ function tableCellCount(line: string): number | null {
   }
   if (cells[0]?.trim() === "") cells.shift();
   if (cells.at(-1)?.trim() === "") cells.pop();
-  return cells.length > 1 ? cells.length : null;
+  if (cells.length > 1) return cells.length;
+  if (cells.length === 1 && line.includes("|")) return 1;
+  return null;
+}
+
+function isTableSeparator(line: string): boolean {
+  if (!line.includes("|") && !line.includes(":")) return false;
+  return TABLE_SEPARATOR.test(line);
+}
+
+function separatorColumns(line: string): number {
+  const core = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return core.split("|").length;
 }
 
 function hasHit(hits: ScanHits): boolean {
