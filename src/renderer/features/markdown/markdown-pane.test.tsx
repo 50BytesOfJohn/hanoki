@@ -554,10 +554,11 @@ describe("MarkdownEditor", () => {
   });
 
   it.each([
-    "![alt](https://x/y.png)",
-    "![alt](//cdn.example.com/a.png)",
-    "![alt](file://host/a.png)",
-  ])("keeps a remote image out of the document (%s)", async (markdown) => {
+    ["![alt](https://x/y.png)", "alt · x"],
+    ["![alt](//cdn.example.com/a.png)", "alt · cdn.example.com"],
+    ["![alt](file://host/a.png)", "alt · host"],
+    ["![](https://cdn.example.com/a.png)", "Image · cdn.example.com"],
+  ])("shows a remote image placeholder and does not save (%s)", async (markdown, label) => {
     const onChange = vi.fn();
     for (const editable of [false, true]) {
       cleanup();
@@ -575,14 +576,47 @@ describe("MarkdownEditor", () => {
       const surface = await screen.findByLabelText(
         editable ? "Markdown rich text editor" : "Markdown preview",
       );
-      const image = surface.querySelector("img:not(.ProseMirror-separator)");
-      expect(image).toBeTruthy();
-      expect(image?.getAttribute("src")).toBeNull();
+      const row = surface.querySelector("[data-remote-image]");
+      expect(row?.textContent).toBe(label);
+      expect(row?.className).toContain("text-[12px]");
+      expect(row?.className).toContain("text-muted-foreground");
+      expect(row?.querySelector("svg")).toBeTruthy();
+      expect(row?.querySelector("a, button")).toBeNull();
+      expect(
+        surface.querySelector("img[src^='http'], img[src^='//'], img[src^='file://']"),
+      ).toBeNull();
       expect(surface.querySelector("script, style")).toBeNull();
       expect(inlineHandlers(surface)).toEqual([]);
       expect(screen.queryByText("This note could not be displayed.")).toBeNull();
     }
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps the remote image markdown after an unrelated edit", async () => {
+    const onChange = vi.fn();
+    const image = "![cover](https://cdn.example.com/a.png)";
+    render(
+      <MarkdownEditor
+        itemId="remote-edit"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={`Hello\n\n${image}`}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(screen.getByText("cover · cdn.example.com")).toBeTruthy();
+    const editor = registeredMarkdownEditor("remote-edit");
+    expect(editor?.getMarkdown()).toContain(image);
+    editor?.commands.insertContent("!");
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const saved = String(onChange.mock.calls.at(-1)?.[0]);
+    expect(saved).toContain(image);
+    expect(editor?.getMarkdown()).toContain(image);
   });
 
   it("shows a fallback when the note view throws", () => {
@@ -655,8 +689,8 @@ describe("MarkdownEditor", () => {
     );
 
     const surface = await screen.findByLabelText("Markdown rich text, read only");
-    const image = surface.querySelector("img:not(.ProseMirror-separator)");
-    expect(image?.getAttribute("src")).toBeNull();
+    expect(surface.querySelector("[data-remote-image]")?.textContent).toBe("alt · cdn.example.com");
+    expect(surface.querySelector("img[src^='http']")).toBeNull();
     expect(surface.querySelector("script, style")).toBeNull();
     expect(inlineHandlers(surface)).toEqual([]);
     screen.getByRole("link", { name: "the docs" }).click();
