@@ -29,6 +29,9 @@ const FENCE = /^( {0,3})(`{3,}|~{3,})([^`~]*)$/;
 const FOOTNOTE = /\[\^[^\]]+\]|\^\[[^\]]+\]/;
 const MATH = /\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?!\s)(?:\\.|[^$\n\\])+?(?<!\s)\$(?!\$)/;
 const ORDERED_TASK = /^ {0,3}\d+[.)] \[[ xX]\]/;
+const EMPTY_TASK = /^ {0,3}[-*+] \[[ xX]\]$/;
+const HASH_TAG = /#[A-Za-z0-9][A-Za-z0-9/_-]*_[A-Za-z0-9/_-]*/g;
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
 const WIKILINK = /(!?)\[\[([^\]\n]*)\]\]/g;
 const ESCAPED_ORDERED_MARKER = /^ {0,3}\d+\\\./;
 
@@ -108,7 +111,9 @@ function sameSemantics(source: string, sourceTokens: Token[], serialized: string
   if (
     !sameWikilinks(source, serialized) ||
     lostObsidianEscape(source, serialized) ||
-    lostClosingTag(source, serialized)
+    lostClosingTag(source, serialized) ||
+    lostHashTag(source, serialized) ||
+    lostEmptyTask(source, serialized)
   ) {
     return false;
   }
@@ -129,6 +134,25 @@ function lostClosingTag(source: string, serialized: string): boolean {
     if (!serialized.includes(match[0] ?? "")) return true;
   }
   return false;
+}
+
+function lostHashTag(source: string, serialized: string): boolean {
+  const tags = stripCode(source).match(HASH_TAG);
+  if (!tags) return false;
+  const after = stripCode(serialized);
+  return tags.some((tag) => !after.includes(tag));
+}
+
+function lostEmptyTask(source: string, serialized: string): boolean {
+  return countLines(stripCode(source), EMPTY_TASK) > countLines(stripCode(serialized), EMPTY_TASK);
+}
+
+function countLines(markdown: string, pattern: RegExp): number {
+  let count = 0;
+  for (const line of markdown.split("\n")) {
+    if (pattern.test(line)) count += 1;
+  }
+  return count;
 }
 
 function occurrences(markdown: string, pattern: RegExp): number {
@@ -306,6 +330,7 @@ function scanLines(markdown: string, hits: ScanHits) {
     .split("\n");
   let openChar = "";
   let openLength = 0;
+  let previous = "";
   for (const line of lines) {
     const fence = FENCE.exec(line);
     const marker = fence?.[2] ?? "";
@@ -313,13 +338,16 @@ function scanLines(markdown: string, hits: ScanHits) {
       if (fence) {
         openChar = marker[0] ?? "";
         openLength = marker.length;
+        previous = "";
+        hits.tableColumns = undefined;
         continue;
       }
       const visible = line.replace(/`+[^`]*`+/g, "");
       if (ESCAPED_ORDERED_MARKER.test(visible)) hits.escapedList = true;
       if (ORDERED_TASK.test(line)) hits.orderedTask = true;
       if (line.trim() === "+++") hits.toml = true;
-      noteTable(line, hits);
+      noteTable(line, previous, hits);
+      previous = line;
       continue;
     }
     if (fence && marker[0] === openChar && marker.length >= openLength) {
@@ -356,17 +384,19 @@ function tildeFenceContainsBacktickFence(markdown: string): boolean {
   return false;
 }
 
-function noteTable(line: string, hits: ScanHits) {
-  if (!/^\s*\|/.test(line)) {
-    hits.tableColumns = undefined;
+function noteTable(line: string, previous: string, hits: ScanHits) {
+  if (TABLE_SEPARATOR.test(line)) {
+    const cells = tableCellCount(line);
+    if (cells !== null) hits.tableColumns = cells;
+    if (line.includes("\\|") || previous.includes("\\|")) hits.tableLoss = true;
     return;
   }
+  const piped = /^\s*\|/.test(line);
+  if (!piped && hits.tableColumns === undefined) return;
   if (line.includes("\\|")) hits.tableLoss = true;
   const cells = tableCellCount(line);
-  if (cells === null) return;
-  const separator = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-  if (separator) {
-    hits.tableColumns = cells;
+  if (cells === null) {
+    hits.tableColumns = undefined;
     return;
   }
   if (hits.tableColumns === undefined) {

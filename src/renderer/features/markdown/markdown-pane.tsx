@@ -453,12 +453,10 @@ export class MarkdownViewBoundary extends React.Component<
 }
 
 function preserveSourceBytes(source: string, serialized: string): string {
-  let next = serialized;
-  if (source.includes("&") && !source.includes("&amp;")) next = next.replaceAll("&amp;", "&");
-  if (source.includes("<") && !source.includes("&lt;")) next = next.replaceAll("&lt;", "<");
-  if (source.includes(">") && !source.includes("&gt;")) next = next.replaceAll("&gt;", ">");
-  if (source.includes("\r\n") && !next.includes("\r\n")) next = next.replaceAll("\n", "\r\n");
-  return next;
+  if (source.includes("\r\n") && !serialized.includes("\r\n")) {
+    return serialized.replaceAll("\n", "\r\n");
+  }
+  return serialized;
 }
 
 interface CheckedMarkdown {

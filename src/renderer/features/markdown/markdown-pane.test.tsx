@@ -442,6 +442,117 @@ describe("MarkdownEditor", () => {
     expect(surface.textContent).toContain("task");
   });
 
+  it("keeps typed angle brackets as text", async () => {
+    const onChange = vi.fn();
+    const original = "x<y and z>w";
+    render(
+      <MarkdownEditor
+        itemId="angle-note"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={original}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Markdown rich text editor");
+    registeredMarkdownEditor("angle-note")?.commands.insertContent({
+      type: "text",
+      text: "<b>bold</b>",
+    });
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const saved = String(onChange.mock.calls.at(-1)?.[0]);
+    expect(saved).not.toContain("<b>bold</b>");
+    expect(saved).toContain("&lt;b&gt;bold&lt;/b&gt;");
+    expect(inspectRichText(saved).losesContent).toBe(false);
+
+    cleanup();
+    render(
+      <MarkdownEditor
+        itemId="angle-reopen"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={saved}
+        editable
+        onChange={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+    const surface = await screen.findByLabelText("Markdown rich text editor");
+    expect(surface.querySelector("b, strong")).toBeNull();
+    expect(screen.queryByText("This note could not be displayed.")).toBeNull();
+  });
+
+  it("keeps typed entities inside a code block", async () => {
+    const onChange = vi.fn();
+    const typed = "a &amp;&amp; b";
+    render(
+      <MarkdownEditor
+        itemId="code-entity"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={"x & y\n\n```\n\n```"}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Markdown rich text editor");
+    const editor = registeredMarkdownEditor("code-entity");
+    let pos = 1;
+    editor?.state.doc.descendants((node, position) => {
+      if (node.type.name === "codeBlock") {
+        pos = position + 1;
+        return false;
+      }
+      return true;
+    });
+    editor?.commands.insertContentAt(pos, { type: "text", text: typed });
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const saved = String(onChange.mock.calls.at(-1)?.[0]);
+    expect(saved).toContain(typed);
+    expect(saved).not.toContain("a && b");
+  });
+
+  it.each([
+    ["https://x/y.png", "![alt](https://x/y.png)"],
+    ["img/a.png", "![alt](img/a.png)"],
+    ["file:///tmp/a.png", "![alt](file:///tmp/a.png)"],
+    ["data:image/png;base64,aaaa", "![alt](data:image/png;base64,aaaa)"],
+    ["", "![]()"],
+  ])("renders an image-only note (%s)", async (src, markdown) => {
+    const onChange = vi.fn();
+    for (const editable of [false, true]) {
+      cleanup();
+      render(
+        <MarkdownEditor
+          itemId={editable ? "image-rich" : "image-preview"}
+          workspaceId="workspace"
+          folderId={null}
+          markdown={markdown}
+          editable={editable}
+          onChange={onChange}
+          onBlur={vi.fn()}
+        />,
+      );
+      const surface = await screen.findByLabelText(
+        editable ? "Markdown rich text editor" : "Markdown preview",
+      );
+      const image =
+        src === ""
+          ? surface.querySelector("img:not(.ProseMirror-separator)")
+          : surface.querySelector(`img[src="${src}"]`);
+      expect(image).toBeTruthy();
+      expect(screen.queryByText("This note could not be displayed.")).toBeNull();
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("shows a fallback when the note view throws", () => {
     function Broken(): React.ReactNode {
       throw new Error("display failed");
