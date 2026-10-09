@@ -28,7 +28,8 @@ const NESTED_EMPTY_TASK = /^ {4,}[-*+] \[[ xX]\]$/;
 const LIST_LINE = /^(?: {0,3}(?:[-*+]|\d+[.)]) | {4,}[-*+] )/;
 const HASH_TAG = /#[A-Za-z0-9][A-Za-z0-9/_-]*_[A-Za-z0-9/_-]*/g;
 const TABLE_SEPARATOR = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
-const NAMED_ENTITY = /&(?!(?:amp|lt|gt|quot|apos);)[A-Za-z][A-Za-z0-9]*;/;
+const NAMED_ENTITY = /&(?!(?:amp|lt|gt|quot|apos);)[A-Za-z][A-Za-z0-9]+;/;
+const AUTOLINK = /^<(?:[a-z][a-z0-9+.-]*:\/\/[^>\s]*|mailto:[^>\s]*|[^>\s@]+@[^>\s@]+)>$/i;
 const HTML_TAGS = new Set(
   "a abbr address article aside audio b bdi bdo big blockquote br button canvas caption center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 header hgroup hr i iframe img input ins kbd label legend li link main map mark math menu meta meter mi mn mo mfrac mrow msub msup nav nobr noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr".split(
     " ",
@@ -169,6 +170,23 @@ function stripCode(markdown: string): string {
   return markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
 }
 
+function markupText(tokens: Token[]): string {
+  let text = "";
+  for (const token of tokens) {
+    if (token.type === "code" || token.type === "codespan") continue;
+    if (token.type === "list" && isToken<Tokens.List>(token, "list")) {
+      for (const item of token.items) text += markupText(item.tokens);
+      continue;
+    }
+    if (token.type === "blockquote" && isToken<Tokens.Blockquote>(token, "blockquote")) {
+      text += markupText(token.tokens);
+      continue;
+    }
+    text += `${token.raw}\n`;
+  }
+  return text;
+}
+
 function sameWikilinks(source: string, serialized: string): boolean {
   return JSON.stringify(wikilinks(source)) === JSON.stringify(wikilinks(serialized));
 }
@@ -210,7 +228,7 @@ function scan(markdown: string, tokens: Token[]): ScanHits {
     toml: false,
     unknown: false,
   };
-  const visible = stripCode(markdown);
+  const visible = stripCode(markupText(tokens));
   if (htmlIsLossy(visible) || NAMED_ENTITY.test(visible)) hits.html = true;
   scanLines(markdown, hits);
   scanTokens(tokens, hits);
@@ -324,6 +342,7 @@ function htmlIsLossy(raw: string): boolean {
   if (/<\?/.test(raw) || /<!\[CDATA\[/i.test(raw)) return true;
   const tags = new RegExp("</?([A-Za-z][A-Za-z0-9-]*)([^<>]*)>", "g");
   for (const match of raw.matchAll(tags)) {
+    if (AUTOLINK.test(match[0] ?? "")) continue;
     const name = (match[1] ?? "").toLowerCase();
     const rest = match[2] ?? "";
     if (
