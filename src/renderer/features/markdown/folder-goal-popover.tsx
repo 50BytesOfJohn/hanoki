@@ -27,6 +27,14 @@ function goalNumberError(value: number | null): string | null {
   return null;
 }
 
+function wholeNumberError(raw: string, locale?: Intl.LocalesArgument): string | null {
+  const decimal =
+    new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === "decimal")
+      ?.value ?? ".";
+  if (!raw.includes(decimal)) return null;
+  return `Enter a whole number, like ${new Intl.NumberFormat(locale).format(DEFAULT_TARGET)}`;
+}
+
 export function FolderGoalPopover({
   folderId,
   folderName,
@@ -151,7 +159,14 @@ function GoalForm({
     },
   });
 
-  const submitGoal = () => {
+  const submitGoal = (form: HTMLFormElement) => {
+    const raw =
+      form.querySelector<HTMLInputElement>('[aria-label="Word goal target"]')?.value ?? "";
+    const decimalError = wholeNumberError(raw, locale);
+    if (decimalError) {
+      setError(decimalError);
+      return;
+    }
     const value = targetRef.current;
     const message = goalNumberError(value);
     setError(message);
@@ -164,7 +179,7 @@ function GoalForm({
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        submitGoal();
+        submitGoal(event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -175,7 +190,7 @@ function GoalForm({
         if (event.key !== "Enter") return;
         if (event.target instanceof HTMLButtonElement && event.target.type !== "submit") return;
         event.preventDefault();
-        submitGoal();
+        submitGoal(event.currentTarget);
       }}
     >
       <PopoverTitle className="text-[13px]">Word goal · {folderName}</PopoverTitle>

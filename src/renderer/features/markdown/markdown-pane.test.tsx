@@ -316,7 +316,7 @@ describe("folder goal popover", () => {
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(api.setFolderWordGoal).not.toHaveBeenCalled();
 
-    for (const value of ["-3", "1.5", "", "10000001"]) {
+    for (const value of ["-3", "", "10000001"]) {
       fireEvent.change(input, { target: { value } });
       fireEvent.keyDown(input, { key: "Enter" });
       expect(screen.getByLabelText("Word goal target").getAttribute("aria-invalid")).toBe("true");
@@ -367,6 +367,59 @@ describe("folder goal popover", () => {
     expect(screen.queryByText(format.format(6))).toBeNull();
     expect(byFolder).not.toHaveBeenCalled();
     expect(nearest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["en-US", "1.000", "Enter a whole number, like 50,000"],
+    ["en-US", "50.000", "Enter a whole number, like 50,000"],
+    ["de-DE", "50,000", "Enter a whole number, like 50.000"],
+    ["de-DE", "1,5", "Enter a whole number, like 50.000"],
+  ] as const)(
+    "rejects %s %s because it contains the decimal separator",
+    async (locale, value, message) => {
+      const api = installApi();
+      renderWithQuery(
+        <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" locale={locale} open>
+          <span>Goal</span>
+        </FolderGoalPopover>,
+      );
+      const input = await screen.findByLabelText("Word goal target");
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(await screen.findByText(message)).toBeTruthy();
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(api.setFolderWordGoal).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["de-DE", "50.000"],
+    ["fr-FR", "50 000"],
+    ["fr-FR", "50\u00a0000"],
+    ["fr-FR", "50\u202f000"],
+    ["pl-PL", "50 000"],
+    ["pl-PL", "50\u00a0000"],
+    ["pl-PL", "50\u202f000"],
+    ["de-CH", "50'000"],
+    ["de-CH", "50\u2019000"],
+    ["en-US", "50,000"],
+  ] as const)("saves %s grouping %j", async (locale, value) => {
+    const api = installApi();
+    renderWithQuery(
+      <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" locale={locale} open>
+        <span>Goal</span>
+      </FolderGoalPopover>,
+    );
+    const input = (await screen.findByLabelText("Word goal target")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1" } });
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+    fireEvent.paste(input, { clipboardData: { getData: () => value } });
+    expect(input.value).toBe(value);
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(api.setFolderWordGoal).toHaveBeenCalledWith(FOLDER_ID, 50_000);
+    });
   });
 
   it.each(["en-US", "de-DE", "fr-FR", "de-CH", "ru-RU"])(

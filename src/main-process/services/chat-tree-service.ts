@@ -75,6 +75,8 @@ const ACTIVE_TAB_ID_SETTINGS_KEY = "activeTabId";
 const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
 const MARKDOWN_AUTOSAVE_WAIT_MS = 500;
+const MARKDOWN_AUTOSAVE_MAX_WAIT_MS = 30_000;
+const MARKDOWN_AUTOSAVE_LOG_INTERVAL_MS = 60_000;
 
 interface PendingMarkdownSave {
   markdown: string;
@@ -82,6 +84,13 @@ interface PendingMarkdownSave {
   countMode: "edit" | "import";
   /** A failed flush is waiting for the autosave timer. Stats reads skip it. */
   retryAfterFailure: boolean;
+  failureCount: number;
+  lastLoggedAt: number | null;
+}
+
+function markdownAutosaveRetryDelay(failureCount: number): number {
+  const exponent = Math.min(failureCount, 6);
+  return Math.min(MARKDOWN_AUTOSAVE_WAIT_MS * 2 ** exponent, MARKDOWN_AUTOSAVE_MAX_WAIT_MS);
 }
 
 export interface ChatTreeService {
@@ -414,7 +423,23 @@ export function createChatTreeService(): ChatTreeService {
     pendingMarkdownSaves.delete(id);
   }
 
-  function armPendingMarkdownSave(id: string, pending: PendingMarkdownSave): void {
+  function logAutosaveFailure(id: string, pending: PendingMarkdownSave, error: unknown): void {
+    const now = Date.now();
+    if (
+      pending.lastLoggedAt !== null &&
+      now - pending.lastLoggedAt < MARKDOWN_AUTOSAVE_LOG_INTERVAL_MS
+    ) {
+      return;
+    }
+    pending.lastLoggedAt = now;
+    console.error(`[markdown] Autosave failed for item "${id}".`, error);
+  }
+
+  function armPendingMarkdownSave(
+    id: string,
+    pending: PendingMarkdownSave,
+    delay = MARKDOWN_AUTOSAVE_WAIT_MS,
+  ): void {
     if (pending.timeout) clearTimeout(pending.timeout);
     pending.timeout = setTimeout(() => {
       pending.timeout = null;
@@ -422,9 +447,11 @@ export function createChatTreeService(): ChatTreeService {
       try {
         flushPendingMarkdownContent(id);
       } catch (error) {
-        console.error(`[markdown] Autosave failed for item "${id}".`, error);
+        const current = pendingMarkdownSaves.get(id);
+        if (!current) return;
+        logAutosaveFailure(id, current, error);
       }
-    }, MARKDOWN_AUTOSAVE_WAIT_MS);
+    }, delay);
   }
 
   function flushPendingMarkdownContent(id: string): MarkdownInfo {
@@ -438,6 +465,10 @@ export function createChatTreeService(): ChatTreeService {
 
     if (pending.timeout) clearTimeout(pending.timeout);
     pending.timeout = null;
+    if (!getItemById(id)) {
+      pendingMarkdownSaves.delete(id);
+      throw new Error(`Item "${id}" does not exist.`);
+    }
     try {
       const saved = toMarkdownInfo(
         updateMarkdownContentInRepo(id, pending.markdown, pending.countMode),
@@ -445,8 +476,13 @@ export function createChatTreeService(): ChatTreeService {
       pendingMarkdownSaves.delete(id);
       return saved;
     } catch (error) {
+      if (!getItemById(id)) {
+        pendingMarkdownSaves.delete(id);
+        throw error;
+      }
+      pending.failureCount += 1;
       pending.retryAfterFailure = true;
-      armPendingMarkdownSave(id, pending);
+      armPendingMarkdownSave(id, pending, markdownAutosaveRetryDelay(pending.failureCount));
       throw error;
     }
   }
@@ -462,6 +498,8 @@ export function createChatTreeService(): ChatTreeService {
       timeout: null,
       countMode,
       retryAfterFailure: false,
+      failureCount: 0,
+      lastLoggedAt: null,
     };
     pendingMarkdownSaves.set(id, pending);
     armPendingMarkdownSave(id, pending);
@@ -474,10 +512,9 @@ export function createChatTreeService(): ChatTreeService {
       try {
         flushPendingMarkdownContent(id);
       } catch (error) {
-        console.error(
-          "[markdown] Autosave could not be flushed before reading the word goal.",
-          error,
-        );
+        const current = pendingMarkdownSaves.get(id);
+        if (!current) continue;
+        logAutosaveFailure(id, current, error);
       }
     }
   }
