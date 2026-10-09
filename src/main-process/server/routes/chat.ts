@@ -67,7 +67,6 @@ const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
 
 interface CreateChatRouteOptions {
-  onChatRequest?: () => void;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
@@ -84,7 +83,6 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
   const app = new Hono();
 
   app.post("/api/chat", async (c) => {
-    options?.onChatRequest?.();
     const body = await c.req.json();
     const messages: HanokiUiMessage[] = Array.isArray(body.messages) ? body.messages : [];
     const mode = body.mode === "continue-message" ? "continue-message" : "default";

@@ -12,8 +12,7 @@ import type {
 } from "@shared/events";
 
 interface CreateAiServerOptions {
-  origin: string;
-  onChatRequest?: () => void;
+  origin: string | null;
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
@@ -30,10 +29,15 @@ export function createLocalServerToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-export function createLocalServerApp(options: CreateAiServerOptions & { token: string }) {
+export function createLocalServerApp(
+  options: CreateAiServerOptions & { token: string; port?: number | (() => number) },
+) {
   const app = new Hono();
 
-  app.use("*", localServerGuard({ token: options.token, origin: options.origin }));
+  app.use(
+    "*",
+    localServerGuard({ token: options.token, origin: options.origin, port: options.port }),
+  );
   app.onError((error, c) => {
     console.error(`[ai-server] ${c.req.method} ${c.req.path} failed.`, error);
     return c.json({ error: "Internal server error" }, 500);
@@ -41,7 +45,6 @@ export function createLocalServerApp(options: CreateAiServerOptions & { token: s
   app.route(
     "/",
     createChatRoute({
-      onChatRequest: options.onChatRequest,
       onChatTreeChanged: options.onChatTreeChanged,
       onChatMessagesChanged: options.onChatMessagesChanged,
       onChatGenerationRequested: options.onChatGenerationRequested,
@@ -59,7 +62,8 @@ export async function createAiServer(options: CreateAiServerOptions): Promise<{
   close: () => void;
 }> {
   const token = createLocalServerToken();
-  const app = createLocalServerApp({ ...options, token });
+  let boundPort = 0;
+  const app = createLocalServerApp({ ...options, token, port: () => boundPort });
 
   return new Promise((resolve) => {
     const server = serve(
@@ -69,7 +73,8 @@ export async function createAiServer(options: CreateAiServerOptions): Promise<{
         port: 0,
       },
       (info) => {
-        const port = info.port;
+        boundPort = info.port;
+        const port = boundPort;
         resolve({
           port,
           token,

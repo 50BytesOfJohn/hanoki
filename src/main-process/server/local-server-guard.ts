@@ -4,8 +4,23 @@ import type { MiddlewareHandler } from "hono";
 
 import { LOCAL_SERVER_TOKEN_HEADER } from "@shared/local-server";
 
-const ALLOWED_METHODS = new Set(["GET", "POST"]);
+const ALLOWED_METHODS = new Set(["POST"]);
 const ALLOWED_REQUEST_HEADERS = new Set(["content-type", LOCAL_SERVER_TOKEN_HEADER.toLowerCase()]);
+const PREFLIGHT_MAX_AGE_SECONDS = 600;
+
+function allowOriginHeader(origin: string | null): string {
+  return origin ?? "null";
+}
+
+function hostAllowed(host: string | undefined, port: number): boolean {
+  if (!port) return true;
+  if (!host) return false;
+  const separator = host.lastIndexOf(":");
+  if (separator <= 0) return false;
+  const hostname = host.slice(0, separator);
+  if (hostname !== "127.0.0.1" && hostname !== "localhost") return false;
+  return host.slice(separator + 1) === String(port);
+}
 
 function localServerTokensMatch(expected: string, presented: string | undefined): boolean {
   if (presented == null) return false;
@@ -28,11 +43,20 @@ function requestedHeadersAllowed(header: string | undefined): boolean {
 /**
  * The browser sends the token header on the actual request. OPTIONS only lists it.
  */
-export function localServerGuard(options: { token: string; origin: string }): MiddlewareHandler {
+export function localServerGuard(options: {
+  token: string;
+  origin: string | null;
+  port?: number | (() => number);
+}): MiddlewareHandler {
   const { token, origin } = options;
 
   return async (c, next) => {
-    const requestOrigin = c.req.header("origin");
+    const port = typeof options.port === "function" ? options.port() : (options.port ?? 0);
+    if (!hostAllowed(c.req.header("host"), port)) {
+      return c.body(null, 403);
+    }
+
+    const requestOrigin = c.req.header("origin") ?? null;
     if (requestOrigin !== origin) {
       return c.body(null, 403);
     }
@@ -48,22 +72,20 @@ export function localServerGuard(options: { token: string; origin: string }): Mi
       }
 
       return c.body(null, 204, {
-        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Origin": allowOriginHeader(origin),
         "Access-Control-Allow-Headers": `Content-Type, ${LOCAL_SERVER_TOKEN_HEADER}`,
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Max-Age": String(PREFLIGHT_MAX_AGE_SECONDS),
         Vary: "Origin",
       });
     }
 
     if (!localServerTokensMatch(token, c.req.header(LOCAL_SERVER_TOKEN_HEADER))) {
-      return c.json({ error: "Unauthorized" }, 401, {
-        "Access-Control-Allow-Origin": origin,
-        Vary: "Origin",
-      });
+      return c.json({ error: "Unauthorized" }, 401);
     }
 
     await next();
-    c.res.headers.set("Access-Control-Allow-Origin", origin);
+    c.res.headers.set("Access-Control-Allow-Origin", allowOriginHeader(origin));
     if (
       !c.res.headers
         .get("Vary")

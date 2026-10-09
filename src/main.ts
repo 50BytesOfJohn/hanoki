@@ -14,16 +14,16 @@ import {
   type SystemEvent,
   type SystemState,
 } from "./shared/events";
+import { PACKAGED_RENDERER_ORIGIN } from "./shared/local-server";
 
 const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = getDefaultAppIdentifier();
 
-function rendererOrigin(): string {
+function rendererOrigin(): string | null {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     return new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin;
   }
-  // Packaged pages are loaded from a file URL, so cross-origin requests use this origin.
-  return "null";
+  return PACKAGED_RENDERER_ORIGIN;
 }
 
 app.setName(APP_NAME);
@@ -195,7 +195,13 @@ if (!app.requestSingleInstanceLock()) {
           services: backend.services,
           broadcast: broadcastSystemEvent,
         });
-        ipcMain.handle(SYSTEM_STATE_CHANNEL, () => getSystemState());
+        ipcMain.handle(SYSTEM_STATE_CHANNEL, (event) => {
+          if (!backend) {
+            throw new Error("Backend is not initialized.");
+          }
+          backend.trustedSenders.assertTrustedIpcSender(event);
+          return getSystemState();
+        });
         initUpdater({ broadcast: broadcastSystemEvent });
         openMainWindow();
         startProviderModelSyncOnStartup();
