@@ -369,7 +369,11 @@
 }
 
 .prose ul[data-type="taskList"] > li > label {
-  margin-top: 0.3rem;
+  margin-top: calc((1lh - 1rem) / 2);
+}
+
+.prose ul[data-type="taskList"] > li > div > :first-child {
+  margin-top: 0;
 }
 
 .prose ul[data-type="taskList"] > li > label > input[type="checkbox"] {
@@ -406,6 +410,11 @@
 
 .prose ul[data-type="taskList"] > li > div {
   min-width: 0;
+}
+
+.prose blockquote p:first-of-type::before,
+.prose blockquote p:last-of-type::after {
+  content: none;
 }
 
 /* Daily-use tool: motion must never make the user wait. */
