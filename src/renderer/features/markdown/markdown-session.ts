@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import type { MarkdownInfo } from "@shared/ipc";
+import { splitFrontmatter } from "@shared/markdown/frontmatter";
 
 import { itemsApi } from "@/api/items";
 import { queryClient } from "@/lib/query-client";
@@ -12,8 +13,13 @@ interface MarkdownSaver {
   adopt: (markdown: string) => void;
 }
 
+interface MarkdownEditorBinding {
+  editor: Editor;
+  resetBaseline: () => void;
+}
+
 const savers = new Map<string, MarkdownSaver>();
-const editors = new Map<string, Editor>();
+const editors = new Map<string, MarkdownEditorBinding>();
 let listening = false;
 
 export function registerMarkdownSaver(itemId: string, saver: MarkdownSaver): () => void {
@@ -24,12 +30,21 @@ export function registerMarkdownSaver(itemId: string, saver: MarkdownSaver): () 
   };
 }
 
-export function registerMarkdownEditor(itemId: string, editor: Editor): () => void {
-  editors.set(itemId, editor);
+export function registerMarkdownEditor(
+  itemId: string,
+  editor: Editor,
+  resetBaseline: () => void,
+): () => void {
+  const binding = { editor, resetBaseline };
+  editors.set(itemId, binding);
   ensureRewriteListener();
   return () => {
-    if (editors.get(itemId) === editor) editors.delete(itemId);
+    if (editors.get(itemId) === binding) editors.delete(itemId);
   };
+}
+
+export function registeredMarkdownEditor(itemId: string): Editor | undefined {
+  return editors.get(itemId)?.editor;
 }
 
 export async function flushOpenMarkdownEditors(): Promise<void> {
@@ -52,9 +67,21 @@ async function adoptRewrittenMarkdown(itemIds: readonly string[]): Promise<void>
       const fresh = await itemsApi.get(itemId);
       if (fresh.type !== "markdown") return;
       const markdown = fresh.data.markdown;
-      editors
-        .get(itemId)
-        ?.commands.setContent(markdown, { contentType: "markdown", emitUpdate: false });
+      const binding = editors.get(itemId);
+      if (binding) {
+        binding.editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setMeta("addToHistory", false);
+            return true;
+          })
+          .setContent(splitFrontmatter(markdown).body, {
+            contentType: "markdown",
+            emitUpdate: false,
+          })
+          .run();
+        binding.resetBaseline();
+      }
       saver?.adopt(markdown);
       queryClient.setQueryData<MarkdownInfo>(queryKeys.items.byId(itemId), (current) =>
         current?.type === "markdown"

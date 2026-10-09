@@ -1,7 +1,7 @@
 import * as React from "react";
 import { code } from "@streamdown/code";
 import { useQuery } from "@tanstack/react-query";
-import { Streamdown } from "streamdown";
+import { defaultRehypePlugins, Streamdown } from "streamdown";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,9 +48,11 @@ import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { openExternalLink } from "@/lib/open-external-link";
 import {
-  isRemoteImageUrl as isRemoteAssistantImage,
+  isHttpImageUrl,
+  isRemoteImageUrl,
   stripRemoteAssistantImages,
 } from "@shared/chat/assistant-images";
+import { rehypeBlockImages, RemoteImagePlaceholder } from "@/components/remote-image-placeholder";
 import { Spinner } from "@/components/ui/spinner";
 import {
   createTiptapDocumentFromText,
@@ -67,6 +69,13 @@ import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 
 const STREAMDOWN_PLUGINS = { code };
+const ASSISTANT_REHYPE_PLUGINS = [...Object.values(defaultRehypePlugins), rehypeBlockImages];
+
+function assistantImageIsBlock(props: { dataBlockImage?: unknown; "data-block-image"?: unknown }) {
+  const value = props.dataBlockImage ?? props["data-block-image"];
+  return value != null && value !== false;
+}
+
 const ASSISTANT_MARKDOWN_COMPONENTS = {
   a: ({ href, children, node: _node, ...props }: React.ComponentProps<"a"> & { node?: object }) => (
     <a
@@ -80,8 +89,29 @@ const ASSISTANT_MARKDOWN_COMPONENTS = {
       {children}
     </a>
   ),
-  img: ({ src, alt }: React.ComponentProps<"img">) =>
-    typeof src === "string" && !isRemoteAssistantImage(src) ? <img src={src} alt={alt} /> : null,
+  img: ({
+    src,
+    alt,
+    node: _node,
+    ...props
+  }: React.ComponentProps<"img"> & {
+    node?: object;
+    dataBlockImage?: unknown;
+    "data-block-image"?: unknown;
+  }) => {
+    if (typeof src !== "string") return null;
+    if (isHttpImageUrl(src)) {
+      return (
+        <RemoteImagePlaceholder
+          src={src}
+          alt={typeof alt === "string" ? alt : ""}
+          layout={assistantImageIsBlock(props) ? "block" : "inline"}
+        />
+      );
+    }
+    if (isRemoteImageUrl(src)) return null;
+    return <img src={src} alt={alt} />;
+  },
 };
 const USER_MESSAGE_CARD_CLASS_NAME =
   "max-w-[85%] rounded-xl bg-surface-secondary px-4 py-3 text-sm";
@@ -115,7 +145,7 @@ interface AssistantMessageTextPartProps {
   text: string;
 }
 
-const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
+export const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
   isAnimating,
   text,
 }: AssistantMessageTextPartProps) {
@@ -124,6 +154,7 @@ const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
       mode={isAnimating ? "streaming" : "static"}
       plugins={STREAMDOWN_PLUGINS}
       components={ASSISTANT_MARKDOWN_COMPONENTS}
+      rehypePlugins={ASSISTANT_REHYPE_PLUGINS}
       isAnimating={isAnimating}
       className="text-[0.9375rem] leading-[1.7] text-foreground/90"
     >

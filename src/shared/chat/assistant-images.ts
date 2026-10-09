@@ -10,6 +10,19 @@ export function isRemoteImageUrl(url: string): boolean {
   }
 }
 
+export function isHttpImageUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url.trim()).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isStrippedAssistantImage(url: string): boolean {
+  return isRemoteImageUrl(url) && !isHttpImageUrl(url);
+}
+
 function imageReplacement(alt: string): string {
   const text = alt.trim();
   return text.length > 0 ? text : "";
@@ -138,7 +151,7 @@ function stripInlineImages(markdown: string): string {
     if (markdown.startsWith("![", index)) {
       const image = readInlineImage(markdown, index);
       if (image) {
-        result += isRemoteImageUrl(image.url)
+        result += isStrippedAssistantImage(image.url)
           ? imageReplacement(image.alt)
           : markdown.slice(index, image.end);
         index = image.end;
@@ -171,7 +184,7 @@ function stripPlainAssistantImages(markdown: string): string {
   }
   const remoteIds = new Set(
     definitions
-      .filter((definition) => isRemoteImageUrl(definition.url))
+      .filter((definition) => isStrippedAssistantImage(definition.url))
       .map((definition) => definition.id.toLowerCase()),
   );
 
@@ -189,7 +202,7 @@ function stripPlainAssistantImages(markdown: string): string {
   next = stripInlineImages(next);
 
   next = next.replace(/<img\b[^>]*>/gi, (tag) =>
-    isRemoteImageUrl(htmlImageSrc(tag)) ? imageReplacement(htmlImageAlt(tag)) : tag,
+    isStrippedAssistantImage(htmlImageSrc(tag)) ? imageReplacement(htmlImageAlt(tag)) : tag,
   );
 
   return next;
