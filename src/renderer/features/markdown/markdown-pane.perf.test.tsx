@@ -56,4 +56,28 @@ describe("rich text inspection", () => {
     expect(inspect.mock.calls.length).toBe(callsAfterLoad);
     expect(performance.now() - started).toBeLessThan(1_500);
   });
+
+  it("opens a long note ten times without slowing down", async () => {
+    const markdown = `${"Hello world. ".repeat(4_000)}\n`;
+    const durations: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const started = performance.now();
+      render(
+        <MarkdownEditor
+          itemId={`perf-${i}`}
+          workspaceId="workspace"
+          folderId={null}
+          markdown={markdown}
+          editable
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+        />,
+      );
+      await screen.findByLabelText("Markdown rich text editor");
+      durations.push(performance.now() - started);
+      cleanup();
+    }
+    process.stderr.write(`repeated-open-ms ${durations.map((ms) => ms.toFixed(0)).join(" ")}\n`);
+    expect(Math.max(...durations)).toBeLessThan(300);
+  });
 });

@@ -1,9 +1,3 @@
-import { lexer, parser } from "marked";
-
-export function MarkdownPreview({ markdown }: { markdown: string }) {
-  return <div dangerouslySetInnerHTML={{ __html: parser(lexer(markdown)) }} />;
-}
-
 export function FrontmatterBlock({ source }: { source: string }) {
   return (
     <details open className="mx-auto w-full max-w-3xl px-7 pt-5">

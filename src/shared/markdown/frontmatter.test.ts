@@ -19,6 +19,10 @@ describe("frontmatter", () => {
     expect(joinFrontmatter(parts.frontmatter, parts.body)).toBe(markdown);
   });
 
+  it("inserts a newline when the closer has none", () => {
+    expect(joinFrontmatter("---\ntitle: x\n---", "Z")).toBe("---\ntitle: x\n---\nZ");
+  });
+
   it("accepts a dot closer", () => {
     const markdown = "---\ntitle: x\n...\nBody";
     const parts = splitFrontmatter(markdown);

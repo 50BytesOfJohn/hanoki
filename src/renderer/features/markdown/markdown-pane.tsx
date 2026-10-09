@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAsyncDebouncer } from "@tanstack/react-pacer";
 import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { Marked, marked } from "marked";
 import { FileScriptIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ItemInfo, MarkdownInfo } from "@shared/ipc";
@@ -21,7 +22,7 @@ import { toastManager } from "@/components/ui/toast";
 import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
-import { FrontmatterBlock, MarkdownPreview } from "./markdown-preview";
+import { FrontmatterBlock } from "./markdown-preview";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
 import { RichTextReadonlyBanner } from "./rich-text-readonly-banner";
 import { RICH_TEXT_SCHEMA_EXTENSIONS } from "./rich-text-schema";
@@ -82,7 +83,19 @@ export function useMarkdownPane(): MarkdownPaneContextValue {
   return context;
 }
 
-const MARKDOWN_EXTENSIONS = [...RICH_TEXT_SCHEMA_EXTENSIONS, WikilinkEditor, Markdown];
+function freshMarked(): typeof marked {
+  const instance = new Marked();
+  // SAFETY: MarkdownManager only calls lexer, parser, use, and setOptions, which Marked implements.
+  return instance as unknown as typeof marked;
+}
+
+function createMarkdownExtensions() {
+  return [
+    ...RICH_TEXT_SCHEMA_EXTENSIONS,
+    WikilinkEditor,
+    Markdown.configure({ marked: freshMarked() }),
+  ];
+}
 const MARKDOWN_PROSE_CLASS =
   "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_td]:border [&_th]:border-border [&_td]:border-border [&_th]:px-2 [&_td]:px-2 [&_th]:py-1 [&_td]:py-1 [&_img]:max-w-full";
 
@@ -271,7 +284,15 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   );
 }
 
-export function MarkdownEditor({
+export function MarkdownEditor(props: MarkdownEditorProps) {
+  return (
+    <MarkdownViewBoundary resetKey={props.itemId}>
+      <MarkdownEditorView {...props} />
+    </MarkdownViewBoundary>
+  );
+}
+
+function MarkdownEditorView({
   itemId,
   workspaceId,
   folderId,
@@ -281,17 +302,7 @@ export function MarkdownEditor({
   onChange,
   onBlur,
   inspect = inspectRichText,
-}: {
-  itemId: string;
-  workspaceId: string;
-  folderId: string | null;
-  markdown: string;
-  editable: boolean;
-  onEditInMarkdown?: () => void;
-  onChange: (markdown: string) => void;
-  onBlur: () => void;
-  inspect?: (markdown: string) => RichTextInspection;
-}) {
+}: MarkdownEditorProps) {
   const parts = splitFrontmatter(markdown);
   const body = parts.body;
   const frontmatterRef = React.useRef(parts.frontmatter);
@@ -299,20 +310,13 @@ export function MarkdownEditor({
   const emittedRef = React.useRef<string | null>(null);
   const originalRef = React.useRef(markdown);
   const [safety, setSafety] = React.useState<CheckedMarkdown | null>(null);
-
-  React.useEffect(() => {
-    if (markdown === emittedRef.current) return;
-    originalRef.current = markdown;
-    setSafety({ markdown, result: inspect(markdown) });
-  }, [inspect, markdown]);
-
+  const [extensions] = React.useState(createMarkdownExtensions);
   const fromEditor = markdown === emittedRef.current;
   const ready = safety !== null && safety.markdown === markdown ? safety : null;
   const pending = editable && !fromEditor && ready === null;
   const losesContent = !fromEditor && ready !== null && ready.result.losesContent;
   const canEdit = editable && !pending && !losesContent;
   const locked = editable && losesContent;
-  const showPreview = !canEdit && !pending;
   const onChangeRef = React.useRef(onChange);
   const baselineRef = React.useRef<string | null>(null);
   const emittedSinceBaselineRef = React.useRef(false);
@@ -320,7 +324,7 @@ export function MarkdownEditor({
   onChangeRef.current = onChange;
 
   const editor = useEditor({
-    extensions: MARKDOWN_EXTENSIONS,
+    extensions,
     content: body,
     contentType: "markdown",
     editable: false,
@@ -338,8 +342,9 @@ export function MarkdownEditor({
       if (!transaction.docChanged || baselineRef.current === null || !currentEditor.isEditable) {
         return;
       }
-      const nextBody = currentEditor.getMarkdown();
-      if (nextBody === baselineRef.current) {
+      const serialized = currentEditor.getMarkdown();
+      const nextBody = preserveSourceBytes(splitFrontmatter(originalRef.current).body, serialized);
+      if (serialized === baselineRef.current) {
         if (!emittedSinceBaselineRef.current) return;
         emittedSinceBaselineRef.current = false;
         emittedRef.current = originalRef.current;
@@ -364,14 +369,17 @@ export function MarkdownEditor({
     if (!editor) return;
     baselineRef.current = null;
     editor.setEditable(canEdit, false);
-    if (canEdit) {
-      editor.view.dom.setAttribute("aria-label", "Markdown rich text editor");
-      editor.commands.focus("end");
-    } else {
-      editor.view.dom.removeAttribute("aria-label");
-    }
+    editor.view.dom.setAttribute(
+      "aria-label",
+      canEdit
+        ? "Markdown rich text editor"
+        : editable
+          ? "Markdown rich text, read only"
+          : "Markdown preview",
+    );
+    if (canEdit) editor.commands.focus("end");
     captureBaseline();
-  }, [canEdit, captureBaseline, editor]);
+  }, [canEdit, captureBaseline, editable, editor]);
 
   React.useEffect(() => {
     if (!editor) return;
@@ -379,16 +387,15 @@ export function MarkdownEditor({
     return registerMarkdownEditor(itemId, editor, captureBaseline);
   }, [captureBaseline, editor, folderId, itemId, workspaceId]);
 
-  React.useLayoutEffect(() => {
-    if (!editor || canEdit) {
+  React.useEffect(() => {
+    if (!editor || markdown === emittedRef.current) return;
+    originalRef.current = markdown;
+    if (hydratedBodyRef.current !== body) {
+      editor.commands.setContent(body, { contentType: "markdown", emitUpdate: false });
       hydratedBodyRef.current = body;
-      return;
     }
-    if (hydratedBodyRef.current === body) return;
-    hydratedBodyRef.current = body;
-    editor.commands.setContent(body, { contentType: "markdown", emitUpdate: false });
-    captureBaseline();
-  }, [body, canEdit, captureBaseline, editor]);
+    setSafety({ markdown, result: inspect(markdown, editor.getMarkdown()) });
+  }, [body, editor, inspect, markdown]);
 
   return (
     <>
@@ -399,25 +406,59 @@ export function MarkdownEditor({
         />
       ) : null}
       {parts.frontmatter ? <FrontmatterBlock source={parts.frontmatter} /> : null}
-      {showPreview ? (
-        <div
-          aria-label={editable ? "Markdown rich text, read only" : "Markdown preview"}
-          contentEditable="false"
-          className={`${MARKDOWN_PROSE_CLASS} mx-auto min-h-full w-full max-w-3xl px-7 py-7 outline-none`}
-        >
-          <MarkdownPreview markdown={body} />
-        </div>
-      ) : null}
       <EditorContent
         editor={editor}
-        className={
-          canEdit
-            ? "mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
-            : "hidden"
-        }
+        className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
       />
     </>
   );
+}
+
+interface MarkdownEditorProps {
+  itemId: string;
+  workspaceId: string;
+  folderId: string | null;
+  markdown: string;
+  editable: boolean;
+  onEditInMarkdown?: () => void;
+  onChange: (markdown: string) => void;
+  onBlur: () => void;
+  inspect?: (markdown: string, serialized?: string) => RichTextInspection;
+}
+
+export class MarkdownViewBoundary extends React.Component<
+  { resetKey: string; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidUpdate(prev: { resetKey: string }) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <p className="px-7 py-7 text-sm text-muted-foreground">This note could not be displayed.</p>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function preserveSourceBytes(source: string, serialized: string): string {
+  let next = serialized;
+  if (source.includes("&") && !source.includes("&amp;")) next = next.replaceAll("&amp;", "&");
+  if (source.includes("<") && !source.includes("&lt;")) next = next.replaceAll("&lt;", "<");
+  if (source.includes(">") && !source.includes("&gt;")) next = next.replaceAll("&gt;", ">");
+  if (source.includes("\r\n") && !next.includes("\r\n")) next = next.replaceAll("\n", "\r\n");
+  return next;
 }
 
 interface CheckedMarkdown {

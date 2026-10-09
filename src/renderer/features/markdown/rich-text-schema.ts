@@ -4,7 +4,7 @@ import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
 export const RICH_TEXT_SCHEMA_EXTENSIONS = [
-  StarterKit,
+  StarterKit.configure({ underline: false }),
   TableKit,
   TaskList,
   TaskItem.configure({ nested: true }),

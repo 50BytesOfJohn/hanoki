@@ -1,14 +1,23 @@
 import { MarkdownManager } from "@tiptap/markdown";
-import { lexer, type Token, type Tokens } from "marked";
+import { Marked, marked, type Token, type Tokens } from "marked";
 
 import { splitFrontmatter } from "@shared/markdown/frontmatter";
 
 import { RICH_TEXT_SCHEMA_EXTENSIONS } from "./rich-text-schema";
 import { Wikilink } from "./wikilink-extension";
 
+const compareMarked = freshMarked();
+
 const manager = new MarkdownManager({
   extensions: [...RICH_TEXT_SCHEMA_EXTENSIONS, Wikilink],
+  marked: freshMarked(),
 });
+
+function freshMarked(): typeof marked {
+  const instance = new Marked();
+  // SAFETY: MarkdownManager only calls lexer, parser, use, and setOptions, which Marked implements.
+  return instance as unknown as typeof marked;
+}
 
 const HTML_TAGS = new Set(
   "a abbr address article aside audio b bdi bdo big blockquote br button canvas caption center cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 header hgroup hr i iframe img input ins kbd label legend li link main map mark math menu meta meter mi mn mo mfrac mrow msub msup nav nobr noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup svg table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr".split(
@@ -18,7 +27,9 @@ const HTML_TAGS = new Set(
 
 const FENCE = /^( {0,3})(`{3,}|~{3,})([^`~]*)$/;
 const FOOTNOTE = /\[\^[^\]]+\]|\^\[[^\]]+\]/;
-const MATH = /\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?!\s)(?:\\.|[^$\n])+?(?<!\s)\$(?!\$)/;
+const MATH = /\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?!\s)(?:\\.|[^$\n\\])+?(?<!\s)\$(?!\$)/;
+const ORDERED_TASK = /^ {0,3}\d+[.)] \[[ xX]\]/;
+const WIKILINK = /(!?)\[\[([^\]\n]*)\]\]/g;
 const ESCAPED_ORDERED_MARKER = /^ {0,3}\d+\\\./;
 
 export interface RichTextInspection {
@@ -36,6 +47,11 @@ interface ScanHits {
   reference: boolean;
   escapedList: boolean;
   tildeFence: boolean;
+  orderedTask: boolean;
+  tableLoss: boolean;
+  toml: boolean;
+  unknown: boolean;
+  tableColumns?: number;
 }
 
 type Sem =
@@ -58,19 +74,23 @@ type Sem =
     }
   | { t: "table"; align: Array<string | null>; header: Sem[][]; rows: Sem[][][] };
 
-export function inspectRichText(markdown: string): RichTextInspection {
+export function inspectRichText(markdown: string, serializedBody?: string): RichTextInspection {
   if (markdown.length > RICH_TEXT_CHECK_LIMIT) {
     return { losesContent: true, summary: null };
   }
   const body = splitFrontmatter(markdown).body;
-  const hits = scan(body);
-  let serialized: string | null = null;
-  try {
-    serialized = manager.serialize(manager.parse(body));
-  } catch {
-    serialized = null;
+  const tokens = lex(body);
+  const hits = scan(body, tokens);
+  let serialized = serializedBody ?? null;
+  if (serializedBody === undefined) {
+    try {
+      serialized = manager.serialize(manager.parse(body));
+    } catch {
+      serialized = null;
+    }
   }
-  const losesContent = serialized === null || hasHit(hits) || !sameSemantics(body, serialized);
+  const losesContent =
+    serialized === null || hasHit(hits) || !sameSemantics(body, tokens, serialized);
   return {
     losesContent,
     summary: losesContent ? lossSummary(hits) : null,
@@ -79,19 +99,74 @@ export function inspectRichText(markdown: string): RichTextInspection {
 
 export function richTextRoundTripLosesContent(source: string, serialized: string): boolean {
   const body = splitFrontmatter(source).body;
-  if (hasHit(scan(body))) return true;
-  return !sameSemantics(body, serialized);
+  const tokens = lex(body);
+  if (hasHit(scan(body, tokens))) return true;
+  return !sameSemantics(body, tokens, serialized);
 }
 
-function sameSemantics(source: string, serialized: string): boolean {
-  return JSON.stringify(blocks(lex(source))) === JSON.stringify(blocks(lex(serialized)));
+function sameSemantics(source: string, sourceTokens: Token[], serialized: string): boolean {
+  if (
+    !sameWikilinks(source, serialized) ||
+    lostObsidianEscape(source, serialized) ||
+    lostClosingTag(source, serialized)
+  ) {
+    return false;
+  }
+  return JSON.stringify(blocks(sourceTokens)) === JSON.stringify(blocks(lex(serialized)));
+}
+
+function lostObsidianEscape(source: string, serialized: string): boolean {
+  const before = stripCode(source);
+  const after = stripCode(serialized);
+  return (
+    occurrences(before, /\\#/g) > occurrences(after, /\\#/g) ||
+    occurrences(before, /\\!\[\[/g) > occurrences(after, /\\!\[\[/g)
+  );
+}
+
+function lostClosingTag(source: string, serialized: string): boolean {
+  for (const match of stripCode(source).matchAll(/<\/[A-Za-z][A-Za-z0-9-]*>/g)) {
+    if (!serialized.includes(match[0] ?? "")) return true;
+  }
+  return false;
+}
+
+function occurrences(markdown: string, pattern: RegExp): number {
+  return [...markdown.matchAll(pattern)].length;
+}
+
+function stripCode(markdown: string): string {
+  return markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+}
+
+function sameWikilinks(source: string, serialized: string): boolean {
+  return JSON.stringify(wikilinks(source)) === JSON.stringify(wikilinks(serialized));
+}
+
+function wikilinks(markdown: string) {
+  const plain = stripCode(markdown);
+  const refs: Array<{ embed: boolean; target: string; fragment: string; alias: string }> = [];
+  for (const match of plain.matchAll(WIKILINK)) {
+    const inner = match[2] ?? "";
+    const bar = inner.indexOf("|");
+    const head = (bar === -1 ? inner : inner.slice(0, bar)).trim();
+    const alias = bar === -1 ? "" : inner.slice(bar + 1).trim();
+    const hash = head.indexOf("#");
+    refs.push({
+      embed: match[1] === "!",
+      target: (hash === -1 ? head : head.slice(0, hash)).trim(),
+      fragment: hash === -1 ? "" : head.slice(hash + 1).trim(),
+      alias,
+    });
+  }
+  return refs;
 }
 
 function lex(markdown: string): Token[] {
-  return lexer(markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"));
+  return compareMarked.lexer(markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"));
 }
 
-function scan(markdown: string): ScanHits {
+function scan(markdown: string, tokens: Token[]): ScanHits {
   const hits: ScanHits = {
     html: false,
     footnote: false,
@@ -100,9 +175,13 @@ function scan(markdown: string): ScanHits {
     reference: false,
     escapedList: false,
     tildeFence: tildeFenceContainsBacktickFence(markdown),
+    orderedTask: false,
+    tableLoss: false,
+    toml: false,
+    unknown: false,
   };
   scanLines(markdown, hits);
-  scanTokens(lex(markdown), hits);
+  scanTokens(tokens, hits);
   return hits;
 }
 
@@ -140,17 +219,36 @@ function scanTokens(tokens: Token[], hits: ScanHits) {
         break;
       case "table":
         if (!isToken<Tokens.Table>(token, "table")) break;
-        for (const cell of token.header) noteProse(visibleInline(cell.tokens), hits);
+        for (const cell of token.header) {
+          noteProse(visibleInline(cell.tokens), hits);
+          scanTokens(cell.tokens, hits);
+        }
         for (const row of token.rows) {
-          for (const cell of row) noteProse(visibleInline(cell.tokens), hits);
+          for (const cell of row) {
+            noteProse(visibleInline(cell.tokens), hits);
+            scanTokens(cell.tokens, hits);
+          }
         }
         break;
       case "paragraph":
       case "heading":
       case "text":
         noteProse(visibleInline(token.tokens ?? [token]), hits);
+        if (token.tokens) scanTokens(token.tokens, hits);
+        break;
+      case "checkbox":
+      case "codespan":
+      case "em":
+      case "strong":
+      case "del":
+      case "link":
+      case "image":
+      case "br":
+      case "escape":
+        if ("tokens" in token && token.tokens) scanTokens(token.tokens, hits);
         break;
       default:
+        hits.unknown = true;
         break;
     }
   }
@@ -191,6 +289,7 @@ function noteProse(text: string, hits: ScanHits) {
 
 function htmlIsLossy(raw: string): boolean {
   if (/<!--[\s\S]*?-->/.test(raw) || /<!DOCTYPE\b/i.test(raw)) return true;
+  if (/<\?/.test(raw) || /<!\[CDATA\[/i.test(raw)) return true;
   const tags = new RegExp("</?([A-Za-z][A-Za-z0-9-]*)\\b([^<>]*)>", "g");
   for (const match of raw.matchAll(tags)) {
     const name = (match[1] ?? "").toLowerCase();
@@ -218,6 +317,9 @@ function scanLines(markdown: string, hits: ScanHits) {
       }
       const visible = line.replace(/`+[^`]*`+/g, "");
       if (ESCAPED_ORDERED_MARKER.test(visible)) hits.escapedList = true;
+      if (ORDERED_TASK.test(line)) hits.orderedTask = true;
+      if (line.trim() === "+++") hits.toml = true;
+      noteTable(line, hits);
       continue;
     }
     if (fence && marker[0] === openChar && marker.length >= openLength) {
@@ -254,6 +356,53 @@ function tildeFenceContainsBacktickFence(markdown: string): boolean {
   return false;
 }
 
+function noteTable(line: string, hits: ScanHits) {
+  if (!/^\s*\|/.test(line)) {
+    hits.tableColumns = undefined;
+    return;
+  }
+  if (line.includes("\\|")) hits.tableLoss = true;
+  const cells = tableCellCount(line);
+  if (cells === null) return;
+  const separator = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+  if (separator) {
+    hits.tableColumns = cells;
+    return;
+  }
+  if (hits.tableColumns === undefined) {
+    hits.tableColumns = cells;
+    return;
+  }
+  if (cells > hits.tableColumns) hits.tableLoss = true;
+}
+
+function tableCellCount(line: string): number | null {
+  if (!line.trim().includes("|")) return null;
+  let code = false;
+  const cells = [""];
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i] ?? "";
+    if (ch === "`") {
+      code = !code;
+      cells[cells.length - 1] += ch;
+      continue;
+    }
+    if (ch === "\\" && !code) {
+      cells[cells.length - 1] += ch + (line[i + 1] ?? "");
+      i += 1;
+      continue;
+    }
+    if (ch === "|" && !code) {
+      cells.push("");
+      continue;
+    }
+    cells[cells.length - 1] += ch;
+  }
+  if (cells[0]?.trim() === "") cells.shift();
+  if (cells.at(-1)?.trim() === "") cells.pop();
+  return cells.length > 1 ? cells.length : null;
+}
+
 function hasHit(hits: ScanHits): boolean {
   return (
     hits.html ||
@@ -262,7 +411,11 @@ function hasHit(hits: ScanHits): boolean {
     hits.math ||
     hits.reference ||
     hits.escapedList ||
-    hits.tildeFence
+    hits.tildeFence ||
+    hits.orderedTask ||
+    hits.tableLoss ||
+    hits.toml ||
+    hits.unknown
   );
 }
 
@@ -275,6 +428,10 @@ function lossSummary(hits: ScanHits): string | null {
   if (hits.reference) found.push("a reference link");
   if (hits.escapedList) found.push("an escaped list marker");
   if (hits.tildeFence) found.push("a tilde fence");
+  if (hits.orderedTask) found.push("an ordered task");
+  if (hits.tableLoss) found.push("a table");
+  if (hits.toml) found.push("TOML frontmatter");
+  if (hits.unknown) found.push("unsupported formatting");
   if (found.length === 0) return null;
   if (found.length === 1) return `Has ${found[0]}.`;
   if (found.length === 2) return `Has ${found[0]} and ${found[1]}.`;
@@ -315,7 +472,7 @@ function blocks(tokens: Token[]): Sem[] {
         break;
       case "html":
         if (!isToken<Tokens.HTML>(token, "html")) break;
-        out.push({ t: "p", c: [{ t: "text", v: decode(token.text).trimEnd() }] });
+        out.push({ t: "p", c: [{ t: "text", v: htmlSemantic(token.raw, token.text).trimEnd() }] });
         break;
       case "def":
         if (!isToken<Tokens.Def>(token, "def")) break;
@@ -402,7 +559,7 @@ function appendInline(out: Sem[], token: Token) {
       out.push({ t: "image", href: token.href, alt: decode(token.text) });
       break;
     case "html":
-      pushText(out, decode(token.text));
+      pushText(out, htmlSemantic(token.raw, token.text));
       break;
     default:
       break;
@@ -414,6 +571,11 @@ function pushText(out: Sem[], value: string) {
   const last = out[out.length - 1];
   if (last?.t === "text") last.v += value;
   else out.push({ t: "text", v: value });
+}
+
+function htmlSemantic(raw: string, text: string): string {
+  if (/<[!?/A-Za-z]/.test(raw)) return raw;
+  return decode(text);
 }
 
 function decode(text: string): string {

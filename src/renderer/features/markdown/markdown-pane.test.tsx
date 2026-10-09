@@ -7,7 +7,7 @@ import type { IpcApi, MarkdownInfo } from "@shared/ipc";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { notifyMarkdownBodiesRewritten } from "../items/item-title-events";
-import { MarkdownEditor } from "./markdown-pane";
+import { MarkdownEditor, MarkdownViewBoundary } from "./markdown-pane";
 import { registeredMarkdownEditor } from "./markdown-session";
 import { inspectRichText } from "./rich-text-safety";
 
@@ -419,6 +419,39 @@ describe("MarkdownEditor", () => {
     const surface = await screen.findByLabelText("Markdown rich text editor");
     expect(surface.querySelector("table")?.textContent).toContain("one");
     expect(surface.querySelector('input[type="checkbox"]')).toBeTruthy();
+  });
+
+  it("renders wikilinks and tasks in preview", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MarkdownEditor
+          itemId="preview-links"
+          workspaceId="workspace"
+          folderId={null}
+          markdown={"See [[Note]]\n\n- [ ] task"}
+          editable={false}
+          onChange={vi.fn()}
+          onBlur={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const surface = await screen.findByLabelText("Markdown preview");
+    expect(surface.getAttribute("contenteditable")).toBe("false");
+    expect(surface.textContent).toContain("Note");
+    expect(surface.textContent).toContain("task");
+  });
+
+  it("shows a fallback when the note view throws", () => {
+    function Broken(): React.ReactNode {
+      throw new Error("display failed");
+    }
+    render(
+      <MarkdownViewBoundary resetKey="note">
+        <Broken />
+      </MarkdownViewBoundary>,
+    );
+    expect(screen.getByText("This note could not be displayed.")).toBeTruthy();
   });
 
   it("does not show the banner in preview", async () => {

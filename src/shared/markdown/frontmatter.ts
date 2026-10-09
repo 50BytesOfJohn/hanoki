@@ -20,5 +20,6 @@ export function splitFrontmatter(markdown: string): MarkdownParts {
 
 export function joinFrontmatter(frontmatter: string | null, body: string): string {
   if (!frontmatter) return body;
-  return frontmatter + body;
+  const separator = frontmatter.endsWith("\n") || frontmatter.endsWith("\r") ? "" : "\n";
+  return frontmatter + separator + body;
 }

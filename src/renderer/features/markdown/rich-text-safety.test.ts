@@ -24,6 +24,15 @@ const lossy = {
   escapes: "1\\. not a list and \\*not em\\*",
   "tilde fence around backticks": "~~~\n```\ninner\n```\n~~~",
   "escaped pipe": "| a \\| b | c |\n| --- | --- |\n| 1 | 2 |",
+  "ordered task": "1. [ ] a\n2. [x] b",
+  "toml frontmatter": "+++\ntitle = 'x'\n+++\nBody",
+  "pipe in code": "| a | b |\n| --- | --- |\n| `a\\|b` | c |",
+  "hash escape": "\\#notatag",
+  "embed escape": "\\![[x]]",
+  "extra table cell": "| a | b |\n| --- | --- |\n| 1 | 2 | 3 extra |",
+  "custom tag": "<foo>bar</foo>",
+  "processing instruction": "<?php echo 1; ?>",
+  "cdata section": "<![CDATA[x]]>",
 } as const;
 
 const safe = {
@@ -67,6 +76,10 @@ const safe = {
   "html inside a code fence": "```\n<span>hi</span>\n```",
   "image inside a code fence": "```\n![alt](https://cdn.example.com/a.png)\n```",
   "footnote inside a code fence": "```\nnote[^1]\n```",
+  "plus plus": "C++ and C++",
+  increment: "x++ y++",
+  "wikilink heading": "See [[Note#heading|alias]]",
+  embed: "![[file.png]]",
 } as const;
 
 describe("inspectRichText", () => {
@@ -121,6 +134,23 @@ describe("inspectRichText", () => {
     expect(performance.now() - started).toBeLessThan(50);
     expect(inspection).toEqual({ losesContent: true, summary: null });
     expect(inspectRichText("a".repeat(RICH_TEXT_CHECK_LIMIT)).losesContent).toBe(false);
+  });
+
+  it("compares task state, task text, and wikilink parts", () => {
+    expect(richTextRoundTripLosesContent("- [x] keep", "- [ ] keep")).toBe(true);
+    expect(richTextRoundTripLosesContent("- [ ] keep", "- [ ] ")).toBe(true);
+    expect(
+      richTextRoundTripLosesContent("See [[Note#heading|alias]]", "See [[Note#heading|other]]"),
+    ).toBe(true);
+    expect(
+      richTextRoundTripLosesContent("See [[Note#heading|alias]]", "See [[Other#heading|alias]]"),
+    ).toBe(true);
+  });
+
+  it("scans a long math-like line quickly", () => {
+    const started = performance.now();
+    inspectRichText(`${"\\".repeat(40)}$`);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 
   it("names the detected constructs without putting them in the banner copy", () => {
