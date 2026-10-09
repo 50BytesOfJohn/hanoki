@@ -254,20 +254,55 @@ describe("createMarkdown", () => {
   });
 
   it("leaves updated_at unchanged when a flush has nothing pending", () => {
-    createWorkspace({ id: "markdown-flush-workspace", name: "Markdown flush" });
-    const service = createChatTreeService();
-    const item = service.createMarkdown({
-      workspaceId: "markdown-flush-workspace",
-      title: "Quiet",
-      folderId: null,
-    });
-    const before = service.getItem(item.id);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      createWorkspace({ id: "markdown-flush-workspace", name: "Markdown flush" });
+      const service = createChatTreeService();
+      const item = service.createMarkdown({
+        workspaceId: "markdown-flush-workspace",
+        title: "Quiet",
+        folderId: null,
+      });
+      const before = service.getItem(item.id);
+      vi.setSystemTime(1_700_000_060_000);
 
-    const flushed = service.flushMarkdownContent(item.id);
+      const flushed = service.flushMarkdownContent(item.id);
 
-    expect(flushed.updatedAt).toBe(before.updatedAt);
-    expect(flushed.data).toEqual({ markdown: "" });
-    expect(service.getItem(item.id).updatedAt).toBe(before.updatedAt);
+      expect(flushed.updatedAt).toBe(1_700_000_000_000);
+      expect(flushed.updatedAt).toBe(before.updatedAt);
+      expect(flushed.data).toEqual({ markdown: "" });
+      expect(service.getItem(item.id).updatedAt).toBe(before.updatedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves updated_at unchanged when a flush matches the stored body", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_700_000_000_000);
+      createWorkspace({ id: "markdown-same-bytes-workspace", name: "Markdown same bytes" });
+      const service = createChatTreeService();
+      const item = service.createMarkdown({
+        workspaceId: "markdown-same-bytes-workspace",
+        title: "Same",
+        folderId: null,
+      });
+      vi.setSystemTime(1_700_000_030_000);
+      service.queueMarkdownContent(item.id, "Hello");
+      service.flushMarkdownContent(item.id);
+      vi.setSystemTime(1_700_000_090_000);
+
+      service.queueMarkdownContent(item.id, "Hello");
+      const flushed = service.flushMarkdownContent(item.id);
+
+      expect(flushed.data).toEqual({ markdown: "Hello" });
+      expect(flushed.updatedAt).toBe(1_700_000_030_000);
+      expect(service.getItem(item.id).updatedAt).toBe(1_700_000_030_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

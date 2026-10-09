@@ -67,8 +67,17 @@ async function adoptRewrittenMarkdown(itemIds: readonly string[]): Promise<void>
       if (fresh.type !== "markdown") return;
       const markdown = fresh.data.markdown;
       const binding = editors.get(itemId);
-      binding?.editor.commands.setContent(markdown, { contentType: "markdown", emitUpdate: false });
-      binding?.resetBaseline();
+      if (binding) {
+        binding.editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setMeta("addToHistory", false);
+            return true;
+          })
+          .setContent(markdown, { contentType: "markdown", emitUpdate: false })
+          .run();
+        binding.resetBaseline();
+      }
       saver?.adopt(markdown);
       queryClient.setQueryData<MarkdownInfo>(queryKeys.items.byId(itemId), (current) =>
         current?.type === "markdown"
