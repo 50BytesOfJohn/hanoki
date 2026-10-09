@@ -32,7 +32,11 @@ import {
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
-import { TOOL_APPROVAL_SAVE_ERROR, toolDenialLabel } from "@/features/chat/tool-approval-response";
+import {
+  TOOL_APPROVAL_SAVE_ERROR,
+  toolApprovalCardNotice,
+  toolDenialLabel,
+} from "@/features/chat/tool-approval-response";
 import {
   Popover,
   PopoverContent,
@@ -708,6 +712,7 @@ function ToolApprovalCard({
   );
   const canAllowForThisChat = toolName.startsWith("terminal");
   const icon = getToolConfig(toolName).icon;
+  const cardNotice = toolApprovalCardNotice(notice);
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
@@ -734,37 +739,47 @@ function ToolApprovalCard({
         <p className="text-[13px] font-medium text-foreground">{title}</p>
       </div>
       {body}
-      {notice ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={hasResponded}
-          onClick={() => respond(false, "The user did not allow this action.")}
-        >
-          Don&apos;t allow
-        </Button>
-        {canAllowForThisChat ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={hasResponded}
-            onClick={() => {
-              // Persist first: the approval below immediately resumes the
-              // generation, and the server reads this flag on that request.
-              updateChatSettings.mutate(
-                { id: chatId, input: { terminalAutoApprove: true } },
-                { onSettled: () => respond(true) },
-              );
-              setHasResponded(true);
-            }}
-          >
-            Allow for this chat
-          </Button>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {cardNotice.kind === "expired" ? (
+            <p className={cardNotice.className}>{cardNotice.text}</p>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={hasResponded}
+                onClick={() => respond(false, "The user did not allow this action.")}
+              >
+                Don&apos;t allow
+              </Button>
+              {canAllowForThisChat ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={hasResponded}
+                  onClick={() => {
+                    // Persist first: the approval below immediately resumes the
+                    // generation, and the server reads this flag on that request.
+                    updateChatSettings.mutate(
+                      { id: chatId, input: { terminalAutoApprove: true } },
+                      { onSettled: () => respond(true) },
+                    );
+                    setHasResponded(true);
+                  }}
+                >
+                  Allow for this chat
+                </Button>
+              ) : null}
+              <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
+                Allow once
+              </Button>
+            </>
+          )}
+        </div>
+        {cardNotice.kind === "save-error" ? (
+          <p className={cardNotice.className}>{cardNotice.text}</p>
         ) : null}
-        <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
-          Allow once
-        </Button>
       </div>
     </div>
   );

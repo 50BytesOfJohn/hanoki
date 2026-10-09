@@ -4,6 +4,24 @@ const USER_DENIED_LABEL = "You didn't allow this";
 
 export const TOOL_APPROVAL_SAVE_ERROR = "Couldn't save that choice. Try again.";
 
+const EXPIRED_ACTION_CLASS = "text-muted-foreground";
+const SAVE_ERROR_CLASS = "text-xs text-destructive";
+
+export function toolApprovalCardNotice(
+  notice: string | null,
+):
+  | { kind: "expired"; text: string; className: typeof EXPIRED_ACTION_CLASS }
+  | { kind: "save-error"; text: string; className: typeof SAVE_ERROR_CLASS }
+  | { kind: "none" } {
+  if (notice === TOOL_APPROVAL_EXPIRED_REASON) {
+    return { kind: "expired", text: notice, className: EXPIRED_ACTION_CLASS };
+  }
+  if (notice === TOOL_APPROVAL_SAVE_ERROR) {
+    return { kind: "save-error", text: notice, className: SAVE_ERROR_CLASS };
+  }
+  return { kind: "none" };
+}
+
 export function settleToolApprovalClick(
   approved: boolean,
   outcome: ToolApprovalOutcome,

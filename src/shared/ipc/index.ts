@@ -106,7 +106,7 @@ export const IPC_CHANNELS = {
   },
 } as const;
 
-export const TOOL_APPROVAL_EXPIRED_REASON = "This request expired, ask again";
+export const TOOL_APPROVAL_EXPIRED_REASON = "This request expired. Ask again.";
 
 export type ToolApprovalOutcome = "approved" | "denied" | "expired";
 

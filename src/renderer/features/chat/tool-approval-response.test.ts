@@ -5,6 +5,7 @@ import { TOOL_APPROVAL_EXPIRED_REASON } from "@shared/ipc";
 import {
   TOOL_APPROVAL_SAVE_ERROR,
   settleToolApprovalClick,
+  toolApprovalCardNotice,
   toolDenialLabel,
 } from "./tool-approval-response";
 
@@ -15,7 +16,7 @@ describe("tool approval click", () => {
       reason: TOOL_APPROVAL_EXPIRED_REASON,
       notice: TOOL_APPROVAL_EXPIRED_REASON,
     });
-    expect(toolDenialLabel(TOOL_APPROVAL_EXPIRED_REASON)).toBe("This request expired, ask again");
+    expect(toolDenialLabel(TOOL_APPROVAL_EXPIRED_REASON)).toBe("This request expired. Ask again.");
   });
 
   it("keeps a user denial when the server has no record", () => {
@@ -31,6 +32,16 @@ describe("tool approval click", () => {
 
   it("names the inline error when saving the choice fails", () => {
     expect(TOOL_APPROVAL_SAVE_ERROR).toBe("Couldn't save that choice. Try again.");
+    expect(toolApprovalCardNotice(TOOL_APPROVAL_EXPIRED_REASON)).toEqual({
+      kind: "expired",
+      text: "This request expired. Ask again.",
+      className: "text-muted-foreground",
+    });
+    expect(toolApprovalCardNotice(TOOL_APPROVAL_SAVE_ERROR)).toEqual({
+      kind: "save-error",
+      text: "Couldn't save that choice. Try again.",
+      className: "text-xs text-destructive",
+    });
   });
 
   it("passes an allow through when the server recorded it", () => {
