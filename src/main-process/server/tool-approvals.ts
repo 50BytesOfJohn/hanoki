@@ -38,10 +38,10 @@ type ToolWithExecute = {
   ) => unknown;
 };
 
-const records = new Map<string, ToolApprovalRecord>();
+let records = new Map<string, ToolApprovalRecord>();
 
-if (process.env.VITEST === "true") {
-  Reflect.set(globalThis, "hanokiToolApprovalRecords", records);
+export function bindToolApprovalRecords(store: Map<string, ToolApprovalRecord>): void {
+  records = store;
 }
 
 function recordKey(chatId: string, toolCallId: string): string {
