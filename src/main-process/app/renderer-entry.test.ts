@@ -51,9 +51,9 @@ describe("renderer navigation", () => {
     for (const filePath of paths) {
       const entry = rendererEntryUrl(undefined, filePath);
       const loaded = pathToFileURL(filePath)
-        .href.replaceAll("%25", "%")
-        .replaceAll("%5B", "[")
-        .replaceAll("%5D", "]");
+        .href.replaceAll("%5B", "[")
+        .replaceAll("%5D", "]")
+        .replaceAll("%25", "%");
       expect(isRendererEntryUrl(loaded, entry)).toBe(true);
       expect(isRendererEntryUrl(`${loaded}#/chat/1`, entry)).toBe(true);
     }
