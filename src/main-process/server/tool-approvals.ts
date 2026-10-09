@@ -3,6 +3,8 @@ import type { ModelMessage, ToolApprovalStatus } from "ai";
 
 import { TOOL_APPROVAL_EXPIRED_REASON, type ToolApprovalOutcome } from "@shared/ipc";
 
+import { toolApprovalRecords as records } from "./tool-approval-records";
+
 /**
  * In-memory record of a tool call that is waiting on Allow once / Don't allow.
  * Lost on restart.
@@ -37,12 +39,6 @@ type ToolWithExecute = {
     options: { toolCallId: string; messages?: readonly ModelMessage[] },
   ) => unknown;
 };
-
-let records = new Map<string, ToolApprovalRecord>();
-
-export function bindToolApprovalRecords(store: Map<string, ToolApprovalRecord>): void {
-  records = store;
-}
 
 function recordKey(chatId: string, toolCallId: string): string {
   return `${chatId}\0${toolCallId}`;
