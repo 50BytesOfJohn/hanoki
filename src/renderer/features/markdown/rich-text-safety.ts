@@ -17,6 +17,8 @@ export interface RichTextInspection {
   summary: string | null;
 }
 
+export const RICH_TEXT_CHECK_LIMIT = 200_000;
+
 /**
  * Parse with the editor's Markdown handlers and serialize back.
  * Formatting-only spelling (markers, fences, rules, emphasis, autolinks,
@@ -27,6 +29,9 @@ const HTML_MARKUP =
 const ANY_IMAGE = /!\[[^\]\n]*\](?:\([^)\n]*\)|\[[^\]\n]*\])/;
 
 export function inspectRichText(markdown: string): RichTextInspection {
+  if (markdown.length > RICH_TEXT_CHECK_LIMIT) {
+    return { losesContent: true, summary: null };
+  }
   let serialized: string | null = null;
   try {
     serialized = manager.serialize(manager.parse(markdown));
@@ -42,8 +47,35 @@ export function inspectRichText(markdown: string): RichTextInspection {
 
 /** True when `serialized` dropped content from `source`, including both HTML outcomes. */
 export function richTextRoundTripLosesContent(source: string, serialized: string): boolean {
-  if (containsHtmlOrImage(source)) return true;
+  if (containsHtmlOrImage(source) || tildeFenceContainsBacktickFence(source)) return true;
   return canonicalizeMarkdown(source) !== canonicalizeMarkdown(serialized);
+}
+
+function tildeFenceContainsBacktickFence(markdown: string): boolean {
+  const lines = markdown
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n");
+  let openChar = "";
+  let openLength = 0;
+  for (const line of lines) {
+    const fence = FENCE.exec(line);
+    const marker = fence?.[2] ?? "";
+    if (openLength === 0) {
+      if (fence) {
+        openChar = marker[0] ?? "";
+        openLength = marker.length;
+      }
+      continue;
+    }
+    if (fence && marker[0] === openChar && marker.length >= openLength) {
+      openChar = "";
+      openLength = 0;
+      continue;
+    }
+    if (openChar === "~" && fence && marker[0] === "`" && marker.length >= openLength) return true;
+  }
+  return false;
 }
 
 function containsHtmlOrImage(markdown: string): boolean {

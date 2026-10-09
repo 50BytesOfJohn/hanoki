@@ -250,6 +250,23 @@ describe("createMarkdown", () => {
       expect.objectContaining({ data: { markdown: "Flushed content" } }),
     );
   });
+
+  it("leaves updated_at unchanged when a flush has nothing pending", () => {
+    createWorkspace({ id: "markdown-flush-workspace", name: "Markdown flush" });
+    const service = createChatTreeService();
+    const item = service.createMarkdown({
+      workspaceId: "markdown-flush-workspace",
+      title: "Quiet",
+      folderId: null,
+    });
+    const before = service.getItem(item.id);
+
+    const flushed = service.flushMarkdownContent(item.id);
+
+    expect(flushed.updatedAt).toBe(before.updatedAt);
+    expect(flushed.data).toEqual({ markdown: "" });
+    expect(service.getItem(item.id).updatedAt).toBe(before.updatedAt);
+  });
 });
 
 describe("updateChatSettings", () => {
