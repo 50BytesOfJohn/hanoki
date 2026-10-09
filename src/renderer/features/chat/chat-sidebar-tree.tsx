@@ -32,6 +32,7 @@ import {
   MoreHorizontalIcon,
   PencilEdit01Icon,
   Search01Icon,
+  Target02Icon,
   SplitIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -80,6 +81,7 @@ import {
 } from "@/components/ui/menu";
 
 import { chatTreeApi } from "@/api/chat-tree";
+import { foldersApi } from "@/api/folders";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
@@ -93,6 +95,7 @@ import {
 } from "@/mutations/chat-tree";
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
+import { FolderGoalPopover } from "@/features/markdown/folder-goal-popover";
 import { useCreateTerminal } from "@/mutations/terminals";
 import {
   useCreateMarkdown,
@@ -158,6 +161,7 @@ type ChatTreeContextMenuAction =
   | "open-above"
   | "open-below"
   | "clone"
+  | "word-goal"
   | "rename"
   | "delete";
 
@@ -174,10 +178,12 @@ function selectRenameInputText(event: React.FocusEvent<HTMLInputElement>) {
 function ChatTreeItemContextMenu({
   children,
   itemKind,
+  hasWordGoal = false,
   onAction,
 }: {
   children: React.ReactElement;
   itemKind: "folder" | ItemType;
+  hasWordGoal?: boolean;
   onAction: (action: ChatTreeContextMenuAction) => void;
 }) {
   return (
@@ -255,6 +261,12 @@ function ChatTreeItemContextMenu({
             <ContextMenuItem onClick={() => onAction("clone")}>
               <HugeiconsIcon icon={Copy01Icon} />
               Clone
+            </ContextMenuItem>
+          ) : null}
+          {itemKind === "folder" ? (
+            <ContextMenuItem onClick={() => onAction("word-goal")}>
+              <HugeiconsIcon icon={Target02Icon} />
+              {hasWordGoal ? "Edit Word Goal…" : "Set Word Goal…"}
             </ContextMenuItem>
           ) : null}
           <ContextMenuItem onClick={() => onAction("rename")}>
@@ -447,6 +459,16 @@ function ChatSidebarTreeInner({
   const createTerminalMutation = useCreateTerminal();
   const createMarkdownMutation = useCreateMarkdown();
   const exportMarkdownNotes = useExportMarkdownNotesFolder();
+  const goalIds = useQuery({
+    queryKey: queryKeys.wordGoals.ids(workspaceId),
+    queryFn: () => foldersApi.listWordGoalIds(workspaceId),
+  });
+  const goalIdSet = new Set(goalIds.data ?? []);
+  const [wordGoal, setWordGoal] = React.useState<{
+    folderId: string;
+    folderName: string;
+    anchor: HTMLElement;
+  } | null>(null);
   const importMarkdownNotes = useImportMarkdownNotesFolder();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
@@ -970,6 +992,17 @@ function ChatSidebarTreeInner({
                     void cloneChatMutation.mutateAsync({ id: data.item.id }).then(() => {
                       invalidateTree();
                     });
+                  } else if (action === "word-goal" && data.kind === "folder") {
+                    const folderId = data.folder.id;
+                    const folderName = data.folder.name;
+                    afterContextMenuClose(() => {
+                      const anchor = document.querySelector(
+                        `[data-folder-anchor="${CSS.escape(folderId)}"]`,
+                      );
+                      if (anchor instanceof HTMLElement) {
+                        setWordGoal({ folderId, folderName, anchor });
+                      }
+                    });
                   } else if (action === "rename") {
                     afterContextMenuClose(() => {
                       item.startRenaming();
@@ -1073,11 +1106,13 @@ function ChatSidebarTreeInner({
                     <ChatTreeItemContextMenu
                       key={item.getKey()}
                       itemKind="folder"
+                      hasWordGoal={goalIdSet.has(data.folder.id)}
                       onAction={handleContextMenuAction}
                     >
                       <ChatTreeItemRow
                         level={depth}
                         {...folderItemProps}
+                        data-folder-anchor={data.folder.id}
                         data-selected={item.isSelected() || undefined}
                         data-drop-target={item.isDragTarget() || undefined}
                       >
@@ -1112,6 +1147,17 @@ function ChatSidebarTreeInner({
         onOpenChange={setSearchOpen}
         onSelectChat={setCurrentChat}
       />
+      {wordGoal ? (
+        <FolderGoalPopover
+          folderId={wordGoal.folderId}
+          folderName={wordGoal.folderName}
+          anchor={wordGoal.anchor}
+          open
+          onOpenChange={(next) => {
+            if (!next) setWordGoal(null);
+          }}
+        />
+      ) : null}
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}
         isPending={deleteItemsMutation.isPending}

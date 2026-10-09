@@ -11,6 +11,7 @@ import {
 
 import { getAppDatabase } from "../db/database";
 import { folders, items, noteLinks } from "../db/schema";
+import { writeMarkdownWordCount } from "./word-goals";
 
 const BACKLINK_LIMIT = 50;
 
@@ -95,10 +96,7 @@ export function rewriteNoteLinkTargets(
     const current = readMarkdown(source.data);
     const next = rewriteWikilinkTargets(current, previousTitle, nextTitle);
     if (next === current) continue;
-    db.update(items)
-      .set({ data: { ...source.data, markdown: next }, updatedAt: Date.now() })
-      .where(eq(items.id, fromId))
-      .run();
+    writeMarkdownWordCount(fromId, next, "neutral");
     reindexNoteLinks(fromId);
     rewritten.push(fromId);
   }

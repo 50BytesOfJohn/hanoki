@@ -321,7 +321,13 @@ const WikilinkPicker = React.forwardRef<
   );
 });
 
-export function BacklinksFooter({ itemId }: { itemId: string }) {
+export function BacklinksFooter({
+  itemId,
+  trailing,
+}: {
+  itemId: string;
+  trailing?: React.ReactNode;
+}) {
   const [open, setOpen] = React.useState(true);
   const query = useQuery({
     queryKey: queryKeys.notes.backlinks(itemId),
@@ -331,13 +337,16 @@ export function BacklinksFooter({ itemId }: { itemId: string }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="border-t border-separator">
-      <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-6 py-1.5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
-        <HugeiconsIcon
-          icon={open ? ArrowDown01Icon : ArrowRight01Icon}
-          className="size-3 shrink-0"
-        />
-        Backlinks
-      </CollapsibleTrigger>
+      <div className="flex items-center gap-3 px-6 py-1.5">
+        <CollapsibleTrigger className="flex items-center gap-1.5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+          <HugeiconsIcon
+            icon={open ? ArrowDown01Icon : ArrowRight01Icon}
+            className="size-3 shrink-0"
+          />
+          Backlinks
+        </CollapsibleTrigger>
+        {trailing ? <div className="ml-auto min-w-0">{trailing}</div> : null}
+      </div>
       <CollapsibleContent>
         {query.isPending ? null : query.isError ? (
           <p className="px-6 py-2 text-[12px] text-muted-foreground">

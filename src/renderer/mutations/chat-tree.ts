@@ -41,6 +41,7 @@ export function useRenameChatTreeItem() {
       return itemsApi.updateTitle(itemId.slice("item:".length), name);
     },
     onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
       if (isItemInfo(result)) {
         applyItemTitleUpdate({
           type: "item:title-updated",
@@ -112,20 +113,29 @@ export function useDeleteChatTreeItems() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.items.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
     },
   });
 }
 
 export function useMoveFolder() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) =>
       foldersApi.move(id, parentId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
+    },
   });
 }
 
 export function useMoveItem() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, folderId }: { id: string; folderId: string | null }) =>
       itemsApi.move(id, folderId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
+    },
   });
 }

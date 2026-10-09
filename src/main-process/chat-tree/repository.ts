@@ -6,6 +6,7 @@ import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasonin
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
+import { writeMarkdownWordCount, type WordCountMode } from "./word-goals";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -1211,14 +1212,14 @@ export function createMarkdown(input: {
   return markdown;
 }
 
-export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {
+export function updateMarkdownContent(
+  id: string,
+  markdown: string,
+  countMode: WordCountMode = "edit",
+): MarkdownRow {
   const item = requireItemById(id);
   if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  getAppDatabase()
-    .update(items)
-    .set({ data: { ...item.data, markdown }, updatedAt: Date.now() })
-    .where(eq(items.id, id))
-    .run();
+  writeMarkdownWordCount(id, markdown, countMode);
   const updated = requireItemById(id);
   if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   reindexNoteLinks(updated.id);

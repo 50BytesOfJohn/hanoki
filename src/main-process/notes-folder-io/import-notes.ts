@@ -61,7 +61,7 @@ export async function importMarkdownNotesFromDirectory(
         title: file.title,
         folderId,
       });
-      chatTree.queueMarkdownContent(item.id, file.body);
+      chatTree.queueMarkdownContent(item.id, file.body, "import");
       chatTree.flushMarkdownContent(item.id);
       noteCount += 1;
     } catch (error) {

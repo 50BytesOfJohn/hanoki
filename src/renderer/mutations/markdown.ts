@@ -52,6 +52,7 @@ export function useFlushMarkdownContent() {
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.notes.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
     },
   });
 }
@@ -86,6 +87,7 @@ export function useImportMarkdownNotesFolder() {
     onSuccess: (result) => {
       if (result.status !== "imported") return;
       void queryClient.invalidateQueries({ queryKey: queryKeys.chatTree.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.wordGoals.all });
       const hasSkips =
         result.skippedOversizedCount > 0 ||
         result.ignoredNonMarkdownCount > 0 ||

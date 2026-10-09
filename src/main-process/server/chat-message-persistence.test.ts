@@ -31,6 +31,7 @@ beforeAll(() => {
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
+      word_count integer,
       created_at integer not null,
       updated_at integer not null
     )

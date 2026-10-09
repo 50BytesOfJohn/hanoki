@@ -42,6 +42,12 @@ export const queryKeys = {
     detail: (workspaceId: string, folderId: string) =>
       [...queryKeys.folders.all, "detail", workspaceId, folderId] as const,
   },
+  wordGoals: {
+    all: ["wordGoals"] as const,
+    ids: (workspaceId: string) => [...queryKeys.wordGoals.all, "ids", workspaceId] as const,
+    byFolder: (folderId: string) => [...queryKeys.wordGoals.all, "folder", folderId] as const,
+    nearest: (itemId: string) => [...queryKeys.wordGoals.all, "nearest", itemId] as const,
+  },
   providers: {
     all: ["providers"] as const,
     list: () => [...queryKeys.providers.all, "list"] as const,

@@ -83,6 +83,7 @@ export const items = sqliteTable(
     data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),
+    wordCount: integer("word_count"),
     createdAt: timestampMs("created_at"),
     updatedAt: timestampMs("updated_at"),
   },
@@ -91,6 +92,49 @@ export const items = sqliteTable(
     index("items_workspace_id_idx").on(table.workspaceId),
     index("items_folder_id_idx").on(table.folderId),
     index("items_type_idx").on(table.type),
+  ],
+);
+
+export const folderWordGoals = sqliteTable(
+  "folder_word_goals",
+  {
+    folderId: text("folder_id")
+      .primaryKey()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    targetWords: integer("target_words").notNull().default(50000),
+    startedAt: integer("started_at").notNull(),
+    startDay: text("start_day").notNull(),
+    baselineWords: integer("baseline_words").notNull(),
+    preStartToday: integer("pre_start_today").notNull().default(0),
+    createdAt: timestampMs("created_at"),
+    updatedAt: timestampMs("updated_at"),
+  },
+  (table) => [
+    index("folder_word_goals_workspace_id_idx").on(table.workspaceId),
+    check("folder_word_goals_target_positive", sql`${table.targetWords} > 0`),
+  ],
+);
+
+export const noteWordDays = sqliteTable(
+  "note_word_days",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    day: text("day").notNull(),
+    startWords: integer("start_words").notNull(),
+    endWords: integer("end_words").notNull(),
+    updatedAt: timestampMs("updated_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.day] }),
+    index("note_word_days_workspace_day_idx").on(table.workspaceId, table.day),
   ],
 );
 

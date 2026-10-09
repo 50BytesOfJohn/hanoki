@@ -22,6 +22,13 @@
       "when": 1790583757373,
       "tag": "0002_note_links",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791532785736,
+      "tag": "0004_word_goals",
+      "breakpoints": true
     }
   ]
 }

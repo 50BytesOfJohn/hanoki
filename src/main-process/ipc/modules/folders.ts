@@ -1,6 +1,7 @@
-import { IPC_CHANNELS, type FolderInfo } from "@shared/ipc";
+import { IPC_CHANNELS, type FolderInfo, type FolderWordGoalStats } from "@shared/ipc";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseFolderName } from "@shared/folder/folder-name";
+import { parseUuidV7 } from "@shared/uuidv7";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -96,4 +97,66 @@ export function registerFoldersIpcModule(
       await services.terminals.pruneMissingItems();
     },
   });
+
+  registerInvokeHandler<[string, number], FolderWordGoalStats>(context, registeredChannels, {
+    channel: IPC_CHANNELS.folders.setWordGoal,
+    parseArgs: (args) => {
+      expectArgCount(args, 2);
+      return [parseValidFolderId(args[0]), parseTargetWords(args[1])];
+    },
+    handler: ({ services }, _event, id, targetWords) =>
+      services.chatTree.setFolderWordGoal(id, targetWords),
+  });
+
+  registerInvokeHandler<[string], void>(context, registeredChannels, {
+    channel: IPC_CHANNELS.folders.clearWordGoal,
+    parseArgs: (args) => {
+      expectArgCount(args, 1);
+      return [parseValidFolderId(args[0])];
+    },
+    handler: ({ services }, _event, id) => {
+      services.chatTree.clearFolderWordGoal(id);
+    },
+  });
+
+  registerInvokeHandler<[string], FolderWordGoalStats | null>(context, registeredChannels, {
+    channel: IPC_CHANNELS.folders.getWordGoal,
+    parseArgs: (args) => {
+      expectArgCount(args, 1);
+      return [parseValidFolderId(args[0])];
+    },
+    handler: ({ services }, _event, id) => services.chatTree.getFolderWordGoalStats(id),
+  });
+
+  registerInvokeHandler<[string], FolderWordGoalStats | null>(context, registeredChannels, {
+    channel: IPC_CHANNELS.folders.getNearestWordGoal,
+    parseArgs: (args) => {
+      expectArgCount(args, 1);
+      return [parseValidItemId(args[0])];
+    },
+    handler: ({ services }, _event, itemId) => services.chatTree.getNearestWordGoalForItem(itemId),
+  });
+
+  registerInvokeHandler<[string], string[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.folders.listWordGoalIds,
+    parseArgs: (args) => {
+      expectArgCount(args, 1);
+      return [parseValidWorkspaceId(args[0])];
+    },
+    handler: ({ services }, _event, workspaceId) =>
+      services.chatTree.listFolderWordGoalIds(workspaceId),
+  });
+}
+
+function parseValidItemId(input: unknown): string {
+  const parsed = parseUuidV7(input, "Item ID");
+  if (!parsed.ok) throw AppError.badRequest(parsed.error);
+  return parsed.value;
+}
+
+function parseTargetWords(input: unknown): number {
+  if (typeof input !== "number" || !Number.isInteger(input) || input < 1) {
+    throw AppError.badRequest("Word goal target must be a positive integer.");
+  }
+  return input;
 }

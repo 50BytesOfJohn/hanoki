@@ -362,7 +362,7 @@ function ItemPane({
           dragHandleProps={{ ...attributes, ...listeners }}
           onClose={() => useWorkspaceStore.getState().closePane(tab.id, pane.id)}
         />
-        <PaneContent pane={pane} />
+        <PaneContent pane={pane} isFocused={isFocused} />
         <PaneDropOverlay
           paneId={pane.id}
           intent={dropIntent}
@@ -381,9 +381,10 @@ function ItemPane({
   );
 }
 
-function PaneContent({ pane }: { pane: ItemPaneState }) {
+function PaneContent({ pane, isFocused }: { pane: ItemPaneState; isFocused: boolean }) {
   if (pane.itemType === "terminal") return <TerminalPane itemId={pane.itemId} />;
-  if (pane.itemType === "markdown") return <MarkdownPane itemId={pane.itemId} />;
+  if (pane.itemType === "markdown")
+    return <MarkdownPane itemId={pane.itemId} isFocused={isFocused} />;
   if (pane.view === "/chat/graph") {
     return <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />;
   }

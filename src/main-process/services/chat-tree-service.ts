@@ -32,6 +32,13 @@ import {
   type ChatTreeSnapshot as ChatTreeSnapshotRecord,
   type FolderRow,
 } from "../chat-tree/repository";
+import {
+  clearFolderWordGoal as clearFolderWordGoalInRepo,
+  getFolderWordGoalStats as getFolderWordGoalStatsInRepo,
+  getNearestWordGoalForItem as getNearestWordGoalForItemInRepo,
+  listFolderWordGoalIds as listFolderWordGoalIdsInRepo,
+  setFolderWordGoal as setFolderWordGoalInRepo,
+} from "../chat-tree/word-goals";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
@@ -48,6 +55,7 @@ import type {
   ChatTreeUiState,
   DeleteChatTreeItemsResult,
   FolderInfo,
+  FolderWordGoalStats,
   MarkdownInfo,
   MarkdownTitleOption,
   NoteBacklink,
@@ -71,6 +79,7 @@ const MARKDOWN_AUTOSAVE_WAIT_MS = 500;
 interface PendingMarkdownSave {
   markdown: string;
   timeout: ReturnType<typeof setTimeout> | null;
+  countMode: "edit" | "import";
 }
 
 export interface ChatTreeService {
@@ -93,12 +102,17 @@ export interface ChatTreeService {
     title: string;
     folderId: string | null;
   }): MarkdownInfo;
-  queueMarkdownContent(id: string, markdown: string): void;
+  queueMarkdownContent(id: string, markdown: string, countMode?: "edit" | "import"): void;
   flushMarkdownContent(id: string): MarkdownInfo;
   flushAllMarkdownContent(): void;
   listMarkdownTitles(workspaceId: string): MarkdownTitleOption[];
   listNoteBacklinks(itemId: string): NoteBacklink[];
   rebuildNoteLinks(workspaceId: string): void;
+  setFolderWordGoal(folderId: string, targetWords: number): FolderWordGoalStats;
+  clearFolderWordGoal(folderId: string): void;
+  getFolderWordGoalStats(folderId: string): FolderWordGoalStats | null;
+  getNearestWordGoalForItem(itemId: string): FolderWordGoalStats | null;
+  listFolderWordGoalIds(workspaceId: string): string[];
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -408,14 +422,20 @@ export function createChatTreeService(): ChatTreeService {
     }
 
     if (pending.timeout) clearTimeout(pending.timeout);
-    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
+    const saved = toMarkdownInfo(
+      updateMarkdownContentInRepo(id, pending.markdown, pending.countMode),
+    );
     pendingMarkdownSaves.delete(id);
     return saved;
   }
 
-  function queuePendingMarkdownContent(id: string, markdown: string): void {
+  function queuePendingMarkdownContent(
+    id: string,
+    markdown: string,
+    countMode: "edit" | "import" = "edit",
+  ): void {
     discardPendingMarkdownSave(id);
-    const pending: PendingMarkdownSave = { markdown, timeout: null };
+    const pending: PendingMarkdownSave = { markdown, timeout: null, countMode };
     pending.timeout = setTimeout(() => {
       pending.timeout = null;
       try {
@@ -623,8 +643,8 @@ export function createChatTreeService(): ChatTreeService {
       return toMarkdownInfo(createMarkdown(input));
     },
 
-    queueMarkdownContent(id: string, markdown: string): void {
-      queuePendingMarkdownContent(id, markdown);
+    queueMarkdownContent(id: string, markdown: string, countMode?: "edit" | "import"): void {
+      queuePendingMarkdownContent(id, markdown, countMode);
     },
 
     flushMarkdownContent(id: string): MarkdownInfo {
@@ -646,6 +666,26 @@ export function createChatTreeService(): ChatTreeService {
     rebuildNoteLinks(workspaceId: string): void {
       flushAllPendingMarkdownContent();
       rebuildWorkspaceNoteLinks(workspaceId);
+    },
+
+    setFolderWordGoal(folderId: string, targetWords: number) {
+      return setFolderWordGoalInRepo(folderId, targetWords);
+    },
+
+    clearFolderWordGoal(folderId: string): void {
+      clearFolderWordGoalInRepo(folderId);
+    },
+
+    getFolderWordGoalStats(folderId: string) {
+      return getFolderWordGoalStatsInRepo(folderId);
+    },
+
+    getNearestWordGoalForItem(itemId: string) {
+      return getNearestWordGoalForItemInRepo(itemId);
+    },
+
+    listFolderWordGoalIds(workspaceId: string): string[] {
+      return listFolderWordGoalIdsInRepo(workspaceId);
     },
 
     cloneChat(chatId: string): ChatInfo {
