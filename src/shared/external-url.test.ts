@@ -18,6 +18,14 @@ describe("externalUrlToOpen", () => {
     expect(externalUrlToOpen("mailto:hello@example.com?attach=/tmp/x")).toBe(
       "mailto:hello@example.com",
     );
+    expect(externalUrlToOpen("mailto:x%3Fattach=secret@example.com")).toBeNull();
+    expect(externalUrlToOpen("mailto:x%253Fattach=secret@example.com")).toBeNull();
+    expect(externalUrlToOpen("mailto:hello@example.com?Subject=Hi&BODY=Yo&Attach=/tmp/a")).toBe(
+      "mailto:hello@example.com?subject=Hi&body=Yo",
+    );
+    expect(externalUrlToOpen("mailto:hello%40example.com?subject=Hi")).toBe(
+      "mailto:hello@example.com?subject=Hi",
+    );
   });
 
   it("rejects javascript, file, smb, and custom schemes", () => {

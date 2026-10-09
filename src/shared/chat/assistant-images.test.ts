@@ -50,4 +50,15 @@ describe("stripRemoteAssistantImages", () => {
     expect(output).not.toContain("(b).png)");
     expect(output).toContain("c");
   });
+
+  it("keeps a private-use placeholder that is not this call's marker", () => {
+    const decoy = "\uE0000\uE001";
+    const output = stripRemoteAssistantImages(
+      `${decoy} ![a](https://example.com/a.png)\n\`\`\`\n${decoy}\n\`\`\``,
+    );
+    expect(output).toContain(decoy);
+    expect(output.match(/\uE0000\uE001/g)).toHaveLength(2);
+    expect(output).not.toContain("example.com/a.png");
+    expect(output).toContain("```\n\uE0000\uE001\n```");
+  });
 });

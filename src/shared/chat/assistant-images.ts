@@ -30,9 +30,13 @@ function escapeRegExp(value: string): string {
 }
 
 function maskCode(markdown: string) {
+  let marker = "";
+  do {
+    marker = `\uE000${crypto.randomUUID()}\uE001`;
+  } while (markdown.includes(marker));
   const blocks: string[] = [];
   const hide = (block: string) => {
-    const token = `\uE000${blocks.length}\uE001`;
+    const token = `${marker}${blocks.length}${marker}`;
     blocks.push(block);
     return token;
   };
@@ -61,7 +65,7 @@ function maskCode(markdown: string) {
     }
   }
   if (closing) out.push(hide(buffer.join("\n")));
-  return { text: out.join("\n"), blocks };
+  return { text: out.join("\n"), blocks, marker };
 }
 
 function readInlineImage(
@@ -150,9 +154,9 @@ function stripInlineImages(markdown: string): string {
 export function stripRemoteAssistantImages(markdown: string): string {
   const masked = maskCode(markdown);
   const stripped = stripPlainAssistantImages(masked.text);
-  return stripped.replace(
-    /\uE000(\d+)\uE001/g,
-    (_match, index: string) => masked.blocks[Number(index)] ?? "",
+  return masked.blocks.reduce(
+    (text, block, index) => text.replaceAll(`${masked.marker}${index}${masked.marker}`, block),
+    stripped,
   );
 }
 

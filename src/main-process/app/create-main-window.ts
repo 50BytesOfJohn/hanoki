@@ -1,8 +1,8 @@
 import { app, BrowserWindow, type Session } from "electron";
 import path from "node:path";
 
-import { isRemoteImageUrl } from "@shared/chat/assistant-images";
 import { rendererHeaderContentSecurityPolicy } from "./content-security-policy";
+import { fileRequestHasHost } from "./file-request";
 import { openExternalUrl } from "./open-external";
 import { currentRendererEntryUrl, isRendererEntryUrl, windowOpenDecision } from "./renderer-entry";
 import { type TrustedSenderRegistry } from "../ipc/trusted-senders";
@@ -19,11 +19,7 @@ function installRendererContentSecurityPolicy(
   if (contentSecurityPolicyInstalled) return;
   contentSecurityPolicyInstalled = true;
   webSession.webRequest.onBeforeRequest({ urls: ["file://*/*"] }, (details, callback) => {
-    if (details.resourceType === "image" && isRemoteImageUrl(details.url)) {
-      callback({ cancel: true });
-      return;
-    }
-    callback({});
+    callback(fileRequestHasHost(details.url) ? { cancel: true } : {});
   });
   webSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.resourceType !== "mainFrame") {

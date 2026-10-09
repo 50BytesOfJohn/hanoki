@@ -5,46 +5,7 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 
 import { rendererContentSecurityPolicy } from "./src/main-process/app/content-security-policy";
-
-const ARKTYPE_JITLESS = "jitless: $ark.config?.jitless ?? envHasCsp()";
-
-function arktypeJitless(): Plugin {
-  const rewrite = (code: string) =>
-    code.includes("jitless: envHasCsp()")
-      ? code.replaceAll("jitless: envHasCsp()", ARKTYPE_JITLESS)
-      : null;
-  return {
-    name: "hanoki-arktype-jitless",
-    config() {
-      return {
-        optimizeDeps: {
-          esbuildOptions: {
-            plugins: [
-              {
-                name: "hanoki-arktype-jitless",
-                setup(build) {
-                  build.onLoad({ filter: /kinds\.js$/ }, async (args) => {
-                    if (!args.path.includes(`${path.sep}@ark${path.sep}schema${path.sep}`)) return;
-                    const { readFileSync } = await import("node:fs");
-                    const contents = rewrite(readFileSync(args.path, "utf8"));
-                    if (contents == null) return;
-                    return { contents, loader: "js" };
-                  });
-                },
-              },
-            ],
-          },
-        },
-      };
-    },
-    transform(code, id) {
-      if (!id.includes("@ark/schema") || !id.includes("kinds.js")) return;
-      const next = rewrite(code);
-      if (next == null) return;
-      return next;
-    },
-  };
-}
+import { arktypeJitless } from "./src/renderer/arktype-jitless";
 
 function devContentSecurityPolicy(): Plugin {
   const prod = rendererContentSecurityPolicy("prod");
