@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { isAttachedItemKind } from "@shared/chat/attached-items";
 import type { TiptapDocument } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";
+import { openExternalFromMouseEvent } from "@/lib/open-external-link";
 import { openMentionTarget } from "./mention-context";
 
 const messageExtensions = createMessageTiptapExtensions();
@@ -31,6 +32,7 @@ export const TiptapMessageContent = React.memo(function TiptapMessageContent({
     <div
       className={cn("tiptap-message-content", TIPTAP_MESSAGE_PROSE_CLASS, className)}
       onClick={(event) => {
+        if (openExternalFromMouseEvent(event.nativeEvent)) return;
         if (!(event.target instanceof HTMLElement)) return;
         const target = event.target.closest("[data-mention-kind]");
         if (!target) return;

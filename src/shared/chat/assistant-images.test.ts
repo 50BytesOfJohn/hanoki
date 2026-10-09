@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+
+import { stripRemoteAssistantImages } from "./assistant-images";
+
+describe("stripRemoteAssistantImages", () => {
+  it("removes remote markdown and html images from assistant output", () => {
+    const output = stripRemoteAssistantImages(
+      [
+        "See ![cat](https://example.com/cat.png) and ![dog](http://example.com/dog.png).",
+        'Also <img src="https://cdn.example/a.png" alt="remote">.',
+        "Keep ![local](./shot.png) and ![inline](data:image/png;base64,aaaa).",
+        '<img src="data:image/png;base64,bbbb" alt="pixels">',
+        "![cdn](//cdn.example/x.png)",
+      ].join("\n"),
+    );
+
+    expect(output).not.toContain("https://example.com/cat.png");
+    expect(output).not.toContain("http://example.com/dog.png");
+    expect(output).not.toContain("https://cdn.example/a.png");
+    expect(output).not.toContain("//cdn.example/x.png");
+    expect(output).toContain("cat");
+    expect(output).toContain("dog");
+    expect(output).toContain("remote");
+    expect(output).toContain("![local](./shot.png)");
+    expect(output).toContain("![inline](data:image/png;base64,aaaa)");
+    expect(output).toContain('src="data:image/png;base64,bbbb"');
+  });
+});

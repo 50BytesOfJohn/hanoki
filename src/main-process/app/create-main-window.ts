@@ -1,9 +1,31 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, type Session } from "electron";
 import path from "node:path";
 
-import { isTrustedRendererUrl, type TrustedSenderRegistry } from "../ipc/trusted-senders";
+import { rendererContentSecurityPolicy } from "./content-security-policy";
+import { openExternalUrl } from "./open-external";
+import { currentRendererEntryUrl, isRendererEntryUrl, windowOpenDecision } from "./renderer-entry";
+import { type TrustedSenderRegistry } from "../ipc/trusted-senders";
 import { WINDOW_TOOLBAR_HEIGHT, WINDOW_TRAFFIC_LIGHTS_POSITION } from "@shared/window-chrome";
 import { createPersistentWindowState } from "../lib/persistent-window-state";
+
+let contentSecurityPolicyInstalled = false;
+
+function installRendererContentSecurityPolicy(webSession: Session, policy: string): void {
+  if (contentSecurityPolicyInstalled) return;
+  contentSecurityPolicyInstalled = true;
+  webSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType !== "mainFrame") {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [policy],
+      },
+    });
+  });
+}
 
 export interface CreateMainWindowOptions {
   trustedSenders: TrustedSenderRegistry;
@@ -71,17 +93,21 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     options.trustedSenders.unregisterTrustedWebContents(mainWindow.webContents.id);
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https:") || url.startsWith("http:")) {
-      void shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isTrustedRendererUrl(url)) {
-      event.preventDefault();
-    }
-  });
+  const entryUrl = currentRendererEntryUrl();
+  installRendererContentSecurityPolicy(
+    mainWindow.webContents.session,
+    rendererContentSecurityPolicy(MAIN_WINDOW_VITE_DEV_SERVER_URL ? "dev" : "prod"),
+  );
+  mainWindow.webContents.setWindowOpenHandler(({ url }) =>
+    windowOpenDecision(url, (allowed) => {
+      void openExternalUrl(allowed);
+    }),
+  );
+  const allowEntry = (event: { preventDefault(): void }, url: string) => {
+    if (!isRendererEntryUrl(url, entryUrl)) event.preventDefault();
+  };
+  mainWindow.webContents.on("will-navigate", allowEntry);
+  mainWindow.webContents.on("will-redirect", allowEntry);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);

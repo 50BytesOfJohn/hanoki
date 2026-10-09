@@ -37,6 +37,7 @@ import {
   toolApprovalCardNotice,
   toolDenialLabel,
 } from "@/features/chat/tool-approval-response";
+import { openExternalLink } from "@/lib/open-external-link";
 import {
   Popover,
   PopoverContent,
@@ -135,9 +136,12 @@ function WebSearchDetails({ output }: { input: unknown; output: unknown }) {
         <a
           key={result.url}
           href={result.url}
-          target="_blank"
           rel="noreferrer"
           className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 hover:bg-accent"
+          onClick={(event) => {
+            event.preventDefault();
+            openExternalLink(result.url);
+          }}
         >
           <span className="truncate text-sm font-medium text-foreground">
             {result.title || result.url}
@@ -172,9 +176,12 @@ function WebFetchDetails({ input, output }: { input: unknown; output: unknown })
       {url ? (
         <a
           href={url}
-          target="_blank"
           rel="noreferrer"
           className="flex flex-col gap-0.5 rounded-md px-2 py-1.5 hover:bg-accent"
+          onClick={(event) => {
+            event.preventDefault();
+            openExternalLink(url);
+          }}
         >
           <span className="truncate text-sm font-medium text-foreground">{title}</span>
           <span className="truncate text-xs text-muted-foreground">{getHostname(url) ?? url}</span>

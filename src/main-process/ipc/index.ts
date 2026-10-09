@@ -9,6 +9,7 @@ import { registerMarkdownIpcModule } from "./modules/markdown";
 import { registerModelsIpcModule } from "./modules/models";
 import { registerProvidersIpcModule } from "./modules/providers";
 import { registerSettingsIpcModule } from "./modules/settings";
+import { registerShellIpcModule } from "./modules/shell";
 import { registerUpdatesIpcModule } from "./modules/updates";
 import { registerTerminalsIpcModule } from "./modules/terminals";
 import { registerToolApprovalsIpcModule } from "./modules/tool-approvals";
@@ -18,6 +19,7 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   const registeredChannels = new Set<string>();
   registerWorkspaceIpcModule(context, registeredChannels);
   registerSettingsIpcModule(context, registeredChannels);
+  registerShellIpcModule(context, registeredChannels);
   registerContextMenuIpcModule(context, registeredChannels);
   registerChatTreeIpcModule(context, registeredChannels);
   registerFoldersIpcModule(context, registeredChannels);

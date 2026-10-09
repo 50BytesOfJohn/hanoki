@@ -26,7 +26,16 @@ import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wik
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
+import { openExternalFromMouseEvent } from "@/lib/open-external-link";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
+
+export const NOTE_LINK_OPTIONS = {
+  openOnClick: false,
+  HTMLAttributes: {
+    rel: "noopener noreferrer nofollow",
+    target: null,
+  },
+};
 
 export const MARKDOWN_MODES = {
   preview: { label: "Preview", description: "Formatted and read only" },
@@ -69,7 +78,11 @@ export function useMarkdownPane(): MarkdownPaneContextValue {
   return context;
 }
 
-const MARKDOWN_EXTENSIONS = [StarterKit, Markdown, WikilinkEditor];
+const MARKDOWN_EXTENSIONS = [
+  StarterKit.configure({ link: NOTE_LINK_OPTIONS }),
+  Markdown,
+  WikilinkEditor,
+];
 const MARKDOWN_PROSE_CLASS =
   "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link";
 
@@ -271,6 +284,9 @@ export function MarkdownEditor({
       attributes: {
         "aria-label": editable ? "Markdown rich text editor" : "Markdown preview",
         class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
+      },
+      handleDOMEvents: {
+        click: (_view, event) => openExternalFromMouseEvent(event),
       },
     },
     onUpdate: ({ editor: currentEditor }) => {
