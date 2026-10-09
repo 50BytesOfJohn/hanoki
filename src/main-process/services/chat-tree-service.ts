@@ -492,17 +492,23 @@ export function createChatTreeService(): ChatTreeService {
     markdown: string,
     countMode: "edit" | "import" = "edit",
   ): void {
+    const previous = pendingMarkdownSaves.get(id);
     discardPendingMarkdownSave(id);
+    const failureCount = previous?.failureCount ?? 0;
     const pending: PendingMarkdownSave = {
       markdown,
       timeout: null,
       countMode,
-      retryAfterFailure: false,
-      failureCount: 0,
-      lastLoggedAt: null,
+      retryAfterFailure: failureCount > 0,
+      failureCount,
+      lastLoggedAt: previous?.lastLoggedAt ?? null,
     };
     pendingMarkdownSaves.set(id, pending);
-    armPendingMarkdownSave(id, pending);
+    armPendingMarkdownSave(
+      id,
+      pending,
+      failureCount > 0 ? markdownAutosaveRetryDelay(failureCount) : MARKDOWN_AUTOSAVE_WAIT_MS,
+    );
   }
 
   function flushPendingBeforeWordGoalRead(): void {

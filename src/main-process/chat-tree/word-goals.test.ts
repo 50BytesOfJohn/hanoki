@@ -558,6 +558,50 @@ describe("folder word goals", () => {
     logged.mockRestore();
   });
 
+  it("keeps autosave backoff and the log limit across edits", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 9, 12, 0, 0));
+    createWorkspace({ id: "backoff-edit", name: "Backoff edit" });
+    const folder = createFolder({
+      workspaceId: "backoff-edit",
+      name: "Manuscript",
+      parentId: null,
+    });
+    const note = createMarkdown({
+      workspaceId: "backoff-edit",
+      title: "Chapter",
+      folderId: folder.id,
+    });
+    const service = createChatTreeService();
+    const update = vi.spyOn(chatTreeRepository, "updateMarkdownContent").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    service.queueMarkdownContent(note.id, prose(1));
+    vi.advanceTimersByTime(500);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalledTimes(1);
+
+    const retries = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
+    for (const [index, delay] of retries.entries()) {
+      service.queueMarkdownContent(note.id, prose(index + 2));
+      vi.advanceTimersByTime(500);
+      expect(update).toHaveBeenCalledTimes(index + 1);
+      vi.advanceTimersByTime(delay - 500);
+      expect(update).toHaveBeenCalledTimes(index + 2);
+    }
+    expect(logged).toHaveBeenCalledTimes(2);
+
+    service.queueMarkdownContent(note.id, prose(9));
+    vi.advanceTimersByTime(30_000);
+    expect(update).toHaveBeenCalledTimes(retries.length + 2);
+    expect(logged).toHaveBeenCalledTimes(2);
+
+    update.mockRestore();
+    logged.mockRestore();
+  });
+
   it("drops a pending autosave when the note no longer exists", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 9, 12, 0, 0));

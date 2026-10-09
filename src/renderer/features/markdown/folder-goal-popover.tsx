@@ -28,11 +28,13 @@ function goalNumberError(value: number | null): string | null {
 }
 
 function wholeNumberError(raw: string, locale?: Intl.LocalesArgument): string | null {
-  const decimal =
-    new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === "decimal")
-      ?.value ?? ".";
-  if (!raw.includes(decimal)) return null;
-  return `Enter a whole number, like ${new Intl.NumberFormat(locale).format(DEFAULT_TARGET)}`;
+  const format = new Intl.NumberFormat(locale);
+  const decimal = format.formatToParts(1.1).find((part) => part.type === "decimal")?.value ?? ".";
+  const group = format.formatToParts(10_000).find((part) => part.type === "group")?.value;
+  const hasDecimal = raw.includes(decimal);
+  const hasOtherSeparator = [".", ","].some((char) => char !== group && raw.includes(char));
+  if (!hasDecimal && !hasOtherSeparator) return null;
+  return `Enter a whole number, like ${format.format(DEFAULT_TARGET)}`;
 }
 
 export function FolderGoalPopover({
@@ -112,6 +114,7 @@ function GoalForm({
   const stats = statsProp ?? fetched.data;
   const [target, setTarget] = React.useState<number | null>(DEFAULT_TARGET);
   const targetRef = React.useRef<number | null>(DEFAULT_TARGET);
+  const rawTextRef = React.useRef<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const copiedTimer = React.useRef<number | null>(null);
@@ -119,6 +122,7 @@ function GoalForm({
   React.useEffect(() => {
     const next = stats?.targetWords ?? DEFAULT_TARGET;
     targetRef.current = next;
+    rawTextRef.current = null;
     setTarget(next);
   }, [stats?.targetWords]);
 
@@ -160,8 +164,8 @@ function GoalForm({
   });
 
   const submitGoal = (form: HTMLFormElement) => {
-    const raw =
-      form.querySelector<HTMLInputElement>('[aria-label="Word goal target"]')?.value ?? "";
+    const input = form.querySelector<HTMLInputElement>('[aria-label="Word goal target"]');
+    const raw = rawTextRef.current ?? input?.value ?? "";
     const decimalError = wholeNumberError(raw, locale);
     if (decimalError) {
       setError(decimalError);
@@ -210,6 +214,19 @@ function GoalForm({
             aria-invalid={error ? true : undefined}
             aria-label="Word goal target"
             className="text-left"
+            onChange={(event) => {
+              rawTextRef.current = event.currentTarget.value;
+            }}
+            onPaste={(event) => {
+              const input = event.currentTarget;
+              const pasted = event.clipboardData?.getData("text/plain") ?? "";
+              const start = input.selectionStart ?? 0;
+              const end = input.selectionEnd ?? start;
+              rawTextRef.current = `${input.value.slice(0, start)}${pasted}${input.value.slice(end)}`;
+            }}
+            onBlur={(event) => {
+              rawTextRef.current = event.currentTarget.value;
+            }}
           />
         </NumberFieldGroup>
       </NumberField>

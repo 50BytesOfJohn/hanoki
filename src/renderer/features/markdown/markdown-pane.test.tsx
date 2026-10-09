@@ -374,6 +374,11 @@ describe("folder goal popover", () => {
     ["en-US", "50.000", "Enter a whole number, like 50,000"],
     ["de-DE", "50,000", "Enter a whole number, like 50.000"],
     ["de-DE", "1,5", "Enter a whole number, like 50.000"],
+    [
+      "fr-FR",
+      "50.000",
+      `Enter a whole number, like ${new Intl.NumberFormat("fr-FR").format(50_000)}`,
+    ],
   ] as const)(
     "rejects %s %s because it contains the decimal separator",
     async (locale, value, message) => {
@@ -386,6 +391,30 @@ describe("folder goal popover", () => {
       const input = await screen.findByLabelText("Word goal target");
       fireEvent.change(input, { target: { value } });
       fireEvent.keyDown(input, { key: "Enter" });
+      expect(document.getElementById("word-goal-error")?.textContent).toBe(message);
+      expect(input.getAttribute("aria-invalid")).toBe("true");
+      expect(api.setFolderWordGoal).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["en-US", "1.000", "1", "Enter a whole number, like 50,000"],
+    ["en-US", "50.000", "50", "Enter a whole number, like 50,000"],
+    ["de-DE", "50,000", "50", "Enter a whole number, like 50.000"],
+  ] as const)(
+    "rejects %s %s after blur reformats it",
+    async (locale, value, reformatted, message) => {
+      const api = installApi();
+      renderWithQuery(
+        <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" locale={locale} open>
+          <span>Goal</span>
+        </FolderGoalPopover>,
+      );
+      const input = (await screen.findByLabelText("Word goal target")) as HTMLInputElement;
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+      expect(input.value).toBe(reformatted);
+      fireEvent.click(screen.getByRole("button", { name: "Set goal" }));
       expect(await screen.findByText(message)).toBeTruthy();
       expect(input.getAttribute("aria-invalid")).toBe("true");
       expect(api.setFolderWordGoal).not.toHaveBeenCalled();
