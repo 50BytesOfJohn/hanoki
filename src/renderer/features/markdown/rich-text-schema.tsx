@@ -105,9 +105,15 @@ const remoteImageView = ReactNodeViewRenderer(RemoteImageNode, { as: "span" });
 function imageSpecWithSrc(render: (node: PmNode) => DOMOutputSpec, node: PmNode): DOMOutputSpec {
   const spec = render(node);
   const src = node.attrs.src;
-  if (!Array.isArray(spec) || typeof src !== "string") return spec;
+  if (
+    !Array.isArray(spec) ||
+    Object.prototype.toString.call(src) !== "[object String]" ||
+    src instanceof String
+  ) {
+    return spec;
+  }
   const attrs = spec[1];
-  if (!attrs || typeof attrs !== "object" || Array.isArray(attrs) || "nodeType" in attrs) {
+  if (Object.prototype.toString.call(attrs) !== "[object Object]" || "nodeType" in Object(attrs)) {
     return spec;
   }
   return [spec[0], { ...attrs, src }, ...spec.slice(2)];
