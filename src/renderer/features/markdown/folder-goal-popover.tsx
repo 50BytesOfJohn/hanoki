@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
+import type { FolderWordGoalStats } from "@shared/ipc";
 import { MAX_WORD_GOAL_TARGET } from "@shared/markdown/word-goal";
 
 import { foldersApi } from "@/api/folders";
@@ -14,11 +15,32 @@ import { toastManager } from "@/components/ui/toast";
 import { queryKeys } from "@/queries/keys";
 
 const DEFAULT_TARGET = 50_000;
+const GOAL_INPUT_ERROR = "Enter a goal of 1 or more";
 const numberFormat = new Intl.NumberFormat();
+
+function goalInputError(raw: string): string | null {
+  const normalized = raw.trim().replace(/[\s,\u00a0\u202f]/g, "");
+  if (!/^[+]?\d+$/.test(normalized)) return GOAL_INPUT_ERROR;
+  const value = Number(normalized);
+  if (!Number.isInteger(value) || value < 1) return GOAL_INPUT_ERROR;
+  if (value > MAX_WORD_GOAL_TARGET) {
+    return `Enter a goal of ${MAX_WORD_GOAL_TARGET.toLocaleString("en-US")} or fewer`;
+  }
+  return null;
+}
+
+function goalInputValue(form: HTMLFormElement) {
+  const field = form.querySelector('[aria-label="Word goal target"]');
+  const raw = field instanceof HTMLInputElement ? field.value : "";
+  const error = goalInputError(raw);
+  if (error) return { raw, value: null };
+  return { raw, value: Number(raw.trim().replace(/[\s,\u00a0\u202f]/g, "")) };
+}
 
 export function FolderGoalPopover({
   folderId,
   folderName,
+  stats,
   label,
   anchor,
   open,
@@ -27,6 +49,7 @@ export function FolderGoalPopover({
 }: {
   folderId: string;
   folderName: string;
+  stats?: FolderWordGoalStats;
   label?: string;
   anchor?: HTMLElement | null;
   open?: boolean;
@@ -41,7 +64,7 @@ export function FolderGoalPopover({
     <Popover open={isOpen} onOpenChange={setOpen}>
       {children ? (
         <PopoverTrigger
-          className="inline-flex min-w-0 items-center gap-1 text-left text-inherit"
+          className="inline-flex min-w-0 items-center gap-1 rounded-sm text-left text-inherit outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-focus/60"
           aria-label={label}
         >
           {children}
@@ -54,7 +77,12 @@ export function FolderGoalPopover({
         sideOffset={6}
       >
         {isOpen ? (
-          <GoalForm folderId={folderId} folderName={folderName} onClose={() => setOpen(false)} />
+          <GoalForm
+            folderId={folderId}
+            folderName={folderName}
+            stats={stats}
+            onClose={() => setOpen(false)}
+          />
         ) : null}
       </PopoverContent>
     </Popover>
@@ -64,24 +92,29 @@ export function FolderGoalPopover({
 function GoalForm({
   folderId,
   folderName,
+  stats: statsProp,
   onClose,
 }: {
   folderId: string;
   folderName: string;
+  stats?: FolderWordGoalStats;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const stats = useQuery({
+  const fetched = useQuery({
     queryKey: queryKeys.wordGoals.byFolder(folderId),
     queryFn: () => foldersApi.getWordGoal(folderId),
+    enabled: statsProp === undefined,
   });
+  const stats = statsProp ?? fetched.data;
   const [target, setTarget] = React.useState<number | null>(DEFAULT_TARGET);
+  const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const copiedTimer = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    setTarget(stats.data?.targetWords ?? DEFAULT_TARGET);
-  }, [stats.data?.targetWords]);
+    setTarget(stats?.targetWords ?? DEFAULT_TARGET);
+  }, [stats?.targetWords]);
 
   React.useEffect(
     () => () => {
@@ -97,11 +130,11 @@ function GoalForm({
       await invalidate();
       onClose();
     },
-    onError: (error) => {
+    onError: () => {
       toastManager.add({
         type: "error",
         title: "Word goal could not be saved",
-        description: error.message,
+        description: "The goal was not saved.",
       });
     },
   });
@@ -111,25 +144,29 @@ function GoalForm({
       await invalidate();
       onClose();
     },
-    onError: (error) => {
+    onError: () => {
       toastManager.add({
         type: "error",
         title: "Word goal could not be cleared",
-        description: error.message,
+        description: "The goal was not cleared.",
       });
     },
   });
 
-  const today = stats.data?.today ?? 0;
-  const sinceStart = stats.data?.sinceStart ?? 0;
+  const submitGoal = (form: HTMLFormElement) => {
+    const parsed = goalInputValue(form);
+    const message = goalInputError(parsed.raw);
+    setError(message);
+    if (message || parsed.value === null) return;
+    setGoal.mutate(parsed.value);
+  };
 
   return (
     <form
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (target === null || target < 1 || target > MAX_WORD_GOAL_TARGET) return;
-        setGoal.mutate(target);
+        submitGoal(event.currentTarget);
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -140,66 +177,84 @@ function GoalForm({
         if (event.key !== "Enter") return;
         if (event.target instanceof HTMLButtonElement && event.target.type !== "submit") return;
         event.preventDefault();
-        if (target === null || target < 1 || target > MAX_WORD_GOAL_TARGET) return;
-        setGoal.mutate(target);
+        if (event.currentTarget instanceof HTMLFormElement) submitGoal(event.currentTarget);
       }}
     >
       <PopoverTitle className="text-[13px]">Word goal · {folderName}</PopoverTitle>
       <NumberField
-        min={1}
-        max={MAX_WORD_GOAL_TARGET}
+        step="any"
         value={target}
         onValueChange={(value) => {
           setTarget(value);
+          setError(null);
         }}
       >
         <NumberFieldGroup>
-          <NumberFieldInput aria-label="Word goal target" className="text-left" />
+          <NumberFieldInput
+            aria-describedby={error ? "word-goal-error" : undefined}
+            aria-invalid={error ? true : undefined}
+            aria-label="Word goal target"
+            className="text-left"
+          />
         </NumberFieldGroup>
       </NumberField>
-      <div className="flex flex-col gap-1 text-[11px] text-muted-foreground tabular-nums">
-        <div className="flex items-center justify-between gap-2">
-          <span>Since start</span>
-          <span>{numberFormat.format(sinceStart)}</span>
+      {error ? (
+        <p className="text-[11px] text-muted-foreground" id="word-goal-error">
+          {error}
+        </p>
+      ) : null}
+      {stats ? (
+        <div className="flex flex-col gap-1 text-[11px] text-muted-foreground tabular-nums">
+          <div className="flex items-center justify-between gap-2">
+            <span>Since start</span>
+            <span>{numberFormat.format(stats.sinceStart)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span>Today</span>
+            <span className="inline-flex items-center gap-1">
+              {numberFormat.format(stats.today)}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Copy today's word count"
+                onClick={() => {
+                  const today = stats.today;
+                  void navigator.clipboard
+                    .writeText(String(today))
+                    .then(() => {
+                      setCopied(true);
+                      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+                      copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
+                    })
+                    .catch(() => {
+                      setCopied(false);
+                    });
+                }}
+              >
+                <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} />
+              </Button>
+            </span>
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <span>Today</span>
-          <span className="inline-flex items-center gap-1">
-            {numberFormat.format(today)}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Copy today's word count"
-              onClick={() => {
-                void navigator.clipboard.writeText(String(today)).then(() => {
-                  setCopied(true);
-                  if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
-                  copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
-                });
-              }}
-            >
-              <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} />
-            </Button>
-          </span>
-        </div>
-      </div>
+      ) : null}
       <Button
         type="submit"
         variant="secondary"
         size="sm"
-        disabled={setGoal.isPending || target === null}
+        className="w-full"
+        disabled={setGoal.isPending}
       >
         Set goal
       </Button>
-      {stats.data ? (
+      {stats ? (
         <>
           <Separator />
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="text-destructive hover:text-destructive"
+            className="w-full text-destructive hover:text-destructive"
             disabled={clearGoal.isPending}
             onClick={() => clearGoal.mutate()}
           >

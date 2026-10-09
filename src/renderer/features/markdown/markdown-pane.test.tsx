@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FolderWordGoalStats, IpcApi, MarkdownInfo } from "@shared/ipc";
 
+import { toastManager } from "@/components/ui/toast";
+
 import { FolderGoalPopover } from "./folder-goal-popover";
 import {
   MarkdownEditor,
@@ -216,7 +218,7 @@ describe("note word count footer", () => {
   it("shows the goal ring, and a tick once the goal is met", async () => {
     const format = new Intl.NumberFormat();
     const nearest = vi.fn(async () => goalStats());
-    installApi({ getNearestWordGoal: nearest });
+    installApi({ getNearestWordGoal: nearest, getFolderWordGoal: nearest });
     const view = renderWithQuery(
       <MarkdownPaneProvider>
         <ModeHarness />
@@ -260,8 +262,8 @@ describe("folder goal popover", () => {
     );
 
     expect(await screen.findByText("Word goal · Manuscript")).toBeTruthy();
-    expect(screen.getByText("Since start")).toBeTruthy();
-    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.queryByText("Since start")).toBeNull();
+    expect(screen.queryByText("Today")).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear goal" })).toBeNull();
 
     fireEvent.keyDown(screen.getByLabelText("Word goal target"), { key: "Enter" });
@@ -287,9 +289,80 @@ describe("folder goal popover", () => {
     );
 
     expect(await screen.findByRole("button", { name: "Clear goal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear goal" }).className).toContain("w-full");
     fireEvent.click(screen.getByRole("button", { name: "Copy today's word count" }));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("1667");
     });
+  });
+
+  it("rejects an out-of-range goal inline and does not save", async () => {
+    const api = installApi();
+    renderWithQuery(
+      <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" open>
+        <span>Goal</span>
+      </FolderGoalPopover>,
+    );
+    const input = await screen.findByLabelText("Word goal target");
+
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("Enter a goal of 1 or more")).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(api.setFolderWordGoal).not.toHaveBeenCalled();
+
+    for (const value of ["-3", "1.5", "", "10000001"]) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(screen.getByLabelText("Word goal target").getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByText(/Enter a goal of/)).toBeTruthy();
+    }
+    expect(api.setFolderWordGoal).not.toHaveBeenCalled();
+  });
+
+  it("toasts plain copy when saving a goal fails", async () => {
+    const add = vi.spyOn(toastManager, "add");
+    installApi({
+      setFolderWordGoal: vi.fn(async () => {
+        throw new Error('Error invoking remote method "folders:setWordGoal": denied');
+      }),
+    });
+    renderWithQuery(
+      <FolderGoalPopover folderId={FOLDER_ID} folderName="Manuscript" open>
+        <span>Goal</span>
+      </FolderGoalPopover>,
+    );
+    fireEvent.keyDown(await screen.findByLabelText("Word goal target"), { key: "Enter" });
+    await waitFor(() => {
+      expect(add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Word goal could not be saved",
+          description: "The goal was not saved.",
+        }),
+      );
+    });
+    expect(JSON.stringify(add.mock.calls)).not.toContain("Error invoking remote method");
+    add.mockRestore();
+  });
+
+  it("shows the footer goal numbers in the popover", async () => {
+    const stats = goalStats({ sinceStart: 5, today: 5, targetWords: 1000 });
+    installApi({
+      getNearestWordGoal: vi.fn(async () =>
+        goalStats({ sinceStart: 6, today: 6, targetWords: 1000 }),
+      ),
+      getFolderWordGoal: vi.fn(async () => stats),
+    });
+    renderWithQuery(
+      <MarkdownPaneProvider>
+        <ModeHarness />
+      </MarkdownPaneProvider>,
+    );
+    const format = new Intl.NumberFormat();
+    const label = `Word goal for Manuscript: ${format.format(5)} of ${format.format(1000)} words since start`;
+    fireEvent.click(await screen.findByRole("button", { name: label }));
+    expect(await screen.findByText("Since start")).toBeTruthy();
+    expect(screen.getAllByText(format.format(5)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(format.format(6))).toBeNull();
   });
 });

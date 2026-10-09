@@ -418,4 +418,27 @@ describe("folder word goals", () => {
     samples.sort((left, right) => left - right);
     expect(samples[2]).toBeLessThan(10);
   });
+
+  it("agrees on a known delta across the ledger, footer stats, and popover stats", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 8, 12, 0, 0));
+    createWorkspace({ id: "agree", name: "Agree" });
+    const folder = createFolder({ workspaceId: "agree", name: "Manuscript", parentId: null });
+    const note = createMarkdown({ workspaceId: "agree", title: "Chapter", folderId: folder.id });
+    updateMarkdownContent(note.id, prose(120));
+    vi.setSystemTime(new Date(2026, 9, 9, 12, 0, 0));
+    setFolderWordGoal(folder.id, 1000);
+    const service = createChatTreeService();
+    service.queueMarkdownContent(note.id, prose(125));
+
+    const popover = service.getFolderWordGoalStats(folder.id);
+    const footer = service.getNearestWordGoalForItem(note.id);
+    const rows = ledger(note.id).filter((row) => row.day === "2026-10-09");
+    const delta = rows.reduce((sum, row) => sum + (row.endWords - row.startWords), 0);
+
+    expect(rows).toMatchObject([{ startWords: 120, endWords: 125 }]);
+    expect(delta).toBe(5);
+    expect(popover).toMatchObject({ sinceStart: delta, today: delta });
+    expect(footer).toMatchObject({ sinceStart: delta, today: delta });
+  });
 });

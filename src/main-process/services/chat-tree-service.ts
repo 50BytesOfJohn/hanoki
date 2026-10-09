@@ -677,10 +677,12 @@ export function createChatTreeService(): ChatTreeService {
     },
 
     getFolderWordGoalStats(folderId: string) {
+      flushAllPendingMarkdownContent();
       return getFolderWordGoalStatsInRepo(folderId);
     },
 
     getNearestWordGoalForItem(itemId: string) {
+      flushAllPendingMarkdownContent();
       return getNearestWordGoalForItemInRepo(itemId);
     },
 

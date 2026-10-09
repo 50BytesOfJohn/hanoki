@@ -41,9 +41,15 @@ export function NoteStatsFooter({
   const wait = markdown.length > 1_000_000 ? 1000 : 250;
   const [debouncedMarkdown] = useDebouncedValue(markdown, { wait });
   const words = React.useMemo(() => countMarkdownWords(debouncedMarkdown), [debouncedMarkdown]);
-  const goal = useQuery({
+  const nearest = useQuery({
     queryKey: queryKeys.wordGoals.nearest(itemId),
     queryFn: () => foldersApi.nearestWordGoal(itemId),
+  });
+  const folderId = nearest.data?.folderId;
+  const goal = useQuery({
+    queryKey: queryKeys.wordGoals.byFolder(folderId ?? ""),
+    queryFn: () => foldersApi.getWordGoal(folderId ?? ""),
+    enabled: Boolean(folderId),
   });
   useInvalidateWordGoalsOnDayChange();
 
@@ -63,7 +69,12 @@ export function NoteStatsFooter({
 function FolderGoalSegment({ stats }: { stats: FolderWordGoalStats }) {
   const label = `Word goal for ${stats.folderName}: ${numberFormat.format(stats.sinceStart)} of ${numberFormat.format(stats.targetWords)} words since start`;
   return (
-    <FolderGoalPopover folderId={stats.folderId} folderName={stats.folderName} label={label}>
+    <FolderGoalPopover
+      folderId={stats.folderId}
+      folderName={stats.folderName}
+      stats={stats}
+      label={label}
+    >
       <span aria-hidden="true">·</span>
       {stats.met ? (
         <HugeiconsIcon icon={Tick02Icon} className="size-2.5 text-current" />
