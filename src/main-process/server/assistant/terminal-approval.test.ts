@@ -24,9 +24,7 @@ type MockGenerate = Extract<
 
 /**
  * Replies with one tool call on the first step, then plain text.
- * ponytail: the result literals are cast once rather than spelled out against
- * the provider's usage/finish-reason types — the agent validates them at run
- * time, and this test is about approvals, not about the mock's typing.
+ * The result literals are cast once; the agent validates them at run time.
  */
 function createToolCallingModel(toolName: string, input: unknown) {
   let callCount = 0;
@@ -112,7 +110,7 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
         approved: true,
       })),
     });
-    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: true })).toBe(true);
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: true })).toBe("approved");
 
     await agent.generate({ messages });
     await expect(readFile(target, "utf8")).resolves.toBe("written");
@@ -146,7 +144,7 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
         } satisfies ToolApprovalResponse,
       ],
     });
-    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: false })).toBe(true);
+    expect(decideToolApproval({ chatId, toolCallId: "call-1", approved: false })).toBe("denied");
 
     await agent.generate({ messages });
     await expect(readFile(target, "utf8")).rejects.toThrow();

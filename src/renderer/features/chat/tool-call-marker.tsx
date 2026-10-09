@@ -32,6 +32,7 @@ import {
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
+import { toolDenialLabel } from "@/features/chat/tool-approval-response";
 import {
   Popover,
   PopoverContent,
@@ -695,6 +696,7 @@ function ToolApprovalCard({
   const respondToToolApproval = useChatRespondToToolApproval();
   const updateChatSettings = useUpdateChatSettings();
   const [hasResponded, setHasResponded] = React.useState(false);
+  const [notice, setNotice] = React.useState<string | null>(null);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const snapshot = queryClient.getQueryData<ChatTreeSnapshot>(
     queryKeys.chatTree.snapshot(workspaceId ?? ""),
@@ -709,14 +711,19 @@ function ToolApprovalCard({
 
   const respond = (approved: boolean, reason?: string) => {
     setHasResponded(true);
+    setNotice(null);
     void respondToToolApproval({
       id: approvalId,
       toolCallId,
       approved,
       ...(reason ? { reason } : {}),
-    }).catch(() => {
-      setHasResponded(false);
-    });
+    })
+      .then((nextNotice) => {
+        if (nextNotice) setNotice(nextNotice);
+      })
+      .catch(() => {
+        setHasResponded(false);
+      });
   };
 
   return (
@@ -726,6 +733,7 @@ function ToolApprovalCard({
         <p className="text-[13px] font-medium text-foreground">{title}</p>
       </div>
       {body}
+      {notice ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
           size="sm"
@@ -964,7 +972,9 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
           {part.approval.approved ? <Spinner /> : <HugeiconsIcon icon={ShieldBanIcon} />}
         </MarkerIcon>
         <MarkerContent className={part.approval.approved ? "shimmer" : undefined}>
-          {part.approval.approved ? config.pendingLabel(part.input) : "You didn't allow this"}
+          {part.approval.approved
+            ? config.pendingLabel(part.input)
+            : toolDenialLabel(part.approval.reason)}
         </MarkerContent>
       </Marker>
     );
@@ -976,7 +986,7 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
         <MarkerIcon>
           <HugeiconsIcon icon={ShieldBanIcon} />
         </MarkerIcon>
-        <MarkerContent>You didn&apos;t allow this</MarkerContent>
+        <MarkerContent>{toolDenialLabel(part.approval.reason)}</MarkerContent>
       </Marker>
     );
   }

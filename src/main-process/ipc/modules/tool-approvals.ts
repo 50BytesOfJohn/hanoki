@@ -1,5 +1,5 @@
 import { parseChatId } from "@shared/chat/chat-id";
-import { IPC_CHANNELS, type ToolApprovalDecision } from "@shared/ipc";
+import { IPC_CHANNELS, type ToolApprovalDecision, type ToolApprovalOutcome } from "@shared/ipc";
 import { decideToolApproval } from "../../server/tool-approvals";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -42,13 +42,9 @@ export function registerToolApprovalsIpcModule(
   context: IpcHandlerContext,
   registeredChannels: Set<string>,
 ): void {
-  registerInvokeHandler<[ToolApprovalDecision], void>(context, registeredChannels, {
+  registerInvokeHandler<[ToolApprovalDecision], ToolApprovalOutcome>(context, registeredChannels, {
     channel: IPC_CHANNELS.toolApprovals.respond,
     parseArgs: parseDecision,
-    handler: (_context, _event, input) => {
-      if (!decideToolApproval(input)) {
-        throw AppError.badRequest("Tool approval is not pending.");
-      }
-    },
+    handler: (_context, _event, input) => decideToolApproval(input),
   });
 }

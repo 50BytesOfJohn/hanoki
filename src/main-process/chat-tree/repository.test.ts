@@ -22,11 +22,8 @@ import {
   resolveAttachedItemPointers,
 } from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
-import {
-  deleteToolApprovalsForChats,
-  getToolApprovalForTests,
-  recordPendingToolApproval,
-} from "../server/tool-approvals";
+import { deleteToolApprovalsForChats, recordPendingToolApproval } from "../server/tool-approvals";
+import { getToolApprovalForTests } from "../server/tool-approvals.testing";
 import { createWorkspace } from "../workspaces/repository";
 import {
   createChat,

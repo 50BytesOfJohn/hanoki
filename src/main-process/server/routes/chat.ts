@@ -279,6 +279,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       tools,
       chat.id,
       approvalPolicies,
+      activeTools,
     );
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
@@ -313,7 +314,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ),
       tools: gatedTools,
       activeTools,
-      ...(Object.keys(toolApproval).length > 0 ? { toolApproval } : {}),
+      toolApproval,
       stopWhen: isStepCount(100),
       onStart: ({ callId: startedCallId, provider: sdkProvider, modelId: sdkModelId }) => {
         beginChatGeneration(chat.id);

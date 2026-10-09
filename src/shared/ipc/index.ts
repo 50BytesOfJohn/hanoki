@@ -106,6 +106,10 @@ export const IPC_CHANNELS = {
   },
 } as const;
 
+export const TOOL_APPROVAL_EXPIRED_REASON = "This request expired, ask again";
+
+export type ToolApprovalOutcome = "approved" | "denied" | "expired";
+
 export interface ToolApprovalDecision {
   chatId: string;
   toolCallId: string;
@@ -632,7 +636,7 @@ export interface IpcApi {
   updateChatSettings: (id: string, input: ChatSettingsUpdateInput) => Promise<ChatInfo>;
   moveChat: (id: string, folderId: string | null) => Promise<ChatInfo>;
   deleteChat: (id: string) => Promise<void>;
-  respondToToolApproval: (input: ToolApprovalDecision) => Promise<void>;
+  respondToToolApproval: (input: ToolApprovalDecision) => Promise<ToolApprovalOutcome>;
   createTerminal: (
     workspaceId: string,
     title: string,
