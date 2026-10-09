@@ -92,6 +92,7 @@ beforeAll(() => {
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
+      word_count integer,
       created_at integer not null,
       updated_at integer not null
     )
@@ -108,6 +109,47 @@ beforeAll(() => {
       primary key (from_item_id, target_text, alias)
     )
   `),
+  );
+  db.run(
+    sql.raw(`
+    create table note_word_days (
+      item_id text not null references items(id) on delete cascade,
+      folder_id text not null references folders(id) on delete cascade,
+      workspace_id text not null references workspaces(id) on delete cascade,
+      day text not null,
+      start_words integer not null,
+      end_words integer not null,
+      updated_at integer not null,
+      primary key (item_id, day, folder_id)
+    )
+  `),
+  );
+  db.run(
+    sql.raw(`
+    create table folder_word_goals (
+      folder_id text primary key references folders(id) on delete cascade,
+      workspace_id text not null references workspaces(id) on delete cascade,
+      target_words integer not null default 50000 check (target_words > 0),
+      started_at integer not null,
+      start_day text not null,
+      baseline_words integer not null,
+      created_at integer not null,
+      updated_at integer not null
+    )
+  `),
+  );
+  db.run(
+    sql.raw(`
+    create table folder_goal_baselines (
+      folder_id text not null references folders(id) on delete cascade,
+      item_id text not null references items(id) on delete cascade,
+      baseline_words integer not null,
+      primary key (folder_id, item_id)
+    )
+  `),
+  );
+  db.run(
+    sql.raw("create index folder_goal_baselines_item_id_idx on folder_goal_baselines (item_id)"),
   );
   db.run(
     sql.raw(`

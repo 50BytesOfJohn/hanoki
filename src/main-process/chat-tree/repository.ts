@@ -6,6 +6,13 @@ import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasonin
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
+import {
+  assignGoalBaselinesForNewNote,
+  folderMovedToParent,
+  noteMovedBetweenFolders,
+  writeMarkdownWordCount,
+  type WordCountMode,
+} from "./word-goals";
 import { getAppDatabase } from "../db/database";
 import { createUuidV7 } from "../db/uuidv7";
 import { folders, items, messages } from "../db/schema";
@@ -822,6 +829,7 @@ export function moveFolder(id: string, parentId: string | null): FolderRow {
       })
       .where(eq(folders.id, id))
       .run();
+    folderMovedToParent(id, folder.parentId, parentId);
 
     const updatedFolder = tx.select().from(folders).where(eq(folders.id, id)).get();
     if (!updatedFolder) {
@@ -1136,6 +1144,9 @@ export function moveItem(id: string, folderId: string | null): ItemRow {
     }
 
     tx.update(items).set({ folderId, updatedAt: Date.now() }).where(eq(items.id, id)).run();
+    if (item.type === "markdown" && item.folderId !== folderId) {
+      noteMovedBetweenFolders(id, item.wordCount, item.folderId, folderId);
+    }
     const updated = tx.select().from(items).where(eq(items.id, id)).get();
     if (!updated) throw new Error(`Item "${id}" does not exist.`);
     return toItemRow(updated);
@@ -1205,20 +1216,21 @@ export function createMarkdown(input: {
       data: { markdown: "" },
     })
     .run();
+  assignGoalBaselinesForNewNote(id, input.folderId);
   const markdown = requireItemById(id);
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   resolveOpenNoteLinks(markdown.workspaceId);
   return markdown;
 }
 
-export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {
+export function updateMarkdownContent(
+  id: string,
+  markdown: string,
+  countMode: WordCountMode = "edit",
+): MarkdownRow {
   const item = requireItemById(id);
   if (item.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
-  getAppDatabase()
-    .update(items)
-    .set({ data: { ...item.data, markdown }, updatedAt: Date.now() })
-    .where(eq(items.id, id))
-    .run();
+  if (!writeMarkdownWordCount(id, markdown, countMode)) return item;
   const updated = requireItemById(id);
   if (updated.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   reindexNoteLinks(updated.id);

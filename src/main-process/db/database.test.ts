@@ -50,12 +50,27 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(sqlite)).toBe(3);
+    expect(migrationCount(sqlite)).toBe(4);
+    expect(
+      sqlite
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'folder_word_goals'",
+        )
+        .get(),
+    ).toEqual({ name: "folder_word_goals" });
+    expect(String(itemsSql?.sql)).toContain("word_count");
     expect(
       sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'note_links'")
         .get(),
     ).toEqual({ name: "note_links" });
+    expect(
+      sqlite
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'folder_goal_baselines_item_id_idx'",
+        )
+        .get(),
+    ).toEqual({ name: "folder_goal_baselines_item_id_idx" });
     expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 
     sqlite
@@ -105,7 +120,8 @@ describe("initializeAppDatabase", { concurrent: false }, () => {
       .get();
 
     expect(String(itemsSql?.sql)).toContain("'markdown'");
-    expect(migrationCount(migrated)).toBe(3);
+    expect(migrationCount(migrated)).toBe(4);
+    expect(String(itemsSql?.sql)).toContain("word_count");
     expect(migrated.prepare("SELECT type FROM items WHERE id = 'chat'").get()).toEqual({
       type: "chat",
     });

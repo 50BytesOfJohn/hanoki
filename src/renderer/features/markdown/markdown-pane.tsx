@@ -22,6 +22,10 @@ import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
+import { countMarkdownWords } from "@shared/markdown/word-count";
+
+import { NoteStatsFooter } from "./note-stats";
+import { countEditorSelection } from "./selection-words";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
@@ -73,7 +77,13 @@ const MARKDOWN_EXTENSIONS = [StarterKit, Markdown, WikilinkEditor];
 const MARKDOWN_PROSE_CLASS =
   "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link";
 
-export function MarkdownPane({ itemId }: { itemId: string }) {
+export function MarkdownPane({
+  itemId,
+  isFocused = true,
+}: {
+  itemId: string;
+  isFocused?: boolean;
+}) {
   const { mode, setMode } = useMarkdownPane();
   const { data: item, error } = useQuery(getItemQueryOptions(itemId));
   const queryClient = useQueryClient();
@@ -175,6 +185,27 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   );
 
   const markdown = document?.itemId === itemId ? document.markdown : null;
+  const [selectionWords, setSelectionWords] = React.useState<number | null>(null);
+  const selectionTimer = React.useRef<number | null>(null);
+
+  const reportSelectionWords = React.useCallback((read: () => number | null) => {
+    if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
+    selectionTimer.current = window.setTimeout(() => {
+      selectionTimer.current = null;
+      setSelectionWords(read());
+    }, 100);
+  }, []);
+
+  React.useEffect(() => {
+    setSelectionWords(null);
+  }, [itemId, mode]);
+
+  React.useEffect(
+    () => () => {
+      if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
+    },
+    [],
+  );
 
   React.useEffect(() => {
     return registerMarkdownSaver(itemId, {
@@ -208,6 +239,18 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
             value={markdown}
             placeholder="Write Markdown…"
             onChange={(event) => updateMarkdown(event.target.value)}
+            onSelect={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
+            onKeyUp={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
+            onMouseUp={(event) => {
+              const textarea = event.currentTarget;
+              reportSelectionWords(() => readSourceSelection(textarea));
+            }}
             onBlur={() => void saver.flush()}
             className="h-full min-h-full w-full resize-none bg-transparent px-6 py-5 font-mono text-[13px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/60"
           />
@@ -220,6 +263,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
             editable={mode === "rich-text"}
             onChange={updateMarkdown}
             onBlur={() => void saver.flush()}
+            onSelectionCountChange={reportSelectionWords}
           />
         ) : (
           <Empty className="h-full rounded-none border-0">
@@ -238,7 +282,17 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
           </Empty>
         )}
       </div>
-      <BacklinksFooter itemId={itemId} />
+      <BacklinksFooter
+        itemId={itemId}
+        trailing={
+          <NoteStatsFooter
+            itemId={itemId}
+            markdown={markdown}
+            selectionWords={selectionWords}
+            isFocused={isFocused}
+          />
+        }
+      />
     </div>
   );
 }
@@ -251,6 +305,7 @@ export function MarkdownEditor({
   editable,
   onChange,
   onBlur,
+  onSelectionCountChange,
 }: {
   itemId: string;
   workspaceId: string;
@@ -259,6 +314,7 @@ export function MarkdownEditor({
   editable: boolean;
   onChange: (markdown: string) => void;
   onBlur: () => void;
+  onSelectionCountChange?: (read: () => number | null) => void;
 }) {
   const editor = useEditor({
     extensions: MARKDOWN_EXTENSIONS,
@@ -292,6 +348,17 @@ export function MarkdownEditor({
   }, [editor, folderId, itemId, workspaceId]);
 
   React.useEffect(() => {
+    if (!editor || !onSelectionCountChange) return;
+    const report = () => onSelectionCountChange(() => countEditorSelection(editor));
+    editor.on("selectionUpdate", report);
+    editor.on("update", report);
+    return () => {
+      editor.off("selectionUpdate", report);
+      editor.off("update", report);
+    };
+  }, [editor, onSelectionCountChange]);
+
+  React.useEffect(() => {
     if (!editor || editable) return;
     editor.commands.setContent(markdown, { contentType: "markdown", emitUpdate: false });
   }, [editable, editor, markdown]);
@@ -302,4 +369,13 @@ export function MarkdownEditor({
       className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
     />
   );
+}
+
+function readSourceSelection(textarea: HTMLTextAreaElement): number | null {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  if (start === end) return null;
+  return countMarkdownWords(textarea.value.slice(start, end), {
+    frontmatter: start === 0,
+  });
 }

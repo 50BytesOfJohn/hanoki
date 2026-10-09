@@ -1,3 +1,4 @@
+import { scheduleWordCountBackfill } from "../chat-tree/word-goals";
 import { bootstrapStorage, type StorageBootstrapResult } from "../db";
 import { type IpcHandlerContext } from "../ipc/core/context";
 import { createTrustedSenderRegistry, type TrustedSenderRegistry } from "../ipc/trusted-senders";
@@ -26,6 +27,7 @@ interface BackendBootstrapOptions {
 
 export function bootstrapBackend(options?: BackendBootstrapOptions): BackendBootstrapResult {
   const storageBootstrap = bootstrapStorage();
+  scheduleWordCountBackfill();
 
   const services = createAppServices({
     onProviderModelsSyncCompleted: options?.onProviderModelsSyncCompleted,

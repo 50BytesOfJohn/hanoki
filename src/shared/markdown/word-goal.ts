@@ -1,0 +1,1 @@
+export const MAX_WORD_GOAL_TARGET = 10_000_000;

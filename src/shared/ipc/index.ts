@@ -48,6 +48,11 @@ export const IPC_CHANNELS = {
     updateName: "folders:updateName",
     move: "folders:move",
     delete: "folders:delete",
+    setWordGoal: "folders:setWordGoal",
+    clearWordGoal: "folders:clearWordGoal",
+    getWordGoal: "folders:getWordGoal",
+    getNearestWordGoal: "folders:getNearestWordGoal",
+    listWordGoalIds: "folders:listWordGoalIds",
   },
   chats: {
     get: "chats:get",
@@ -244,6 +249,17 @@ export interface FolderInfo {
   name: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface FolderWordGoalStats {
+  folderId: string;
+  folderName: string;
+  targetWords: number;
+  startedAt: number;
+  baselineWords: number;
+  sinceStart: number;
+  today: number;
+  met: boolean;
 }
 
 export interface ChatInfo {
@@ -616,6 +632,11 @@ export interface IpcApi {
   updateFolderName: (id: string, name: string) => Promise<FolderInfo>;
   moveFolder: (id: string, parentId: string | null) => Promise<FolderInfo>;
   deleteFolder: (id: string) => Promise<void>;
+  setFolderWordGoal: (id: string, targetWords: number) => Promise<FolderWordGoalStats>;
+  clearFolderWordGoal: (id: string) => Promise<void>;
+  getFolderWordGoal: (id: string) => Promise<FolderWordGoalStats | null>;
+  getNearestWordGoal: (itemId: string) => Promise<FolderWordGoalStats | null>;
+  listFolderWordGoalIds: (workspaceId: string) => Promise<string[]>;
   createChat: (workspaceId: string, title: string, folderId?: string | null) => Promise<ChatInfo>;
   cloneChat: (chatId: string) => Promise<ChatInfo>;
   exportChat: (chatId: string, format: ChatExportFormat) => Promise<ChatExportResult>;

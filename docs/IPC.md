@@ -20,7 +20,7 @@ Consistent IPC structure for this repo. Keep it small and direct. Follow YAGNI.
   - Trusted renderer URL checks.
 - `src/main-process/ipc/modules/*.ts`
   - Domain handlers only.
-  - Current split: `workspaces`, `settings`, `context-menu`, `chat-tree`, `folders`, `chats`, `markdown`, `messages`, `models`, `providers`.
+  - Current split: `workspaces`, `settings`, `context-menu`, `chat-tree`, `folders` (including folder word goals), `chats`, `markdown`, `messages`, `models`, `providers`.
 - `src/main-process/ipc/index.ts`
   - Single entrypoint for IPC registration.
 
@@ -32,7 +32,7 @@ Consistent IPC structure for this repo. Keep it small and direct. Follow YAGNI.
 4. Register handlers only through `registerInvokeHandler(...)`.
 5. Keep handler files domain-scoped and specific:
    - `chat-tree` for tree reads and tree item UI actions only
-   - `folders` for folder CRUD
+   - `folders` for folder CRUD and folder word goals
    - `chats` for chat CRUD
    - `messages` for message reads, branch switching, and message edits
    - `workspaces` for workspace data plus persisted workspace tabs UI state

@@ -22,4 +22,24 @@ export const foldersApi = {
   delete(id: string) {
     return window.electronAPI.deleteFolder(id);
   },
+
+  setWordGoal(id: string, targetWords: number) {
+    return window.electronAPI.setFolderWordGoal(id, targetWords);
+  },
+
+  clearWordGoal(id: string) {
+    return window.electronAPI.clearFolderWordGoal(id);
+  },
+
+  getWordGoal(id: string) {
+    return window.electronAPI.getFolderWordGoal(id);
+  },
+
+  nearestWordGoal(itemId: string) {
+    return window.electronAPI.getNearestWordGoal(itemId);
+  },
+
+  listWordGoalIds(workspaceId: string) {
+    return window.electronAPI.listFolderWordGoalIds(workspaceId);
+  },
 };

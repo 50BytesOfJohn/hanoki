@@ -32,6 +32,13 @@ import {
   type ChatTreeSnapshot as ChatTreeSnapshotRecord,
   type FolderRow,
 } from "../chat-tree/repository";
+import {
+  clearFolderWordGoal as clearFolderWordGoalInRepo,
+  getFolderWordGoalStats as getFolderWordGoalStatsInRepo,
+  getNearestWordGoalForItem as getNearestWordGoalForItemInRepo,
+  listFolderWordGoalIds as listFolderWordGoalIdsInRepo,
+  setFolderWordGoal as setFolderWordGoalInRepo,
+} from "../chat-tree/word-goals";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
@@ -48,6 +55,7 @@ import type {
   ChatTreeUiState,
   DeleteChatTreeItemsResult,
   FolderInfo,
+  FolderWordGoalStats,
   MarkdownInfo,
   MarkdownTitleOption,
   NoteBacklink,
@@ -67,10 +75,22 @@ const ACTIVE_TAB_ID_SETTINGS_KEY = "activeTabId";
 const MAX_PERSISTED_EXPANDED_FOLDER_IDS = 2000;
 const MAX_PERSISTED_TABS = 20;
 const MARKDOWN_AUTOSAVE_WAIT_MS = 500;
+const MARKDOWN_AUTOSAVE_MAX_WAIT_MS = 30_000;
+const MARKDOWN_AUTOSAVE_LOG_INTERVAL_MS = 60_000;
 
 interface PendingMarkdownSave {
   markdown: string;
   timeout: ReturnType<typeof setTimeout> | null;
+  countMode: "edit" | "import";
+  /** A failed flush is waiting for the autosave timer. Stats reads skip it. */
+  retryAfterFailure: boolean;
+  failureCount: number;
+  lastLoggedAt: number | null;
+}
+
+function markdownAutosaveRetryDelay(failureCount: number): number {
+  const exponent = Math.min(failureCount, 6);
+  return Math.min(MARKDOWN_AUTOSAVE_WAIT_MS * 2 ** exponent, MARKDOWN_AUTOSAVE_MAX_WAIT_MS);
 }
 
 export interface ChatTreeService {
@@ -93,12 +113,17 @@ export interface ChatTreeService {
     title: string;
     folderId: string | null;
   }): MarkdownInfo;
-  queueMarkdownContent(id: string, markdown: string): void;
+  queueMarkdownContent(id: string, markdown: string, countMode?: "edit" | "import"): void;
   flushMarkdownContent(id: string): MarkdownInfo;
   flushAllMarkdownContent(): void;
   listMarkdownTitles(workspaceId: string): MarkdownTitleOption[];
   listNoteBacklinks(itemId: string): NoteBacklink[];
   rebuildNoteLinks(workspaceId: string): void;
+  setFolderWordGoal(folderId: string, targetWords: number): FolderWordGoalStats;
+  clearFolderWordGoal(folderId: string): void;
+  getFolderWordGoalStats(folderId: string): FolderWordGoalStats | null;
+  getNearestWordGoalForItem(itemId: string): FolderWordGoalStats | null;
+  listFolderWordGoalIds(workspaceId: string): string[];
   cloneChat(chatId: string): ChatInfo;
   updateChatTitle(id: string, title: string): ChatInfo;
   updateChatSettings(id: string, settingsPatch: ChatSettingsUpdateInput): ChatInfo;
@@ -398,6 +423,37 @@ export function createChatTreeService(): ChatTreeService {
     pendingMarkdownSaves.delete(id);
   }
 
+  function logAutosaveFailure(id: string, pending: PendingMarkdownSave, error: unknown): void {
+    const now = Date.now();
+    if (
+      pending.lastLoggedAt !== null &&
+      now - pending.lastLoggedAt < MARKDOWN_AUTOSAVE_LOG_INTERVAL_MS
+    ) {
+      return;
+    }
+    pending.lastLoggedAt = now;
+    console.error(`[markdown] Autosave failed for item "${id}".`, error);
+  }
+
+  function armPendingMarkdownSave(
+    id: string,
+    pending: PendingMarkdownSave,
+    delay = MARKDOWN_AUTOSAVE_WAIT_MS,
+  ): void {
+    if (pending.timeout) clearTimeout(pending.timeout);
+    pending.timeout = setTimeout(() => {
+      pending.timeout = null;
+      pending.retryAfterFailure = false;
+      try {
+        flushPendingMarkdownContent(id);
+      } catch (error) {
+        const current = pendingMarkdownSaves.get(id);
+        if (!current) return;
+        logAutosaveFailure(id, current, error);
+      }
+    }, delay);
+  }
+
   function flushPendingMarkdownContent(id: string): MarkdownInfo {
     const pending = pendingMarkdownSaves.get(id);
     if (!pending) {
@@ -408,23 +464,65 @@ export function createChatTreeService(): ChatTreeService {
     }
 
     if (pending.timeout) clearTimeout(pending.timeout);
-    const saved = toMarkdownInfo(updateMarkdownContentInRepo(id, pending.markdown));
-    pendingMarkdownSaves.delete(id);
-    return saved;
+    pending.timeout = null;
+    if (!getItemById(id)) {
+      pendingMarkdownSaves.delete(id);
+      throw new Error(`Item "${id}" does not exist.`);
+    }
+    try {
+      const saved = toMarkdownInfo(
+        updateMarkdownContentInRepo(id, pending.markdown, pending.countMode),
+      );
+      pendingMarkdownSaves.delete(id);
+      return saved;
+    } catch (error) {
+      if (!getItemById(id)) {
+        pendingMarkdownSaves.delete(id);
+        throw error;
+      }
+      pending.failureCount += 1;
+      pending.retryAfterFailure = true;
+      armPendingMarkdownSave(id, pending, markdownAutosaveRetryDelay(pending.failureCount));
+      throw error;
+    }
   }
 
-  function queuePendingMarkdownContent(id: string, markdown: string): void {
+  function queuePendingMarkdownContent(
+    id: string,
+    markdown: string,
+    countMode: "edit" | "import" = "edit",
+  ): void {
+    const previous = pendingMarkdownSaves.get(id);
     discardPendingMarkdownSave(id);
-    const pending: PendingMarkdownSave = { markdown, timeout: null };
-    pending.timeout = setTimeout(() => {
-      pending.timeout = null;
+    const failureCount = previous?.failureCount ?? 0;
+    const pending: PendingMarkdownSave = {
+      markdown,
+      timeout: null,
+      countMode,
+      retryAfterFailure: failureCount > 0,
+      failureCount,
+      lastLoggedAt: previous?.lastLoggedAt ?? null,
+    };
+    pendingMarkdownSaves.set(id, pending);
+    armPendingMarkdownSave(
+      id,
+      pending,
+      failureCount > 0 ? markdownAutosaveRetryDelay(failureCount) : MARKDOWN_AUTOSAVE_WAIT_MS,
+    );
+  }
+
+  function flushPendingBeforeWordGoalRead(): void {
+    for (const id of Array.from(pendingMarkdownSaves.keys())) {
+      const pending = pendingMarkdownSaves.get(id);
+      if (!pending || pending.retryAfterFailure) continue;
       try {
         flushPendingMarkdownContent(id);
       } catch (error) {
-        console.error(`[markdown] Autosave failed for item "${id}".`, error);
+        const current = pendingMarkdownSaves.get(id);
+        if (!current) continue;
+        logAutosaveFailure(id, current, error);
       }
-    }, MARKDOWN_AUTOSAVE_WAIT_MS);
-    pendingMarkdownSaves.set(id, pending);
+    }
   }
 
   function flushAllPendingMarkdownContent(): void {
@@ -623,8 +721,8 @@ export function createChatTreeService(): ChatTreeService {
       return toMarkdownInfo(createMarkdown(input));
     },
 
-    queueMarkdownContent(id: string, markdown: string): void {
-      queuePendingMarkdownContent(id, markdown);
+    queueMarkdownContent(id: string, markdown: string, countMode?: "edit" | "import"): void {
+      queuePendingMarkdownContent(id, markdown, countMode);
     },
 
     flushMarkdownContent(id: string): MarkdownInfo {
@@ -646,6 +744,28 @@ export function createChatTreeService(): ChatTreeService {
     rebuildNoteLinks(workspaceId: string): void {
       flushAllPendingMarkdownContent();
       rebuildWorkspaceNoteLinks(workspaceId);
+    },
+
+    setFolderWordGoal(folderId: string, targetWords: number) {
+      return setFolderWordGoalInRepo(folderId, targetWords);
+    },
+
+    clearFolderWordGoal(folderId: string): void {
+      clearFolderWordGoalInRepo(folderId);
+    },
+
+    getFolderWordGoalStats(folderId: string) {
+      flushPendingBeforeWordGoalRead();
+      return getFolderWordGoalStatsInRepo(folderId);
+    },
+
+    getNearestWordGoalForItem(itemId: string) {
+      flushPendingBeforeWordGoalRead();
+      return getNearestWordGoalForItemInRepo(itemId);
+    },
+
+    listFolderWordGoalIds(workspaceId: string): string[] {
+      return listFolderWordGoalIdsInRepo(workspaceId);
     },
 
     cloneChat(chatId: string): ChatInfo {
