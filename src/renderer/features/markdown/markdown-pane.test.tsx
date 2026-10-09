@@ -520,7 +520,6 @@ describe("MarkdownEditor", () => {
   });
 
   it.each([
-    ["https://x/y.png", "![alt](https://x/y.png)"],
     ["img/a.png", "![alt](img/a.png)"],
     ["file:///tmp/a.png", "![alt](file:///tmp/a.png)"],
     ["data:image/png;base64,aaaa", "![alt](data:image/png;base64,aaaa)"],
@@ -548,6 +547,39 @@ describe("MarkdownEditor", () => {
           ? surface.querySelector("img:not(.ProseMirror-separator)")
           : surface.querySelector(`img[src="${src}"]`);
       expect(image).toBeTruthy();
+      expect(screen.queryByText("This note could not be displayed.")).toBeNull();
+      expect(inlineHandlers(surface)).toEqual([]);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "![alt](https://x/y.png)",
+    "![alt](//cdn.example.com/a.png)",
+    "![alt](file://host/a.png)",
+  ])("keeps a remote image out of the document (%s)", async (markdown) => {
+    const onChange = vi.fn();
+    for (const editable of [false, true]) {
+      cleanup();
+      render(
+        <MarkdownEditor
+          itemId={editable ? "remote-rich" : "remote-preview"}
+          workspaceId="workspace"
+          folderId={null}
+          markdown={markdown}
+          editable={editable}
+          onChange={onChange}
+          onBlur={vi.fn()}
+        />,
+      );
+      const surface = await screen.findByLabelText(
+        editable ? "Markdown rich text editor" : "Markdown preview",
+      );
+      const image = surface.querySelector("img:not(.ProseMirror-separator)");
+      expect(image).toBeTruthy();
+      expect(image?.getAttribute("src")).toBeNull();
+      expect(surface.querySelector("script, style")).toBeNull();
+      expect(inlineHandlers(surface)).toEqual([]);
       expect(screen.queryByText("This note could not be displayed.")).toBeNull();
     }
     expect(onChange).not.toHaveBeenCalled();
@@ -597,8 +629,61 @@ describe("MarkdownEditor", () => {
 
     const link = await screen.findByRole("link", { name: "the docs" });
     expect(link.getAttribute("target")).toBeNull();
+    const surface = screen.getByLabelText("Markdown preview");
+    expect(surface.querySelector("script, style")).toBeNull();
+    expect(inlineHandlers(surface)).toEqual([]);
     link.click();
     expect(opened).toEqual(["https://example.com/docs"]);
+  });
+
+  it("opens a locked note link outside the window", async () => {
+    const opened = openedExternalLinks();
+    const onChange = vi.fn();
+    render(
+      <MarkdownEditor
+        itemId="locked-link"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={
+          "Hello <span>hi</span>\n\n![alt](https://cdn.example.com/a.png)\n\nSee [the docs](https://example.com/docs)."
+        }
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+        onEditInMarkdown={vi.fn()}
+      />,
+    );
+
+    const surface = await screen.findByLabelText("Markdown rich text, read only");
+    const image = surface.querySelector("img:not(.ProseMirror-separator)");
+    expect(image?.getAttribute("src")).toBeNull();
+    expect(surface.querySelector("script, style")).toBeNull();
+    expect(inlineHandlers(surface)).toEqual([]);
+    screen.getByRole("link", { name: "the docs" }).click();
+    expect(opened).toEqual(["https://example.com/docs"]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("does not open a javascript link from preview", async () => {
+    const opened = openedExternalLinks();
+    render(
+      <MarkdownEditor
+        itemId="script-link"
+        workspaceId="workspace"
+        folderId={null}
+        markdown="[run](javascript:alert(1))"
+        editable={false}
+        onChange={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+
+    const surface = await screen.findByLabelText("Markdown preview");
+    const link = surface.querySelector("a");
+    expect(link?.textContent).toBe("run");
+    expect(link?.getAttribute("href")).toBe("");
+    link?.click();
+    expect(opened).toEqual([]);
   });
 
   it("keeps a wikilink inside the note", async () => {
@@ -623,6 +708,16 @@ describe("MarkdownEditor", () => {
     expect(opened).toEqual([]);
   });
 });
+
+function inlineHandlers(surface: HTMLElement): string[] {
+  const names: string[] = [];
+  for (const element of surface.querySelectorAll("*")) {
+    for (const attr of element.attributes) {
+      if (attr.name.toLowerCase().startsWith("on")) names.push(attr.name);
+    }
+  }
+  return names;
+}
 
 function markdownInfo(id: string, markdown: string): MarkdownInfo {
   return {

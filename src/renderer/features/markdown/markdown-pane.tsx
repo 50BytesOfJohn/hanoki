@@ -25,7 +25,7 @@ import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { FrontmatterBlock } from "./markdown-preview";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
 import { RichTextReadonlyBanner } from "./rich-text-readonly-banner";
-import { RICH_TEXT_SCHEMA_EXTENSIONS } from "./rich-text-schema";
+import { NOTE_LINK_OPTIONS, RICH_TEXT_SCHEMA_EXTENSIONS } from "./rich-text-schema";
 import { inspectRichText, type RichTextInspection } from "./rich-text-safety";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
@@ -34,13 +34,7 @@ import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { openExternalFromMouseEvent } from "@/lib/open-external-link";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 
-export const NOTE_LINK_OPTIONS = {
-  openOnClick: false,
-  HTMLAttributes: {
-    rel: "noopener noreferrer nofollow",
-    target: null,
-  },
-};
+export { NOTE_LINK_OPTIONS };
 
 export const MARKDOWN_MODES = {
   preview: { label: "Preview", description: "Formatted and read only" },
@@ -335,7 +329,7 @@ function MarkdownEditorView({
         class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
       },
       handleDOMEvents: {
-        click: (_view, event) => openExternalFromMouseEvent(event),
+        click: (_view, event) => openNoteLink(event),
       },
     },
     onUpdate: ({ editor: currentEditor, transaction }) => {
@@ -450,6 +444,14 @@ export class MarkdownViewBoundary extends React.Component<
     }
     return this.props.children;
   }
+}
+
+function openNoteLink(event: MouseEvent): boolean {
+  if (openExternalFromMouseEvent(event)) return true;
+  if (!(event.target instanceof Element)) return false;
+  if (!(event.target.closest("a") instanceof HTMLAnchorElement)) return false;
+  event.preventDefault();
+  return true;
 }
 
 function preserveSourceBytes(source: string, serialized: string): string {
