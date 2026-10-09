@@ -1,4 +1,5 @@
-import { app, autoUpdater, dialog, shell } from "electron";
+import { app, autoUpdater, dialog } from "electron";
+import { openExternalUrl } from "./open-external";
 import { updateElectronApp } from "update-electron-app";
 
 import type { SystemEvent, UpdateStateSnapshot } from "@shared/events";
@@ -168,5 +169,5 @@ export function installUpdate(): void {
 }
 
 export function openReleasesPage(): Promise<void> {
-  return shell.openExternal(RELEASES_URL);
+  return openExternalUrl(RELEASES_URL);
 }

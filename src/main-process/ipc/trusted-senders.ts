@@ -1,36 +1,11 @@
 import type { IpcMainInvokeEvent, WebContents } from "electron";
 
+import { currentRendererEntryUrl, isRendererEntryUrl } from "../app/renderer-entry";
 import { AppError } from "./core/errors";
 
-function isTrustedDevServerUrl(url: string): boolean {
-  if (!MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    return false;
-  }
-
-  try {
-    const sender = new URL(url);
-    const devServer = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    return sender.origin === devServer.origin;
-  } catch {
-    return false;
-  }
-}
-
 export function isTrustedRendererUrl(url: string): boolean {
-  if (!url) {
-    return false;
-  }
-
-  if (isTrustedDevServerUrl(url)) {
-    return true;
-  }
-
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "file:";
-  } catch {
-    return false;
-  }
+  if (!url) return false;
+  return isRendererEntryUrl(url, currentRendererEntryUrl());
 }
 
 export interface TrustedSenderRegistry {

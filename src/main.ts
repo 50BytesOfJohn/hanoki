@@ -148,6 +148,7 @@ if (!app.requestSingleInstanceLock()) {
 
     mainWindow = createMainWindow({
       trustedSenders: backend.trustedSenders,
+      localServerPort: () => aiServer?.port ?? null,
       onClosed: () => {
         mainWindow = null;
       },
@@ -167,7 +168,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       try {
         backend = bootstrapBackend({
           onProviderModelsSyncCompleted: ({ providerId, status }) => {
@@ -203,9 +204,9 @@ if (!app.requestSingleInstanceLock()) {
           return getSystemState();
         });
         initUpdater({ broadcast: broadcastSystemEvent });
+        await startAiServer();
         openMainWindow();
         startProviderModelSyncOnStartup();
-        void startAiServer();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         dialog.showErrorBox("Startup failed", `The app could not initialize.\n\n${message}`);

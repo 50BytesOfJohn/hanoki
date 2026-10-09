@@ -46,6 +46,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
+import { openExternalLink } from "@/lib/open-external-link";
+import {
+  isRemoteImageUrl as isRemoteAssistantImage,
+  stripRemoteAssistantImages,
+} from "@shared/chat/assistant-images";
 import { Spinner } from "@/components/ui/spinner";
 import {
   createTiptapDocumentFromText,
@@ -62,6 +67,22 @@ import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 
 const STREAMDOWN_PLUGINS = { code };
+const ASSISTANT_MARKDOWN_COMPONENTS = {
+  a: ({ href, children, node: _node, ...props }: React.ComponentProps<"a"> & { node?: object }) => (
+    <a
+      {...props}
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        if (typeof href === "string") openExternalLink(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+  img: ({ src, alt }: React.ComponentProps<"img">) =>
+    typeof src === "string" && !isRemoteAssistantImage(src) ? <img src={src} alt={alt} /> : null,
+};
 const USER_MESSAGE_CARD_CLASS_NAME =
   "max-w-[85%] rounded-xl bg-surface-secondary px-4 py-3 text-sm";
 const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full text-sm";
@@ -102,10 +123,11 @@ const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
     <Streamdown
       mode={isAnimating ? "streaming" : "static"}
       plugins={STREAMDOWN_PLUGINS}
+      components={ASSISTANT_MARKDOWN_COMPONENTS}
       isAnimating={isAnimating}
       className="text-[0.9375rem] leading-[1.7] text-foreground/90"
     >
-      {text}
+      {stripRemoteAssistantImages(text)}
     </Streamdown>
   );
 });

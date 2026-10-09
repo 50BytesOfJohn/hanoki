@@ -101,6 +101,9 @@ export const IPC_CHANNELS = {
     install: "updates:install",
     openReleases: "updates:openReleases",
   },
+  shell: {
+    openExternal: "shell:openExternal",
+  },
   toolApprovals: {
     respond: "toolApprovals:respond",
   },
@@ -673,4 +676,5 @@ export interface IpcApi {
   checkForUpdates: () => Promise<import("../events").UpdateStateSnapshot>;
   installUpdate: () => Promise<void>;
   openReleasesPage: () => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
 }

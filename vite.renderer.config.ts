@@ -1,10 +1,24 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 
-export default defineConfig({
+import { rendererContentSecurityPolicy } from "./src/main-process/app/content-security-policy";
+import { arktypeJitless } from "./src/renderer/arktype-jitless";
+
+function devContentSecurityPolicy(): Plugin {
+  const prod = rendererContentSecurityPolicy("prod");
+  const dev = rendererContentSecurityPolicy("dev");
+  return {
+    name: "hanoki-dev-csp",
+    transformIndexHtml(html) {
+      return html.replace(prod, dev);
+    },
+  };
+}
+
+export default defineConfig(({ command }) => ({
   root: path.resolve(__dirname, "src/renderer"),
   plugins: [
     TanStackRouterVite({
@@ -16,6 +30,8 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    arktypeJitless(),
+    ...(command === "serve" ? [devContentSecurityPolicy()] : []),
   ],
   resolve: {
     alias: {
@@ -34,4 +50,4 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
-});
+}));

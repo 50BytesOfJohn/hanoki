@@ -1,4 +1,4 @@
-import { shell } from "electron";
+import { openExternalUrl } from "../../app/open-external";
 import { IPC_CHANNELS, type ContextMenuCommand, type ContextMenuCommandInput } from "@shared/ipc";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
@@ -95,7 +95,7 @@ export function registerContextMenuIpcModule(
         case "search-web": {
           const selectionText = input.selectionText?.trim();
           if (selectionText) {
-            await shell.openExternal(
+            await openExternalUrl(
               `https://www.google.com/search?q=${encodeURIComponent(selectionText)}`,
             );
           }

@@ -1,13 +1,44 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, type Session } from "electron";
 import path from "node:path";
 
-import { isTrustedRendererUrl, type TrustedSenderRegistry } from "../ipc/trusted-senders";
+import { rendererHeaderContentSecurityPolicy } from "./content-security-policy";
+import { fileRequestHasHost } from "./file-request";
+import { openExternalUrl } from "./open-external";
+import { currentRendererEntryUrl, isRendererEntryUrl, windowOpenDecision } from "./renderer-entry";
+import { type TrustedSenderRegistry } from "../ipc/trusted-senders";
 import { WINDOW_TOOLBAR_HEIGHT, WINDOW_TRAFFIC_LIGHTS_POSITION } from "@shared/window-chrome";
 import { createPersistentWindowState } from "../lib/persistent-window-state";
+
+let contentSecurityPolicyInstalled = false;
+
+function installRendererContentSecurityPolicy(
+  webSession: Session,
+  mode: "dev" | "prod",
+  localServerPort: () => number | null,
+): void {
+  if (contentSecurityPolicyInstalled) return;
+  contentSecurityPolicyInstalled = true;
+  webSession.webRequest.onBeforeRequest({ urls: ["file://*/*"] }, (details, callback) => {
+    callback(fileRequestHasHost(details.url) ? { cancel: true } : {});
+  });
+  webSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.resourceType !== "mainFrame") {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [rendererHeaderContentSecurityPolicy(mode, localServerPort())],
+      },
+    });
+  });
+}
 
 export interface CreateMainWindowOptions {
   trustedSenders: TrustedSenderRegistry;
   onClosed?: () => void;
+  localServerPort: () => number | null;
 }
 
 function getMainWindowIconPath(): string | undefined {
@@ -71,17 +102,22 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     options.trustedSenders.unregisterTrustedWebContents(mainWindow.webContents.id);
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https:") || url.startsWith("http:")) {
-      void shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isTrustedRendererUrl(url)) {
-      event.preventDefault();
-    }
-  });
+  const entryUrl = currentRendererEntryUrl();
+  installRendererContentSecurityPolicy(
+    mainWindow.webContents.session,
+    MAIN_WINDOW_VITE_DEV_SERVER_URL ? "dev" : "prod",
+    options.localServerPort,
+  );
+  mainWindow.webContents.setWindowOpenHandler(({ url }) =>
+    windowOpenDecision(url, (allowed) => {
+      void openExternalUrl(allowed);
+    }),
+  );
+  const allowEntry = (event: { preventDefault(): void }, url: string) => {
+    if (!isRendererEntryUrl(url, entryUrl)) event.preventDefault();
+  };
+  mainWindow.webContents.on("will-navigate", allowEntry);
+  mainWindow.webContents.on("will-redirect", allowEntry);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
