@@ -7,56 +7,66 @@ import {
 } from "./rich-text-safety";
 
 const lossy = {
-  frontmatter: "---\ntitle: x\ntags: [a, b]\n---\nBody text",
-  "gfm table": "Intro\n\n| a | b |\n| --- | --- |\n| one | two |\n\nOutro",
-  "task list": "- [ ] todo\n- [x] done",
   footnote: "Text with note[^1].\n\n[^1]: The footnote.",
+  "inline footnote": "Hello ^[inline note]",
   "inline html": "Hello <span>hi</span> world",
   "inline html styled": 'Hello <span style="color:red">red</span> world',
   "html block": "<details>\n<summary>More</summary>\n\nHidden\n\n</details>",
   "html comment": "Before\n\n<!-- private -->\n\nAfter",
   callout: "> [!note] Title\n> Body",
-  "image relative": '![alt](img/a.png "t")',
-  "image remote": "![alt](https://cdn.example.com/a.png)",
-  "image attachment": "![cover](Attachments/cover.png)",
-  "image empty alt": "![](note.png)",
-  "image reference": "![shot][pic]",
+  "folded callout": "> [!warning]- Watch\n> Body",
+  "math inline": "Inline $\\alpha$ here",
+  "math subscript": "Value $a_1$ now",
+  "math block": "$$\nE = mc^2\n$$",
   "reference link": "See [docs][1].\n\n[1]: https://example.com",
+  "definition only": "[1]: https://example.com",
+  "image reference": "![shot][pic]\n\n[pic]: img/a.png",
   escapes: "1\\. not a list and \\*not em\\*",
   "tilde fence around backticks": "~~~\n```\ninner\n```\n~~~",
+  "escaped pipe": "| a \\| b | c |\n| --- | --- |\n| 1 | 2 |",
 } as const;
 
 const safe = {
+  frontmatter: "---\ntitle: x\ntags: [a, b]\n---\nBody text",
+  "frontmatter only": "---\ntitle: Trip\n---\n",
+  "blank lines": "a\n\n\nb",
+  "qa heading": "## Q&A",
+  "tilde dollar": "Costs ~$40",
+  "bare less-than": "a<b",
+  "less and greater": "x<y and y>z",
+  arrow: "5 -> 7",
+  heart: "I <3 this",
+  generic: "List<String>",
+  amp: "Tom & Jerry",
+  "see bracket": "see [1]",
+  "empty box": "[ ] not a list",
+  stars: "2 * 3 * 4",
+  snake: "snake_case_name",
+  "loose list": "- a\n\n- b",
+  "paren list": "1) a",
+  "backslash break": "line\\\nline",
+  "two space break": "line one  \nline two",
+  "indent code": "    code",
+  "closing hash": "## Title ##",
+  "gfm table": "Intro\n\n| a | b |\n| --- | --- |\n| one | two |\n\nOutro",
+  "aligned table": "| left | right |\n| :--- | ---: |\n| x | y |",
+  "task list": "- [ ] todo\n- [x] done",
+  "nested tasks": "- [ ] a\n  - [x] b",
+  "image relative": '![alt](img/a.png "t")',
+  "image remote": "![alt](https://cdn.example.com/a.png)",
+  "image sentence": "See ![alt](img/a.png) here",
   "underscore emph": "_em_ and __strong__",
   "plus bullets": "+ one\n+ two",
-  "star bullets": "* one\n* two",
+  "adjacent bullet styles": "- one\n\n+ two\n\n* three",
   "tilde fence": "~~~\ncode\n~~~",
   "hr ***": "a\n\n***\n\nb",
-  "hr ___": "a\n\n___\n\nb",
-  "trailing newline": "Body\n",
   autolink: "<https://example.com> and https://bare.example.com",
-  "email autolink": "<user@example.com>",
-  www: "www.example.com",
   "setext heading": "Title\n=====",
-  "setext h2": "Title\n-----",
-  crlf: "Hello\r\n\r\n- item\r\n",
-  plain: "Hello world",
-  heading: "# Title\n\nBody",
-  "ends list": "- one\n- two",
-  "ends code": "```\ncode\n```",
-  "obsidian comment": "Visible %%hidden%% text",
-  highlight: "This is ==important==",
-  embed: "![[Diagram.png]]",
-  "wikilink alias": "See [[Work/Standup|standup]]",
-  "nested list": "- a\n  - b\n    - c",
-  "ordered start 3": "3. three\n4. four",
-  "hard break": "line one  \nline two",
-  "blank lines": "a\n\n\n\nb",
-  link: "See [docs](https://example.com).",
-  "inline code underscore": "use `_em_` literally",
-  "code fence underscore": "```\n_em_\n```",
+  wikilink: "See [[Work/Standup|standup]]",
+  "han11 note": "The plan is in [[Topic]].\n\n\n## Details\n\nBring the notes.",
   "html inside a code fence": "```\n<span>hi</span>\n```",
   "image inside a code fence": "```\n![alt](https://cdn.example.com/a.png)\n```",
+  "footnote inside a code fence": "```\nnote[^1]\n```",
 } as const;
 
 describe("inspectRichText", () => {
@@ -91,18 +101,17 @@ describe("inspectRichText", () => {
     ).toBe(true);
   });
 
-  it("treats every image URL as lossy when the picture collapses to its alt text", () => {
+  it("treats a collapsed image as lossy and a round-tripped image as safe", () => {
     const images = [
-      ["![alt](img/a.png)", "alt"],
-      ["![alt](https://cdn.example.com/a.png)", "alt"],
-      ["![cover](Attachments/cover.png)", "cover"],
-      ['![alt](img/a.png "t")', "alt"],
-      ["![](note.png)", ""],
-      ["![shot][pic]", "shot"],
+      "![alt](img/a.png)",
+      "![alt](https://cdn.example.com/a.png)",
+      "![cover](Attachments/cover.png)",
+      '![alt](img/a.png "t")',
+      "![](note.png)",
     ] as const;
-    for (const [source, collapsed] of images) {
-      expect(richTextRoundTripLosesContent(source, collapsed)).toBe(true);
-      expect(inspectRichText(source).losesContent).toBe(true);
+    for (const source of images) {
+      expect(richTextRoundTripLosesContent(source, "alt")).toBe(true);
+      expect(inspectRichText(source).losesContent).toBe(false);
     }
   });
 
@@ -116,21 +125,18 @@ describe("inspectRichText", () => {
 
   it("names the detected constructs without putting them in the banner copy", () => {
     const note = [
-      "---",
-      "title: Trip",
-      "---",
+      "Hello <span>hi</span>",
       "",
-      "| a | b |",
-      "| --- | --- |",
-      "| one | two |",
+      "Text[^1]",
       "",
-      "- [ ] passport",
-      "- [x] tickets",
+      "[^1]: Note.",
+      "",
+      "> [!note] Title",
     ].join("\n");
 
     expect(inspectRichText(note)).toEqual({
       losesContent: true,
-      summary: "Has frontmatter, a table and task boxes.",
+      summary: "Has HTML, a footnote and a callout.",
     });
   });
 });

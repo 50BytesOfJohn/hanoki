@@ -25,20 +25,17 @@ function openedExternalLinks(): string[] {
 }
 
 const LOSSY_NOTES = {
-  frontmatter: "---\ntitle: x\ntags: [a, b]\n---\nBody text",
-  "gfm table": "Intro\n\n| a | b |\n| --- | --- |\n| one | two |\n\nOutro",
-  "task list": "- [ ] todo\n- [x] done",
   footnote: "Text with note[^1].\n\n[^1]: The footnote.",
   "inline html": "Hello <span>hi</span> world",
   "html block": "<details>\n<summary>More</summary>\n\nHidden\n\n</details>",
   "html comment": "Before\n\n<!-- private -->\n\nAfter",
   callout: "> [!note] Title\n> Body",
-  "image relative": '![alt](img/a.png "t")',
-  "image remote": "![alt](https://cdn.example.com/a.png)",
-  "image attachment": "![cover](Attachments/cover.png)",
   "reference link": "See [docs][1].\n\n[1]: https://example.com",
   escapes: "1\\. not a list and \\*not em\\*",
 } as const;
+
+const FRONTMATTER = "---\ntitle: x\ntags: [a, b]\n---\n";
+const TABLE = "Intro\n\n| a | b |\n| --- | --- |\n| one | two |\n\nOutro";
 
 beforeAll(() => {
   Range.prototype.getClientRects = () => document.createElement("div").getClientRects();
@@ -343,7 +340,7 @@ describe("MarkdownEditor", () => {
         itemId="banner-note"
         workspaceId="workspace"
         folderId={null}
-        markdown={LOSSY_NOTES.frontmatter}
+        markdown={LOSSY_NOTES.footnote}
         editable
         onChange={vi.fn()}
         onBlur={vi.fn()}
@@ -360,13 +357,77 @@ describe("MarkdownEditor", () => {
     expect(screen.queryByRole("button", { name: "Edit in Markdown" })).toBeTruthy();
   });
 
+  it("keeps frontmatter byte-for-byte when the body is edited", async () => {
+    const onChange = vi.fn();
+    const original = `${FRONTMATTER}Body text`;
+    render(
+      <MarkdownEditor
+        itemId="frontmatter-note"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={original}
+        editable
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(screen.getByLabelText("Note properties").textContent).toContain("title: x");
+    expect(screen.queryByRole("button", { name: "Edit in Markdown" })).toBeNull();
+    registeredMarkdownEditor("frontmatter-note")?.commands.insertContent("!");
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalled();
+    });
+    const saved = String(onChange.mock.calls.at(-1)?.[0]);
+    expect(saved.startsWith(FRONTMATTER)).toBe(true);
+    expect(saved).toContain("!");
+  });
+
+  it("renders a guarded note through the preview with the banner", async () => {
+    const note = `${FRONTMATTER}Hello <span>hi</span>\n\n| a | b |\n| --- | --- |\n| one | two |`;
+    render(
+      <MarkdownEditor
+        itemId="guarded-preview"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={note}
+        editable
+        onChange={vi.fn()}
+        onBlur={vi.fn()}
+        onEditInMarkdown={vi.fn()}
+      />,
+    );
+    const surface = await screen.findByLabelText("Markdown rich text, read only");
+    expect(surface.querySelector("table")?.textContent).toContain("one");
+    expect(surface.textContent).toContain("hi");
+    expect(screen.getByLabelText("Note properties").textContent).toContain("title: x");
+    expect(screen.getByRole("button", { name: "Edit in Markdown" })).toBeTruthy();
+  });
+
+  it("renders an editable table and task list", async () => {
+    render(
+      <MarkdownEditor
+        itemId="table-tasks"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={`${TABLE}\n\n- [ ] todo\n- [x] done`}
+        editable
+        onChange={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+    const surface = await screen.findByLabelText("Markdown rich text editor");
+    expect(surface.querySelector("table")?.textContent).toContain("one");
+    expect(surface.querySelector('input[type="checkbox"]')).toBeTruthy();
+  });
+
   it("does not show the banner in preview", async () => {
     render(
       <MarkdownEditor
         itemId="preview-note"
         workspaceId="workspace"
         folderId={null}
-        markdown={LOSSY_NOTES.frontmatter}
+        markdown={LOSSY_NOTES.footnote}
         editable={false}
         onChange={vi.fn()}
         onBlur={vi.fn()}

@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import type { MarkdownInfo } from "@shared/ipc";
+import { splitFrontmatter } from "@shared/markdown/frontmatter";
 
 import { itemsApi } from "@/api/items";
 import { queryClient } from "@/lib/query-client";
@@ -74,7 +75,10 @@ async function adoptRewrittenMarkdown(itemIds: readonly string[]): Promise<void>
             tr.setMeta("addToHistory", false);
             return true;
           })
-          .setContent(markdown, { contentType: "markdown", emitUpdate: false })
+          .setContent(splitFrontmatter(markdown).body, {
+            contentType: "markdown",
+            emitUpdate: false,
+          })
           .run();
         binding.resetBaseline();
       }

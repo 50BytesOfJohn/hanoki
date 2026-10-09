@@ -356,6 +356,26 @@
   }
 }
 
+.prose ul[data-type="taskList"] {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.prose ul[data-type="taskList"] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.prose ul[data-type="taskList"] > li > label {
+  margin-top: 0.3rem;
+}
+
+.prose ul[data-type="taskList"] > li > div {
+  min-width: 0;
+}
+
 /* Daily-use tool: motion must never make the user wait. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -46,8 +46,10 @@ const { MARKDOWN_MODE_IDS, MarkdownPane, MarkdownPaneProvider, useMarkdownPane }
   await import("./markdown-pane");
 const { registeredMarkdownEditor } = await import("./markdown-session");
 
-const LOSSY = "---\ntitle: x\ntags: [a, b]\n---\nBody text";
+const LOSSY = "Hello <span>hi</span> world";
 const TABLE = "Intro\n\n| a | b |\n| --- | --- |\n| one | two |\n\nOutro";
+const GUARDED_TABLE = "Before\n\n<!-- private -->\n\n| a | b |\n| --- | --- |\n| one | two |";
+const FRONTMATTER = "---\ntitle: x\ntags: [a, b]\n---\n";
 
 describe("guarded rich text saves", () => {
   const directory = mkdtempSync(join(tmpdir(), "hanoki-rich-text-guard-"));
@@ -173,7 +175,7 @@ describe("guarded rich text saves", () => {
 
   it("keeps unedited safe notes unchanged across mode switches", async () => {
     installApi();
-    for (const markdown of ["Hello world", "- one\n- two", "# Title", "```\ncode\n```"]) {
+    for (const markdown of ["Hello world", "- one\n- two", "# Title", "```\ncode\n```", TABLE]) {
       const stored = seed(markdown);
       renderPane(stored.id);
       await screen.findByLabelText("Markdown rich text editor");
@@ -205,9 +207,23 @@ describe("guarded rich text saves", () => {
     expect(readItem(stored.id).updatedAt).not.toBe(stored.updatedAt);
   });
 
+  it("reattaches frontmatter after a body edit", async () => {
+    installApi();
+    const stored = seed(`${FRONTMATTER}Body text`);
+    renderPane(stored.id);
+    await screen.findByLabelText("Markdown rich text editor");
+    expect(screen.getByLabelText("Note properties").textContent).toContain("title: x");
+    registeredMarkdownEditor(stored.id)?.commands.insertContent("!");
+    fireEvent.click(screen.getByRole("button", { name: "mode-source" }));
+    await waitFor(() => {
+      expect(readItem(stored.id).data.markdown).toContain("!");
+    });
+    expect(readItem(stored.id).data.markdown.startsWith(FRONTMATTER)).toBe(true);
+  });
+
   it("keeps Markdown mode editable and restores scroll from the banner", async () => {
     installApi();
-    const stored = seed(TABLE);
+    const stored = seed(GUARDED_TABLE);
     renderPane(stored.id);
     await screen.findByRole("button", { name: "Edit in Markdown" });
     const scroller = document.querySelector("[data-markdown-scroller]");
@@ -220,7 +236,7 @@ describe("guarded rich text saves", () => {
     expect(
       screen.queryByText("Read-only in Rich text, so none of this note's formatting is lost."),
     ).toBeNull();
-    fireEvent.change(source, { target: { value: `${TABLE}\nedited` } });
+    fireEvent.change(source, { target: { value: `${GUARDED_TABLE}\nedited` } });
     await waitFor(() => {
       expect(readItem(stored.id).data.markdown).toContain("edited");
     });
