@@ -29,10 +29,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function maskCode(markdown: string): { text: string; blocks: string[] } {
+function maskCode(markdown: string) {
   const blocks: string[] = [];
   const hide = (block: string) => {
-    const token = `\u0000${blocks.length}\u0000`;
+    const token = `\uE000${blocks.length}\uE001`;
     blocks.push(block);
     return token;
   };
@@ -151,7 +151,7 @@ export function stripRemoteAssistantImages(markdown: string): string {
   const masked = maskCode(markdown);
   const stripped = stripPlainAssistantImages(masked.text);
   return stripped.replace(
-    /\u0000(\d+)\u0000/g,
+    /\uE000(\d+)\uE001/g,
     (_match, index: string) => masked.blocks[Number(index)] ?? "",
   );
 }
