@@ -47,11 +47,7 @@ import { cn } from "@/lib/utils";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { openExternalLink } from "@/lib/open-external-link";
-import {
-  isHttpImageUrl,
-  isRemoteImageUrl,
-  stripRemoteAssistantImages,
-} from "@shared/chat/assistant-images";
+import { isNonHttpRemoteImageUrl, isRemoteImageUrl } from "@shared/chat/assistant-images";
 import { rehypeBlockImages, RemoteImagePlaceholder } from "@/components/remote-image-placeholder";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -69,7 +65,87 @@ import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 
 const STREAMDOWN_PLUGINS = { code };
-const ASSISTANT_REHYPE_PLUGINS = [...Object.values(defaultRehypePlugins), rehypeBlockImages];
+
+type HastNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  properties?: { src?: string; alt?: string; remoteSrc?: string; dataBlockImage?: string };
+  children?: HastNode[];
+};
+
+function meaningfulHastChildren(node: HastNode): HastNode[] {
+  return (node.children ?? []).filter((child) => {
+    if (child.type === "text") return (child.value ?? "").trim().length > 0;
+    return child.type === "element";
+  });
+}
+
+type RemoteImageProperties = {
+  remoteSrc: string;
+  alt?: string;
+  dataBlockImage?: string;
+};
+
+function retagRemoteImage(node: HastNode, block: boolean) {
+  const src = node.properties?.src;
+  if (!src || !isNonHttpRemoteImageUrl(src)) return;
+  const properties: RemoteImageProperties = { remoteSrc: src };
+  const alt = node.properties?.alt;
+  if (alt) properties.alt = alt;
+  if (block) properties.dataBlockImage = "true";
+  node.tagName = "remoteimage";
+  node.properties = properties;
+}
+
+function rehypeNonHttpRemoteImages() {
+  return (tree: HastNode) => {
+    preserveRemoteImages(tree);
+  };
+}
+
+function preserveRemoteImages(node: HastNode) {
+  if (node.type === "element" && node.tagName === "p") {
+    const meaningful = meaningfulHastChildren(node);
+    const only = meaningful[0];
+    if (meaningful.length === 1 && only?.tagName === "img") retagRemoteImage(only, true);
+  }
+  if (node.type === "element" && node.tagName === "img") retagRemoteImage(node, false);
+  for (const child of node.children ?? []) preserveRemoteImages(child);
+}
+
+type SanitizeAttribute = string | readonly [string, string | boolean | RegExp];
+
+type SanitizeSchema = {
+  tagNames: string[];
+  attributes: Record<string, readonly SanitizeAttribute[]>;
+};
+
+function assistantSanitizePlugin(): (typeof defaultRehypePlugins)["sanitize"] {
+  const plugin = defaultRehypePlugins.sanitize;
+  if (!Array.isArray(plugin)) return plugin;
+  // SAFETY: Streamdown ships sanitize as [rehypeSanitize, schema], and that schema lists tagNames and attributes.
+  const schema = plugin[1] as SanitizeSchema | undefined;
+  if (!schema?.tagNames || !schema.attributes) return plugin;
+  const next: SanitizeSchema = {
+    ...schema,
+    tagNames: [...schema.tagNames, "remoteimage"],
+    attributes: {
+      ...schema.attributes,
+      remoteimage: ["remoteSrc", "alt", "dataBlockImage"],
+    },
+  };
+  const entry: (typeof defaultRehypePlugins)["sanitize"] = [plugin[0], next];
+  return entry;
+}
+
+const ASSISTANT_REHYPE_PLUGINS = [
+  defaultRehypePlugins.raw,
+  rehypeNonHttpRemoteImages,
+  assistantSanitizePlugin(),
+  defaultRehypePlugins.harden,
+  rehypeBlockImages,
+];
 
 function assistantImageIsBlock(props: { dataBlockImage?: unknown; "data-block-image"?: unknown }) {
   const value = props.dataBlockImage ?? props["data-block-image"];
@@ -100,7 +176,7 @@ const ASSISTANT_MARKDOWN_COMPONENTS = {
     "data-block-image"?: unknown;
   }) => {
     if (typeof src !== "string") return null;
-    if (isHttpImageUrl(src)) {
+    if (isRemoteImageUrl(src)) {
       return (
         <RemoteImagePlaceholder
           src={src}
@@ -109,8 +185,27 @@ const ASSISTANT_MARKDOWN_COMPONENTS = {
         />
       );
     }
-    if (isRemoteImageUrl(src)) return null;
     return <img src={src} alt={alt} />;
+  },
+  remoteimage: ({
+    remoteSrc,
+    alt,
+    ...props
+  }: {
+    remoteSrc?: string;
+    alt?: string;
+    dataBlockImage?: unknown;
+    "data-block-image"?: unknown;
+    node?: object;
+  }) => {
+    if (!remoteSrc) return null;
+    return (
+      <RemoteImagePlaceholder
+        src={remoteSrc}
+        alt={alt ?? ""}
+        layout={assistantImageIsBlock(props) ? "block" : "inline"}
+      />
+    );
   },
 };
 const USER_MESSAGE_CARD_CLASS_NAME =
@@ -158,7 +253,7 @@ export const AssistantMessageTextPart = React.memo(function AssistantMessageText
       isAnimating={isAnimating}
       className="text-[0.9375rem] leading-[1.7] text-foreground/90"
     >
-      {stripRemoteAssistantImages(text)}
+      {text}
     </Streamdown>
   );
 });

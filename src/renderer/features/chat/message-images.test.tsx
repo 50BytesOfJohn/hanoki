@@ -36,4 +36,39 @@ describe("assistant remote images", () => {
     expect(document.querySelector("img[src^='http']")).toBeNull();
     expect(document.querySelector("a[href^='http']")).toBeNull();
   });
+
+  it.each([
+    [
+      "protocol-relative with alt",
+      "![Mountain at dawn](//cdn.example.com/a.png)",
+      "Mountain at dawn · cdn.example.com",
+      "Image not loaded: Mountain at dawn, from cdn.example.com",
+    ],
+    [
+      "protocol-relative without alt",
+      "![](//cdn.example.com/a.png)",
+      "Image not loaded · cdn.example.com",
+      "Image not loaded, from cdn.example.com",
+    ],
+    [
+      "file host with alt",
+      "![scan](file://files.example/a.png)",
+      "scan · files.example",
+      "Image not loaded: scan, from files.example",
+    ],
+    [
+      "file host without alt",
+      "![](file://files.example/a.png)",
+      "Image not loaded · files.example",
+      "Image not loaded, from files.example",
+    ],
+  ])("shows a placeholder for %s", async (_name, text, label, aria) => {
+    render(<AssistantMessageTextPart isAnimating={false} text={text} />);
+    const row = await screen.findByRole("img", { name: aria });
+    expect(row.getAttribute("data-layout")).toBe("block");
+    expect(row.textContent).toBe(label);
+    expect(
+      document.querySelector("img[src^='//'], img[src^='file:'], img[src^='http']"),
+    ).toBeNull();
+  });
 });
