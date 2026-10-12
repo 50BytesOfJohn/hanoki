@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAsyncDebouncer } from "@tanstack/react-pacer";
 import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { Marked, marked } from "marked";
 import { FileScriptIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ItemInfo, MarkdownInfo } from "@shared/ipc";
+import { joinFrontmatter, splitFrontmatter } from "@shared/markdown/frontmatter";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,11 @@ import { toastManager } from "@/components/ui/toast";
 import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
+import { FrontmatterBlock } from "./markdown-preview";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
+import { RichTextReadonlyBanner } from "./rich-text-readonly-banner";
+import { NOTE_LINK_OPTIONS, RICH_TEXT_SCHEMA_EXTENSIONS } from "./rich-text-schema";
+import { inspectRichText, type RichTextInspection } from "./rich-text-safety";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
@@ -29,13 +34,7 @@ import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { openExternalFromMouseEvent } from "@/lib/open-external-link";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 
-export const NOTE_LINK_OPTIONS = {
-  openOnClick: false,
-  HTMLAttributes: {
-    rel: "noopener noreferrer nofollow",
-    target: null,
-  },
-};
+export { NOTE_LINK_OPTIONS };
 
 export const MARKDOWN_MODES = {
   preview: { label: "Preview", description: "Formatted and read only" },
@@ -78,13 +77,21 @@ export function useMarkdownPane(): MarkdownPaneContextValue {
   return context;
 }
 
-const MARKDOWN_EXTENSIONS = [
-  StarterKit.configure({ link: NOTE_LINK_OPTIONS }),
-  Markdown,
-  WikilinkEditor,
-];
+function freshMarked(): typeof marked {
+  const instance = new Marked();
+  // SAFETY: MarkdownManager only calls lexer, parser, use, and setOptions, which Marked implements.
+  return instance as unknown as typeof marked;
+}
+
+function createMarkdownExtensions() {
+  return [
+    ...RICH_TEXT_SCHEMA_EXTENSIONS,
+    WikilinkEditor,
+    Markdown.configure({ marked: freshMarked() }),
+  ];
+}
 const MARKDOWN_PROSE_CLASS =
-  "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link";
+  "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_td]:border [&_th]:border-border [&_td]:border-border [&_th]:px-2 [&_td]:px-2 [&_th]:py-1 [&_td]:py-1 [&_img]:max-w-full";
 
 export function MarkdownPane({ itemId }: { itemId: string }) {
   const { mode, setMode } = useMarkdownPane();
@@ -188,6 +195,20 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   );
 
   const markdown = document?.itemId === itemId ? document.markdown : null;
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  const restoreScrollRef = React.useRef<number | null>(null);
+
+  function editInMarkdown() {
+    restoreScrollRef.current = scrollerRef.current?.scrollTop ?? 0;
+    setMode("source");
+  }
+
+  React.useLayoutEffect(() => {
+    const top = restoreScrollRef.current;
+    if (top === null) return;
+    restoreScrollRef.current = null;
+    if (scrollerRef.current) scrollerRef.current.scrollTop = top;
+  }, [mode]);
 
   React.useEffect(() => {
     return registerMarkdownSaver(itemId, {
@@ -212,7 +233,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollerRef} data-markdown-scroller className="min-h-0 flex-1 overflow-auto">
         {mode === "source" ? (
           <textarea
             autoFocus
@@ -231,6 +252,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
             folderId={markdownItem.folderId}
             markdown={markdown}
             editable={mode === "rich-text"}
+            onEditInMarkdown={editInMarkdown}
             onChange={updateMarkdown}
             onBlur={() => void saver.flush()}
           />
@@ -256,66 +278,190 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   );
 }
 
-export function MarkdownEditor({
+export function MarkdownEditor(props: MarkdownEditorProps) {
+  return (
+    <MarkdownViewBoundary resetKey={props.itemId}>
+      <MarkdownEditorView {...props} />
+    </MarkdownViewBoundary>
+  );
+}
+
+function MarkdownEditorView({
   itemId,
   workspaceId,
   folderId,
   markdown,
   editable,
+  onEditInMarkdown,
   onChange,
   onBlur,
-}: {
+  inspect = inspectRichText,
+}: MarkdownEditorProps) {
+  const parts = splitFrontmatter(markdown);
+  const body = parts.body;
+  const frontmatterRef = React.useRef(parts.frontmatter);
+  frontmatterRef.current = parts.frontmatter;
+  const emittedRef = React.useRef<string | null>(null);
+  const originalRef = React.useRef(markdown);
+  const [safety, setSafety] = React.useState<CheckedMarkdown | null>(null);
+  const [extensions] = React.useState(createMarkdownExtensions);
+  const fromEditor = markdown === emittedRef.current;
+  const ready = safety !== null && safety.markdown === markdown ? safety : null;
+  const pending = editable && !fromEditor && ready === null;
+  const losesContent = !fromEditor && ready !== null && ready.result.losesContent;
+  const canEdit = editable && !pending && !losesContent;
+  const locked = editable && losesContent;
+  const onChangeRef = React.useRef(onChange);
+  const baselineRef = React.useRef<string | null>(null);
+  const emittedSinceBaselineRef = React.useRef(false);
+  const hydratedBodyRef = React.useRef(body);
+  onChangeRef.current = onChange;
+
+  const editor = useEditor({
+    extensions,
+    content: body,
+    contentType: "markdown",
+    editable: false,
+    immediatelyRender: false,
+    shouldRerenderOnTransaction: false,
+    editorProps: {
+      attributes: {
+        class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
+      },
+      handleDOMEvents: {
+        click: (_view, event) => openNoteLink(event),
+      },
+    },
+    onUpdate: ({ editor: currentEditor, transaction }) => {
+      if (!transaction.docChanged || baselineRef.current === null || !currentEditor.isEditable) {
+        return;
+      }
+      const serialized = currentEditor.getMarkdown();
+      const nextBody = preserveSourceBytes(splitFrontmatter(originalRef.current).body, serialized);
+      if (serialized === baselineRef.current) {
+        if (!emittedSinceBaselineRef.current) return;
+        emittedSinceBaselineRef.current = false;
+        emittedRef.current = originalRef.current;
+        onChangeRef.current(originalRef.current);
+        return;
+      }
+      const next = joinFrontmatter(frontmatterRef.current, nextBody);
+      emittedSinceBaselineRef.current = true;
+      emittedRef.current = next;
+      onChangeRef.current(next);
+    },
+    onBlur,
+  });
+
+  const captureBaseline = React.useCallback(() => {
+    if (!editor) return;
+    baselineRef.current = editor.getMarkdown();
+    emittedSinceBaselineRef.current = false;
+  }, [editor]);
+
+  React.useLayoutEffect(() => {
+    if (!editor) return;
+    baselineRef.current = null;
+    editor.setEditable(canEdit, false);
+    editor.view.dom.setAttribute(
+      "aria-label",
+      canEdit
+        ? "Markdown rich text editor"
+        : editable
+          ? "Markdown rich text, read only"
+          : "Markdown preview",
+    );
+    if (canEdit) editor.commands.focus("end");
+    captureBaseline();
+  }, [canEdit, captureBaseline, editable, editor]);
+
+  React.useEffect(() => {
+    if (!editor) return;
+    setWikilinkEditorContext(editor, workspaceId, folderId);
+    return registerMarkdownEditor(itemId, editor, captureBaseline);
+  }, [captureBaseline, editor, folderId, itemId, workspaceId]);
+
+  React.useEffect(() => {
+    if (!editor || markdown === emittedRef.current) return;
+    originalRef.current = markdown;
+    if (hydratedBodyRef.current !== body) {
+      editor.commands.setContent(body, { contentType: "markdown", emitUpdate: false });
+      hydratedBodyRef.current = body;
+    }
+    setSafety({ markdown, result: inspect(markdown, editor.getMarkdown()) });
+  }, [body, editor, inspect, markdown]);
+
+  return (
+    <>
+      {locked ? (
+        <RichTextReadonlyBanner
+          summary={ready === null ? null : ready.result.summary}
+          onEditInMarkdown={onEditInMarkdown ?? (() => {})}
+        />
+      ) : null}
+      {parts.frontmatter ? <FrontmatterBlock source={parts.frontmatter} /> : null}
+      <EditorContent
+        editor={editor}
+        className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
+      />
+    </>
+  );
+}
+
+interface MarkdownEditorProps {
   itemId: string;
   workspaceId: string;
   folderId: string | null;
   markdown: string;
   editable: boolean;
+  onEditInMarkdown?: () => void;
   onChange: (markdown: string) => void;
   onBlur: () => void;
-}) {
-  const editor = useEditor({
-    extensions: MARKDOWN_EXTENSIONS,
-    content: markdown,
-    contentType: "markdown",
-    editable,
-    immediatelyRender: false,
-    shouldRerenderOnTransaction: false,
-    editorProps: {
-      attributes: {
-        "aria-label": editable ? "Markdown rich text editor" : "Markdown preview",
-        class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
-      },
-      handleDOMEvents: {
-        click: (_view, event) => openExternalFromMouseEvent(event),
-      },
-    },
-    onUpdate: ({ editor: currentEditor }) => {
-      if (currentEditor.isEditable) onChange(currentEditor.getMarkdown());
-    },
-    onBlur,
-  });
+  inspect?: (markdown: string, serialized?: string) => RichTextInspection;
+}
 
-  React.useEffect(() => {
-    if (!editor) return;
-    editor.setEditable(editable, false);
-    if (editable) editor.commands.focus("end");
-  }, [editable, editor]);
+export class MarkdownViewBoundary extends React.Component<
+  { resetKey: string; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
 
-  React.useEffect(() => {
-    if (!editor) return;
-    setWikilinkEditorContext(editor, workspaceId, folderId);
-    return registerMarkdownEditor(itemId, editor);
-  }, [editor, folderId, itemId, workspaceId]);
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
 
-  React.useEffect(() => {
-    if (!editor || editable) return;
-    editor.commands.setContent(markdown, { contentType: "markdown", emitUpdate: false });
-  }, [editable, editor, markdown]);
+  componentDidUpdate(prev: { resetKey: string }) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) {
+      this.setState({ failed: false });
+    }
+  }
 
-  return (
-    <EditorContent
-      editor={editor}
-      className="mx-auto min-h-full w-full max-w-3xl px-7 py-7 [&_.tiptap]:min-h-[calc(100vh-8rem)]"
-    />
-  );
+  render() {
+    if (this.state.failed) {
+      return (
+        <p className="px-7 py-7 text-sm text-muted-foreground">This note could not be displayed.</p>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function openNoteLink(event: MouseEvent): boolean {
+  if (openExternalFromMouseEvent(event)) return true;
+  if (!(event.target instanceof Element)) return false;
+  if (!(event.target.closest("a") instanceof HTMLAnchorElement)) return false;
+  event.preventDefault();
+  return true;
+}
+
+function preserveSourceBytes(source: string, serialized: string): string {
+  if (source.includes("\r\n") && !serialized.includes("\r\n")) {
+    return serialized.replaceAll("\n", "\r\n");
+  }
+  return serialized;
+}
+
+interface CheckedMarkdown {
+  markdown: string;
+  result: RichTextInspection;
 }
