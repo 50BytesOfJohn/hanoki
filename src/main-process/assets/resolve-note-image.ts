@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { parseNoteImageUrl } from "@shared/assets/protocol";
 
@@ -15,6 +16,8 @@ const IMAGE_TYPES = new Map<string, string>([
   [".svg", "image/svg+xml"],
 ]);
 
+export const MAX_NOTE_IMAGE_BYTES = 25 * 1024 * 1024;
+
 export type NoteImageFailure = "traversal" | "symlink" | "outside" | "type" | "missing";
 
 export interface LoadedNoteImage {
@@ -28,6 +31,8 @@ export interface NoteImageLocation {
   root: string;
   noteDirectory: string;
 }
+
+type PathApi = typeof path | typeof path.win32;
 
 export async function loadNoteImage(
   requestUrl: string,
@@ -62,6 +67,9 @@ export async function resolveNoteImage(
 ): Promise<
   { ok: true; filePath: string; contentType: string } | { ok: false; reason: NoteImageFailure }
 > {
+  const lexical = resolveNoteImageLexical(root, noteDirectory, src);
+  if (!lexical.ok) return lexical;
+
   let rootReal: string;
   try {
     rootReal = await realpath(root);
@@ -70,7 +78,7 @@ export async function resolveNoteImage(
   }
 
   const noteLexical = path.resolve(noteDirectory);
-  if (!isInside(rootReal, noteLexical)) return { ok: false, reason: "traversal" };
+  if (!isInside(rootReal, noteLexical, path)) return { ok: false, reason: "traversal" };
 
   let noteReal: string;
   try {
@@ -78,28 +86,18 @@ export async function resolveNoteImage(
   } catch {
     return { ok: false, reason: "missing" };
   }
-  if (!isInside(rootReal, noteReal)) return { ok: false, reason: "symlink" };
+  if (!isInside(rootReal, noteReal, path)) return { ok: false, reason: "symlink" };
 
-  const located = locateRequestedPath(noteReal, src);
-  if (!located.ok) return located;
+  const canonical = resolveNoteImageLexical(rootReal, noteReal, src);
+  if (!canonical.ok) return canonical;
 
-  const lexical = path.resolve(located.path);
-  const lexicalInside = isInside(rootReal, lexical);
   let filePath: string;
   try {
-    filePath = await realpath(lexical);
+    filePath = await realpath(canonical.filePath);
   } catch {
-    if (!lexicalInside) {
-      return { ok: false, reason: located.absolute ? "outside" : "traversal" };
-    }
     return { ok: false, reason: "missing" };
   }
-  if (!isInside(rootReal, filePath)) {
-    return {
-      ok: false,
-      reason: lexicalInside ? "symlink" : located.absolute ? "outside" : "traversal",
-    };
-  }
+  if (!isInside(rootReal, filePath, path)) return { ok: false, reason: "symlink" };
 
   const contentType = IMAGE_TYPES.get(path.extname(filePath).toLowerCase());
   if (!contentType) return { ok: false, reason: "type" };
@@ -107,6 +105,7 @@ export async function resolveNoteImage(
   try {
     const fileStat = await stat(filePath);
     if (!fileStat.isFile()) return { ok: false, reason: "missing" };
+    if (fileStat.size > MAX_NOTE_IMAGE_BYTES) return { ok: false, reason: "missing" };
   } catch {
     return { ok: false, reason: "missing" };
   }
@@ -114,13 +113,37 @@ export async function resolveNoteImage(
   return { ok: true, filePath, contentType };
 }
 
-function locateRequestedPath(
-  noteReal: string,
+export function resolveNoteImageLexical(
+  root: string,
+  noteDirectory: string,
   src: string,
-): { ok: true; path: string; absolute: boolean } | { ok: false; reason: NoteImageFailure } {
-  const decoded = fullyDecode(src);
+): { ok: true; filePath: string; absolute: boolean } | { ok: false; reason: NoteImageFailure } {
+  const api = pathApi(root);
+  const decoded = decodeOnce(src);
   if (decoded === null) return { ok: false, reason: "traversal" };
+  if (isUncOrDevice(decoded)) return { ok: false, reason: "outside" };
 
+  const rootLexical = api.resolve(root);
+  const noteLexical = api.resolve(noteDirectory);
+  if (!isInside(rootLexical, noteLexical, api)) return { ok: false, reason: "traversal" };
+
+  const located = locateRequestedPath(noteLexical, decoded, api);
+  if (!located.ok) return located;
+  if (isUncOrDevice(located.path)) return { ok: false, reason: "outside" };
+
+  const filePath =
+    api === path.win32 ? path.win32.normalize(located.path) : path.resolve(located.path);
+  if (!isInside(rootLexical, filePath, api)) {
+    return { ok: false, reason: located.absolute ? "outside" : "traversal" };
+  }
+  return { ok: true, filePath, absolute: located.absolute };
+}
+
+function locateRequestedPath(
+  noteLexical: string,
+  decoded: string,
+  api: PathApi,
+): { ok: true; path: string; absolute: boolean } | { ok: false; reason: NoteImageFailure } {
   if (decoded.startsWith("file:")) {
     let url: URL;
     try {
@@ -129,48 +152,52 @@ function locateRequestedPath(
       return { ok: false, reason: "outside" };
     }
     if (url.protocol !== "file:") return { ok: false, reason: "outside" };
-    if (url.hostname !== "" && url.hostname !== "localhost") {
+    let filePath: string;
+    try {
+      filePath = fileURLToPath(url);
+    } catch {
       return { ok: false, reason: "outside" };
     }
-    const filePath = fullyDecode(url.pathname);
-    if (filePath === null) return { ok: false, reason: "traversal" };
     return { ok: true, path: filePath, absolute: true };
   }
 
-  if (/^[a-zA-Z]:[\\/]/.test(decoded) && process.platform !== "win32") {
+  if (api === path && path.win32.isAbsolute(decoded) && !path.posix.isAbsolute(decoded)) {
     return { ok: false, reason: "outside" };
   }
-  if (path.isAbsolute(decoded)) {
-    return { ok: true, path: decoded, absolute: true };
-  }
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(decoded)) {
-    return { ok: false, reason: "outside" };
-  }
+  if (api.isAbsolute(decoded)) return { ok: true, path: decoded, absolute: true };
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(decoded)) return { ok: false, reason: "outside" };
 
-  return { ok: true, path: path.resolve(noteReal, decoded.replaceAll("\\", "/")), absolute: false };
+  const relative = api === path.win32 ? decoded : decoded.replaceAll("\\", "/");
+  return { ok: true, path: api.resolve(noteLexical, relative), absolute: false };
 }
 
-function fullyDecode(value: string): string | null {
-  let current = value;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if (!current.includes("%")) break;
+function pathApi(root: string): PathApi {
+  if (/^[a-zA-Z]:[\\/]/.test(root) || root.startsWith("\\\\")) return path.win32;
+  return path;
+}
+
+function isUncOrDevice(value: string): boolean {
+  return value.startsWith("\\\\") || value.startsWith("//");
+}
+
+function decodeOnce(value: string): string | null {
+  let decoded = value;
+  if (value.includes("%")) {
     try {
-      const next = decodeURIComponent(current);
-      if (next === current) break;
-      current = next;
+      decoded = decodeURIComponent(value);
     } catch {
-      return null;
+      decoded = value;
     }
   }
-  if (hasControlChar(current)) return null;
-  return current;
+  if (hasControlChar(decoded)) return null;
+  return decoded;
 }
 
-function isInside(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
+function isInside(root: string, target: string, api: PathApi): boolean {
+  const relative = api.relative(root, target);
   if (relative === "" || relative === ".") return true;
-  if (relative === ".." || relative.startsWith(`..${path.sep}`)) return false;
-  return !path.isAbsolute(relative);
+  if (relative === ".." || relative.startsWith(`..${api.sep}`)) return false;
+  return !api.isAbsolute(relative);
 }
 
 function hasControlChar(value: string): boolean {

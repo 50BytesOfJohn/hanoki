@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
+import { Editor } from "@tiptap/core";
+import { Markdown } from "@tiptap/markdown";
+import StarterKit from "@tiptap/starter-kit";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { MarkdownEditor } from "./markdown-pane";
+import { NoteImage } from "./note-image";
 
 beforeAll(() => {
   Range.prototype.getClientRects = () => document.createElement("div").getClientRects();
@@ -105,6 +109,23 @@ describe("MarkdownEditor", () => {
     expect(missing.className).not.toContain("destructive");
     fireEvent.focus(missing);
     expect(await screen.findByText("fern.png", { selector: "span" })).toBeTruthy();
+  });
+
+  it("keeps an angle-bracket image destination across two saves", () => {
+    const element = document.createElement("div");
+    const editor = new Editor({
+      element,
+      extensions: [StarterKit, NoteImage, Markdown],
+      content: "![a](<my fern.png>)",
+      contentType: "markdown",
+    });
+    const first = editor.getMarkdown();
+    expect(first).toContain("![a](<my fern.png>)");
+    editor.commands.setContent(first, { contentType: "markdown" });
+    const second = editor.getMarkdown();
+    expect(second).toContain("![a](<my fern.png>)");
+    expect(editor.getText()).not.toContain("![a]");
+    editor.destroy();
   });
 
   it("loads an image inside a sentence", async () => {

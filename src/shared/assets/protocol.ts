@@ -20,11 +20,7 @@ export function imageDisplaySrc(
   src: string,
   target: { workspaceId: string; itemId: string },
 ): string {
-  if (!src.trim()) return "";
-  if (!isNoteLocalImageSrc(src)) {
-    if (REMOTE_IMAGE_SRC.test(src.trim()) || src.trim().startsWith("//")) return src;
-    return "";
-  }
+  if (!isNoteLocalImageSrc(src)) return "";
   return noteImageUrl(target.workspaceId, target.itemId, src);
 }
 

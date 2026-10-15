@@ -14,9 +14,7 @@ export function registerAssetScheme(): void {
       privileges: {
         standard: true,
         secure: true,
-        supportFetchAPI: true,
         corsEnabled: true,
-        stream: true,
       },
     },
   ]);
@@ -31,6 +29,7 @@ export async function handleAssetRequest(request: Request): Promise<Response> {
   const headers = new Headers({
     "Content-Type": loaded.contentType,
     "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
   });
   if (loaded.status === 200) {
     headers.set("Content-Security-Policy", "default-src 'none'");

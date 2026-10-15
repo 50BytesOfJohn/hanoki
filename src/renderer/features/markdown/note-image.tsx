@@ -18,10 +18,24 @@ export function setNoteImageContext(editor: Editor, workspaceId: string, itemId:
 }
 
 export const NoteImage = Image.extend({
+  renderMarkdown(node) {
+    const attrs = node.attrs ?? {};
+    const src = String(attrs.src ?? "");
+    const alt = String(attrs.alt ?? "");
+    const title = String(attrs.title ?? "");
+    const destination = imageDestination(src);
+    if (!title) return `![${alt}](${destination})`;
+    return `![${alt}](${destination} "${title}")`;
+  },
   addNodeView() {
     return ReactNodeViewRenderer(NoteImageView);
   },
 }).configure({ allowBase64: true });
+
+function imageDestination(src: string): string {
+  if (src.length === 0 || /[\s()]/.test(src)) return `<${src}>`;
+  return src;
+}
 
 function NoteImageView({ node, editor }: ReactNodeViewProps) {
   const src = String(node.attrs.src ?? "");

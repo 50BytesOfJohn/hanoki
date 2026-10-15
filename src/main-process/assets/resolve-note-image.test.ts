@@ -1,11 +1,16 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path, { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { HANOKI_ASSET_SCHEME, noteImageUrl } from "@shared/assets/protocol";
 
-import { loadNoteImage, type NoteImageLocation } from "./resolve-note-image";
+import {
+  loadNoteImage,
+  MAX_NOTE_IMAGE_BYTES,
+  resolveNoteImageLexical,
+  type NoteImageLocation,
+} from "./resolve-note-image";
 
 const tempDirs: string[] = [];
 
@@ -143,5 +148,70 @@ describe("loadNoteImage", () => {
     );
     expect(loaded.status).toBe(404);
     expect(loaded.reason).toBe("missing");
+  });
+
+  it("serves a file whose name contains a percent sign", async () => {
+    const root = await makeTempDir();
+    await writeFile(join(root, "50%.png"), "half");
+
+    const loaded = await loadNoteImage(
+      noteImageUrl("workspace", "note", "50%.png"),
+      locate({ root, noteDirectory: root }),
+    );
+    expect(loaded.status).toBe(200);
+    expect(Buffer.from(loaded.body).toString()).toBe("half");
+  });
+
+  it("reports an oversized image as missing", async () => {
+    const root = await makeTempDir();
+    const file = join(root, "big.png");
+    await writeFile(file, "png");
+    await truncate(file, MAX_NOTE_IMAGE_BYTES + 1);
+
+    const loaded = await loadNoteImage(
+      noteImageUrl("workspace", "note", "big.png"),
+      locate({ root, noteDirectory: root }),
+    );
+    expect(loaded.status).toBe(404);
+    expect(loaded.reason).toBe("missing");
+    expect(loaded.body.byteLength).toBe(0);
+  });
+});
+
+describe("resolveNoteImageLexical", () => {
+  const root = path.win32.resolve("C:\\vault");
+  const noteDirectory = path.win32.resolve(root, "Garden");
+
+  it("keeps a windows path inside the vault", () => {
+    expect(resolveNoteImageLexical(root, noteDirectory, "fern.png")).toEqual({
+      ok: true,
+      filePath: path.win32.resolve(noteDirectory, "fern.png"),
+      absolute: false,
+    });
+  });
+
+  it("rejects a windows path that leaves the vault", () => {
+    expect(
+      resolveNoteImageLexical(root, noteDirectory, path.win32.join("..", "..", "secret.png")),
+    ).toEqual({ ok: false, reason: "traversal" });
+    expect(
+      resolveNoteImageLexical(root, noteDirectory, path.win32.resolve("D:\\other", "fern.png")),
+    ).toEqual({ ok: false, reason: "outside" });
+  });
+
+  it("rejects windows UNC and device paths", () => {
+    const sources = [
+      path.win32.resolve("\\\\server\\share", "fern.png"),
+      "\\\\?\\C:\\fern.png",
+      "\\\\.\\C:\\fern.png",
+      "//server/share/fern.png",
+      "file:////server/share/fern.png",
+    ];
+    for (const src of sources) {
+      expect(resolveNoteImageLexical(root, noteDirectory, src)).toEqual({
+        ok: false,
+        reason: "outside",
+      });
+    }
   });
 });

@@ -14,15 +14,24 @@ export function rememberNotesRoot(workspaceId: string, source: string): void {
   writeFileSync(join(paths.workspaceDir, NOTES_ROOT_FILE), `${root}\n`, "utf8");
 }
 
-export function currentNotesRoot(workspaceId: string): string {
-  const workspaceDir = getWorkspacePaths(workspaceId).workspaceDir;
+function realDirectory(directory: string): string | null {
   try {
-    const stored = readFileSync(join(workspaceDir, NOTES_ROOT_FILE), "utf8").trim();
-    if (!stored) return workspaceDir;
-    const root = realpathSync(stored);
-    if (!statSync(root).isDirectory()) return workspaceDir;
+    const root = realpathSync(directory);
+    if (!statSync(root).isDirectory()) return null;
     return root;
   } catch {
-    return workspaceDir;
+    return null;
+  }
+}
+
+export function currentNotesRoot(workspaceId: string): string {
+  const workspaceDir = getWorkspacePaths(workspaceId).workspaceDir;
+  const fallback = realDirectory(workspaceDir) ?? workspaceDir;
+  try {
+    const stored = readFileSync(join(workspaceDir, NOTES_ROOT_FILE), "utf8").trim();
+    if (!stored) return fallback;
+    return realDirectory(stored) ?? fallback;
+  } catch {
+    return fallback;
   }
 }

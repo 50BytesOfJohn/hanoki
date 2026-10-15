@@ -25,9 +25,9 @@ describe("note image urls", () => {
       itemId: "note",
       src: "img/fern.png",
     });
-    expect(imageDisplaySrc("https://example.com/fern.png", target)).toBe(
-      "https://example.com/fern.png",
-    );
+    expect(imageDisplaySrc("https://example.com/fern.png", target)).toBe("");
+    expect(imageDisplaySrc("//cdn.example/fern.png", target)).toBe("");
+    expect(imageDisplaySrc("data:image/png;base64,aaaa", target)).toBe("");
     expect(imageDisplaySrc("javascript:alert(1)", target)).toBe("");
   });
 
