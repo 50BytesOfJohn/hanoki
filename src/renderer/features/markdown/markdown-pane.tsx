@@ -22,6 +22,7 @@ import { markdownApi } from "@/api/markdown";
 import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generation";
 import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
+import { NoteImage, setNoteImageContext } from "./note-image";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
@@ -69,7 +70,7 @@ export function useMarkdownPane(): MarkdownPaneContextValue {
   return context;
 }
 
-const MARKDOWN_EXTENSIONS = [StarterKit, Markdown, WikilinkEditor];
+const MARKDOWN_EXTENSIONS = [StarterKit, NoteImage, Markdown, WikilinkEditor];
 const MARKDOWN_PROSE_CLASS =
   "prose prose-sm prose-invert max-w-none break-words text-[0.9375rem] leading-[1.72] prose-p:leading-[1.72] prose-headings:font-heading prose-headings:tracking-tight prose-headings:mb-2 prose-headings:mt-6 prose-li:my-0.5 prose-pre:my-3 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:bg-background-secondary prose-pre:px-4 prose-pre:py-3 prose-code:font-mono prose-code:text-[0.875em] prose-a:text-link";
 
@@ -273,6 +274,9 @@ export function MarkdownEditor({
         class: `${MARKDOWN_PROSE_CLASS} min-h-full outline-none`,
       },
     },
+    onBeforeCreate: ({ editor: created }) => {
+      setNoteImageContext(created, workspaceId, itemId);
+    },
     onUpdate: ({ editor: currentEditor }) => {
       if (currentEditor.isEditable) onChange(currentEditor.getMarkdown());
     },
@@ -284,6 +288,11 @@ export function MarkdownEditor({
     editor.setEditable(editable, false);
     if (editable) editor.commands.focus("end");
   }, [editable, editor]);
+
+  React.useLayoutEffect(() => {
+    if (!editor) return;
+    setNoteImageContext(editor, workspaceId, itemId);
+  }, [editor, itemId, workspaceId]);
 
   React.useEffect(() => {
     if (!editor) return;

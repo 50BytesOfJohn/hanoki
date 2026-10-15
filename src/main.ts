@@ -5,6 +5,7 @@ import { installApplicationMenu } from "./main-process/app/application-menu";
 import { bootstrapBackend } from "./main-process/app/bootstrap-backend";
 import { createMainWindow } from "./main-process/app/create-main-window";
 import { getUpdateState, initUpdater } from "./main-process/app/updater";
+import { attachAssetProtocol, registerAssetScheme } from "./main-process/assets/asset-protocol";
 import { closeAppDatabase } from "./main-process/db/database";
 import { registerIpcHandlers } from "./main-process/ipc";
 import { getDefaultAppIdentifier } from "./main-process/system/paths";
@@ -17,6 +18,8 @@ import {
 
 const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = getDefaultAppIdentifier();
+
+registerAssetScheme();
 
 app.setName(APP_NAME);
 app.setPath("userData", path.join(app.getPath("appData"), APP_IDENTIFIER));
@@ -168,6 +171,7 @@ if (!app.requestSingleInstanceLock()) {
           },
         });
         registerIpcHandlers(backend.ipcContext);
+        attachAssetProtocol();
         installApplicationMenu({
           services: backend.services,
           broadcast: broadcastSystemEvent,
