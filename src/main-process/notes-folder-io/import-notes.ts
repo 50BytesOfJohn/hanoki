@@ -3,6 +3,7 @@ import type { WebContents } from "electron";
 import type { NotesFolderImportResult } from "@shared/markdown/folder-io";
 import type { ChatTreeService } from "../services/chat-tree-service";
 import type { AppServices } from "../services";
+import { rememberNotesRoot } from "../assets/notes-root";
 import { pickNotesFolder } from "./pick-directory";
 import {
   collectMarkdownFiles,
@@ -37,7 +38,9 @@ export async function importMarkdownNotesFolder({
     return { status: "canceled" };
   }
 
-  return importMarkdownNotesFromDirectory(services.chatTree, workspaceId, source);
+  const imported = await importMarkdownNotesFromDirectory(services.chatTree, workspaceId, source);
+  rememberNotesRoot(workspaceId, source);
+  return imported;
 }
 
 export async function importMarkdownNotesFromDirectory(
