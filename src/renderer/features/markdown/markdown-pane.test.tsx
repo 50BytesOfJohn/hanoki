@@ -111,20 +111,27 @@ describe("MarkdownEditor", () => {
     expect(await screen.findByText("fern.png", { selector: "span" })).toBeTruthy();
   });
 
-  it("keeps an angle-bracket image destination across two saves", () => {
+  it.each([
+    ["![a](<my fern.png>)", "![a](<my fern.png>)"],
+    ["![a](<fern(1.png>)", "![a](<fern(1.png>)"],
+    ["![a](fern(1).png)", "![a](fern(1).png)"],
+    ["![a\\]b](fern.png)", "![a\\]b](fern.png)"],
+    ['![a](fern.png "say \\"hi\\"")', '![a](fern.png "say \\"hi\\"")'],
+  ])("round-trips %s", (markdown, expected) => {
     const element = document.createElement("div");
     const editor = new Editor({
       element,
       extensions: [StarterKit, NoteImage, Markdown],
-      content: "![a](<my fern.png>)",
+      content: markdown,
       contentType: "markdown",
     });
     const first = editor.getMarkdown();
-    expect(first).toContain("![a](<my fern.png>)");
+    expect(first).toContain(expected);
     editor.commands.setContent(first, { contentType: "markdown" });
     const second = editor.getMarkdown();
-    expect(second).toContain("![a](<my fern.png>)");
-    expect(editor.getText()).not.toContain("![a]");
+    expect(second).toContain(expected);
+    expect(second).not.toContain(`<${"fern(1).png"}>`);
+    expect(editor.getText()).not.toContain("![");
     editor.destroy();
   });
 

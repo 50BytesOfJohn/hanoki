@@ -24,8 +24,9 @@ export const NoteImage = Image.extend({
     const alt = String(attrs.alt ?? "");
     const title = String(attrs.title ?? "");
     const destination = imageDestination(src);
-    if (!title) return `![${alt}](${destination})`;
-    return `![${alt}](${destination} "${title}")`;
+    const label = escapeAlt(alt);
+    if (!title) return `![${label}](${destination})`;
+    return `![${label}](${destination} "${escapeTitle(title)}")`;
   },
   addNodeView() {
     return ReactNodeViewRenderer(NoteImageView);
@@ -33,8 +34,37 @@ export const NoteImage = Image.extend({
 }).configure({ allowBase64: true });
 
 function imageDestination(src: string): string {
-  if (src.length === 0 || /[\s()]/.test(src)) return `<${src}>`;
+  if (hasWhitespace(src) || !parenthesesBalanced(src)) return `<${src}>`;
   return src;
+}
+
+function escapeAlt(alt: string): string {
+  return alt.replaceAll("\\", "\\\\").replaceAll("]", "\\]");
+}
+
+function escapeTitle(title: string): string {
+  return title.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function hasWhitespace(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 32 || code === 9 || code === 10 || code === 13) return true;
+  }
+  return false;
+}
+
+function parenthesesBalanced(value: string): boolean {
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
 }
 
 function NoteImageView({ node, editor }: ReactNodeViewProps) {
