@@ -100,7 +100,11 @@ describe("MarkdownEditor", () => {
     if (editable) expect(saved).toContain("![Fern](fern.png)");
 
     fireEvent.error(image);
-    expect(await screen.findByText("Image not found")).toBeTruthy();
+    const missing = await screen.findByRole("img", { name: "Image not found: Fern, fern.png" });
+    expect(missing.textContent).toBe("Fern · fern.png");
+    expect(missing.className).not.toContain("destructive");
+    fireEvent.focus(missing);
+    expect(await screen.findByText("fern.png", { selector: "span" })).toBeTruthy();
   });
 
   it("loads an image inside a sentence", async () => {

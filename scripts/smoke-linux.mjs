@@ -187,7 +187,7 @@ try {
       return {
         ready: !!img && img.complete && img.naturalWidth > 0,
         src: img ? img.getAttribute("src") : "",
-        missing: document.body.innerText.includes("Image not found"),
+        missing: document.body.innerText.includes("missing.png"),
       };
     })()`);
     if (image.ready && image.missing) break;
