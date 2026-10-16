@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
+import { isTemperature } from "@shared/models/temperature";
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
@@ -236,12 +237,7 @@ function normalizeChatSettings(value: unknown): ChatSettings {
   if (modelConfig && typeof modelConfig === "object" && !Array.isArray(modelConfig)) {
     const temperature = (modelConfig as Record<string, unknown>).temperature;
     const reasoningEffort = (modelConfig as Record<string, unknown>).reasoningEffort;
-    if (
-      typeof temperature === "number" &&
-      Number.isFinite(temperature) &&
-      temperature >= 0 &&
-      temperature <= 1
-    ) {
+    if (isTemperature(temperature)) {
       normalizedSettings.modelConfig = { temperature };
     }
 
@@ -1348,7 +1344,7 @@ export function cloneChat(chatId: string): ChatRow {
         parentId: newParentId,
         role: message.role,
         parts: message.parts as unknown[],
-        metadata: message.metadata,
+        metadata: remapRevisionSource(message.metadata, oldToNewId),
       });
     }
 
@@ -1361,6 +1357,26 @@ export function cloneChat(chatId: string): ChatRow {
   }
 
   return requireChatById(newChatId);
+}
+
+/** Points a cloned revision at the clone of its source; a deleted source stays as-is. */
+function remapRevisionSource(
+  metadata: Record<string, unknown>,
+  oldToNewId: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  const revision = metadata.revision;
+  if (typeof revision !== "object" || revision === null) {
+    return metadata;
+  }
+
+  const sourceMessageId = (revision as { sourceMessageId?: unknown }).sourceMessageId;
+  const newSourceMessageId =
+    typeof sourceMessageId === "string" ? oldToNewId.get(sourceMessageId) : undefined;
+  if (!newSourceMessageId) {
+    return metadata;
+  }
+
+  return { ...metadata, revision: { ...revision, sourceMessageId: newSourceMessageId } };
 }
 
 export function setChatCurrentBranch(

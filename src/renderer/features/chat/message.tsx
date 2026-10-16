@@ -22,6 +22,7 @@ import type { EditMessageBehavior } from "@shared/ipc";
 import {
   useChatContinueMessage,
   useChatRegenerateMessage,
+  useChatRevisionComposer,
   useChatStartEditingMessage,
   useChatStopEditingMessage,
   useChatSubmitEditedMessage,
@@ -60,6 +61,7 @@ import {
 import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
+import { MessageRevisionBadge, RegenerateWithNotePopover } from "./message-revision";
 
 const STREAMDOWN_PLUGINS = { code };
 const USER_MESSAGE_CARD_CLASS_NAME =
@@ -471,8 +473,11 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
 }: AssistantMessageToolsProps) {
   const continueMessage = useChatContinueMessage();
   const regenerate = useChatRegenerateMessage();
+  const revisionComposer = useChatRevisionComposer(message.id);
   const scrollToBottom = useChatScrollToBottom();
   const pinMutation = usePinMessage(chatId);
+  const regenerateButtonRef = React.useRef<HTMLButtonElement>(null);
+  const canRevise = messageText.trim().length > 0;
 
   const siblings = message.metadata?.siblings ?? [];
   const siblingIndex = message.metadata?.siblingIndex ?? 0;
@@ -495,7 +500,8 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
   }
 
   return (
-    <MessageTools>
+    // The toolbar only shows on hover; keep it up while its composer is open.
+    <MessageTools forceVisible={revisionComposer.isOpen}>
       <AssistantMessageInfoButton message={message} />
 
       <MessageButtonGroup>
@@ -516,15 +522,27 @@ const AssistantMessageTools = React.memo(function AssistantMessageTools({
           size="icon-sm"
           variant="ghost"
           className={TOOLBAR_BUTTON_CLASS}
-          aria-label="Regenerate message"
+          ref={regenerateButtonRef}
+          aria-label="Regenerate message (Shift-click to regenerate with a note)"
+          title="Regenerate · Shift-click to add a note"
           disabled={isInteractionLocked}
-          onClick={() => {
+          onClick={(event) => {
+            if (event.shiftKey) {
+              if (canRevise) revisionComposer.open(message.id);
+              return;
+            }
             scrollToBottom();
             regenerate({ messageId: message.id });
           }}
         >
           <HugeiconsIcon icon={Refresh04Icon} />
         </Button>
+
+        <RegenerateWithNotePopover
+          anchor={regenerateButtonRef}
+          isInteractionLocked={isInteractionLocked}
+          message={message}
+        />
 
         <Button
           size="icon-sm"
@@ -865,6 +883,11 @@ const AssistantMessage = React.memo(function AssistantMessage({
         message={message}
       >
         <div className={ASSISTANT_MESSAGE_CARD_CLASS_NAME}>
+          {message.metadata?.revision && !isEditing ? (
+            <div className="mb-2">
+              <MessageRevisionBadge isInteractionLocked={isInteractionLocked} message={message} />
+            </div>
+          ) : null}
           {isEditing && draft ? (
             <MessageTiptapEditor
               className="text-[0.9375rem] leading-[1.7] text-foreground/90"
@@ -1056,6 +1079,12 @@ function getMessageInfoDetails(
         value: formatCost(metadata?.cost?.total, metadata?.cost?.currency),
       },
       { label: "Pinned", value: metadata?.pinned ? "Yes" : "No" },
+      ...(metadata?.revision
+        ? [
+            { label: "Revised From", value: metadata.revision.sourceMessageId },
+            { label: "Revision Note", value: metadata.revision.note },
+          ]
+        : []),
     ],
     tokens: [
       { label: "Input", value: formatNumber(tokens?.input) },

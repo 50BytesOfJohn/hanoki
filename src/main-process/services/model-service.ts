@@ -6,6 +6,7 @@ import type {
 } from "@shared/ipc";
 import type { ProviderId } from "@shared/providers/catalog";
 import { getModelReasoningEfforts } from "@shared/models/reasoning";
+import { getModelTemperatureMax } from "@shared/models/temperature";
 import { listProviders } from "../providers/repository";
 import {
   listEnabledModels as listEnabledModelsRepo,
@@ -40,6 +41,7 @@ export function createModelService(): ModelService {
           // The composer needs this and metadata stays out of the list, so the
           // efforts are resolved here instead of shipping the raw catalog.
           reasoningEfforts: catalogId ? getModelReasoningEfforts(catalogId, row.metadata) : [],
+          temperatureMax: catalogId ? getModelTemperatureMax(catalogId, row.metadata) : null,
         };
       });
     },

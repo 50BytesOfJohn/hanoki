@@ -10,6 +10,7 @@ import {
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
+import { insertRevisionTurn } from "@shared/chat/revision";
 import type {
   ChatGenerationRequestedEvent,
   ChatMessagesChangedEvent,
@@ -27,8 +28,9 @@ import { getModelById } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
-import { buildReasoningProviderOptions } from "../providers/reasoning-provider-options";
+import { buildChatProviderOptions } from "../providers/chat-provider-options";
 import { getModelReasoningEfforts } from "@shared/models/reasoning";
+import { getModelTemperatureMax } from "@shared/models/temperature";
 import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import type { ProviderId } from "@shared/providers/catalog";
 import { readSumiSettings, readTerminalToolSettings } from "../../services/settings-service";
@@ -62,6 +64,7 @@ import {
 } from "../chat-message-persistence";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
 import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
+import { resolveRevisionContext } from "../chat-revision";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -122,6 +125,20 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       return c.json({ error: "Model not found or not enabled" }, 400);
     }
 
+    const temperatureMax = getModelTemperatureMax(provider.catalogId as ProviderId, model.metadata);
+    const savedTemperature = chat.data.settings.modelConfig?.temperature;
+    // Overrides survive model switches. Leave unsupported models at their own
+    // default, and report an incompatible range before persisting a message.
+    const temperature = temperatureMax === null ? undefined : savedTemperature;
+    if (temperature !== undefined && temperatureMax !== null && temperature > temperatureMax) {
+      return c.json(
+        {
+          error: `This model accepts temperature from 0 to ${temperatureMax}. Adjust it in Chat Settings or use Default.`,
+        },
+        400,
+      );
+    }
+
     let languageModel: Awaited<ReturnType<typeof createLanguageModel>>;
     try {
       const providerRuntime = resolveProviderRuntimeContext(provider);
@@ -180,6 +197,18 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       responseParentId = continuationTargetMessage.parentId;
     }
 
+    const revisionContext = resolveRevisionContext({
+      chat,
+      body,
+      messages,
+      mode,
+      responseParentId,
+    });
+    if (!revisionContext.ok) {
+      return c.json({ error: revisionContext.error }, 400);
+    }
+    const revisionMetadata = revisionContext.revision;
+
     const shouldAutoGenerateTitle =
       mode !== "continue-message" &&
       lastRequestMessage?.role === "user" &&
@@ -216,7 +245,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
               },
             } satisfies HanokiUiMessage,
           ]
-        : messages;
+        : revisionMetadata
+          ? insertRevisionTurn(messages, revisionMetadata)
+          : messages;
     const latestUserMessage = findLatestUserMessage(messages);
     const isWebEnabledForRequest = isWebToolEnabledForRequest(
       Boolean(chat.data.settings.webEnabled),
@@ -300,11 +331,12 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         [chat.data.settings.systemPrompt?.trim() || "", mentionedInstructions ?? ""]
           .filter((part) => part.length > 0)
           .join("\n\n") || undefined,
-      temperature: chat.data.settings.modelConfig?.temperature,
+      temperature,
       reasoning: reasoningEffort,
-      providerOptions: buildReasoningProviderOptions(
+      providerOptions: buildChatProviderOptions(
         provider.catalogId as ProviderId,
         reasoningEffort,
+        temperature,
       ),
       tools,
       activeTools,
@@ -326,10 +358,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           workspaceId: chat.workspaceId,
           provider: sdkProvider,
           modelId: sdkModelId,
-          temperature: chat.data.settings.modelConfig?.temperature ?? null,
+          temperature: temperature ?? null,
           reasoning: reasoningEffort ?? null,
           hasCustomSystemPrompt: Boolean(chat.data.settings.systemPrompt?.trim()),
           activeTools,
+          revision: Boolean(revisionMetadata),
         });
       },
       onToolExecutionStart: ({ callId: generationCallId, toolCall }) => {
@@ -427,7 +460,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             provider: provider.catalogId,
             model: model.id,
           };
-          return { parentId: responseParentId, ...capturedResponseMetadata };
+          return {
+            parentId: responseParentId,
+            ...capturedResponseMetadata,
+            ...(revisionMetadata && { revision: revisionMetadata }),
+          };
         }
         if (part.type === "finish") {
           capturedResponseMetadata = buildResponseMetadata(
@@ -437,7 +474,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             Date.now() - startTime,
             part.finishReason,
           );
-          return { parentId: responseParentId, ...capturedResponseMetadata };
+          return {
+            parentId: responseParentId,
+            ...capturedResponseMetadata,
+            ...(revisionMetadata && { revision: revisionMetadata }),
+          };
         }
         return undefined;
       },
@@ -507,7 +548,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             parts: normalizeAssistantTiptapParts(responseMessage.parts),
           },
           fallbackParentId: responseParentId,
-          responseMetadata: capturedResponseMetadata,
+          // Streamed metadata is not persisted, so the revision link is added
+          // here; capturedResponseMetadata is reassigned on error and abort.
+          responseMetadata: revisionMetadata
+            ? { ...capturedResponseMetadata, revision: revisionMetadata }
+            : capturedResponseMetadata,
           modelId: model.id,
         });
       },

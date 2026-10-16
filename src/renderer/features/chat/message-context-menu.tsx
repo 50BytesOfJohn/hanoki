@@ -25,6 +25,7 @@ import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import {
   useChatDeleteMessage,
   useChatRegenerateMessage,
+  useChatRevisionComposer,
   useChatStartEditingMessage,
 } from "@/features/chat/chat-context";
 import { useChatScrollToBottom } from "@/features/chat/chat-scroll-context";
@@ -178,6 +179,7 @@ export function MessageContextMenu({
   const pane = useOptionalChatPane();
   const setPaneView = useWorkspaceStore((state) => state.setPaneView);
   const regenerate = useChatRegenerateMessage();
+  const revisionComposer = useChatRevisionComposer(message.id);
   const startEditingMessage = useChatStartEditingMessage();
   const scrollToBottom = useChatScrollToBottom();
   const pinMutation = usePinMessage(chatId);
@@ -221,6 +223,18 @@ export function MessageContextMenu({
                   }}
                 >
                   Regenerate
+                </ContextMenuItem>
+              ) : null}
+              {isAssistant ? (
+                <ContextMenuItem
+                  disabled={isInteractionLocked || !hasCopyableText}
+                  onClick={() => {
+                    // Open after the menu has closed and restored focus, or the
+                    // focus change would dismiss the popover straight away.
+                    requestAnimationFrame(() => revisionComposer.open(message.id));
+                  }}
+                >
+                  Regenerate with Note…
                 </ContextMenuItem>
               ) : null}
               <ContextMenuItem
