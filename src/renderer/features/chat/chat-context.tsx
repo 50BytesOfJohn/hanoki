@@ -9,11 +9,14 @@ import { messagesApi } from "@/api/messages";
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
+import type { ChatRevisionRequest } from "@shared/chat/revision";
 import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
 import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
 
 type ChatSendMessage = Chat<HanokiUiMessage>["sendMessage"];
 type ChatRegenerate = Chat<HanokiUiMessage>["regenerate"];
+
+type RevisionComposerState = { messageId: string; note: string };
 
 type ChatContextState = {
   chatId: string;
@@ -22,12 +25,22 @@ type ChatContextState = {
   editingMessageId: string | null;
   continuingMessageId: string | null;
   continuationError: string | null;
+  revisionComposer: RevisionComposerState | null;
+  isRevisionComposerOpen: boolean;
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
   respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
   stopGeneration: () => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
+  openRevisionComposer: (messageId: string) => void;
+  setRevisionComposerNote: (note: string) => void;
+  closeRevisionComposer: () => void;
+  regenerateWithNote: (input: {
+    messageId: string;
+    sourceMessageId: string;
+    note: string;
+  }) => Promise<void>;
   switchBranch: (branchId: string) => Promise<void>;
   startEditingMessage: (messageId: string) => void;
   stopEditingMessage: () => void;
@@ -88,6 +101,8 @@ function createChatContextStore({
     editingMessageId: null,
     continuingMessageId: null,
     continuationError: null,
+    revisionComposer: null,
+    isRevisionComposerOpen: false,
     setModelId: (modelId) =>
       set((current) => {
         if (
@@ -187,6 +202,46 @@ function createChatContextStore({
         ...options,
         body: { ...options?.body, modelId: currentModelId },
       });
+    },
+    openRevisionComposer: (messageId) => {
+      const { editingMessageId, continuingMessageId, revisionComposer } = get();
+      const status = transportRefs.getStatus?.() ?? "ready";
+      if (
+        editingMessageId !== null ||
+        continuingMessageId !== null ||
+        status === "streaming" ||
+        status === "submitted"
+      ) {
+        return;
+      }
+
+      // The draft survives closing the popover, but only for its own message.
+      set((current) => ({
+        ...current,
+        isRevisionComposerOpen: true,
+        revisionComposer:
+          revisionComposer?.messageId === messageId ? revisionComposer : { messageId, note: "" },
+      }));
+    },
+    setRevisionComposerNote: (note) =>
+      set((current) =>
+        current.revisionComposer
+          ? { ...current, revisionComposer: { ...current.revisionComposer, note } }
+          : current,
+      ),
+    closeRevisionComposer: () =>
+      set((current) =>
+        current.isRevisionComposerOpen ? { ...current, isRevisionComposerOpen: false } : current,
+      ),
+    regenerateWithNote: async ({ messageId, sourceMessageId, note }) => {
+      const trimmedNote = note.trim();
+      if (trimmedNote.length === 0) {
+        return;
+      }
+
+      set((current) => ({ ...current, revisionComposer: null, isRevisionComposerOpen: false }));
+      const revision: ChatRevisionRequest = { sourceMessageId, note: trimmedNote };
+      await get().regenerateMessage({ messageId, body: { revision } });
     },
     continueMessage: async (messageId) => {
       const {
@@ -738,6 +793,27 @@ export function useChatRespondToToolApproval() {
 
 export function useChatRegenerateMessage() {
   return useChatContext((state) => state.regenerateMessage);
+}
+
+export function useChatRegenerateWithNote() {
+  return useChatContext((state) => state.regenerateWithNote);
+}
+
+/** The open "Regenerate with note" composer for `messageId`, or null. */
+export function useChatRevisionComposer(messageId: string) {
+  const note = useChatContext((state) =>
+    state.isRevisionComposerOpen && state.revisionComposer?.messageId === messageId
+      ? state.revisionComposer.note
+      : null,
+  );
+  const open = useChatContext((state) => state.openRevisionComposer);
+  const setNote = useChatContext((state) => state.setRevisionComposerNote);
+  const close = useChatContext((state) => state.closeRevisionComposer);
+
+  return React.useMemo(
+    () => ({ isOpen: note !== null, note: note ?? "", open, setNote, close }),
+    [note, open, setNote, close],
+  );
 }
 
 export function useChatContinueMessage() {

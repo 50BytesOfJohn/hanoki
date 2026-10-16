@@ -24,6 +24,7 @@ import {
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
+  cloneChat,
   createChat,
   createFolder,
   createMarkdown,
@@ -1259,5 +1260,51 @@ describe("note links", () => {
     expect(listNoteBacklinks(future.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id).map((link) => link.itemId)).toEqual([source.id]);
     expect(listNoteBacklinks(source.id)[0]?.snippet).toBe("Future and Source");
+  });
+});
+
+describe("cloneChat", () => {
+  it("points a cloned revision at the clone of its source", () => {
+    const workspace = createWorkspace({ id: "clone-revision-workspace", name: "Clone" });
+    const chat = createChat({ workspaceId: workspace.id, title: "Revised", folderId: null });
+    const revision = (sourceMessageId: string) => ({
+      sourceMessageId,
+      note: "Shorter.",
+      sourceText: "Long answer.",
+    });
+    upsertMessage({
+      id: "a-user",
+      chatId: chat.id,
+      parentId: null,
+      role: "user",
+      parts: [],
+      metadata: { parentId: null },
+    });
+    for (const [id, metadata] of [
+      ["b-original", {}],
+      ["c-revision", { revision: revision("b-original") }],
+      ["d-orphan", { revision: revision("deleted-original") }],
+    ] as const) {
+      upsertMessage({
+        id,
+        chatId: chat.id,
+        parentId: "a-user",
+        role: "assistant",
+        parts: [],
+        metadata: { parentId: "a-user", ...metadata },
+      });
+    }
+
+    const clone = cloneChat(chat.id);
+    const cloned = listAllMessagesByChatId(clone.id);
+    const clonedOriginal = cloned.find(
+      (message) => message.role === "assistant" && !message.metadata.revision,
+    );
+    const revisions = cloned.map((message) => message.metadata.revision).filter(Boolean);
+
+    expect(revisions).toEqual(
+      expect.arrayContaining([revision(clonedOriginal!.id), revision("deleted-original")]),
+    );
+    expect(revisions).toHaveLength(2);
   });
 });

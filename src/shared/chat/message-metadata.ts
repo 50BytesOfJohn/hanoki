@@ -47,6 +47,14 @@ export const chatMessageMetadataSchema = type({
   "updatedAt?": "number",
   "siblings?": "string[]",
   "siblingIndex?": "number",
+  // Set on a message regenerated with a note; links back to the message it
+  // revised and snapshots that message's text so the revision can be shown,
+  // retried, or resumed after the original is gone.
+  "revision?": {
+    sourceMessageId: "string",
+    note: "string",
+    sourceText: "string",
+  },
 });
 
 export type ChatMessageMetadata = typeof chatMessageMetadataSchema.infer;

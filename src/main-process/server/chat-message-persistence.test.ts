@@ -136,6 +136,29 @@ describe("chat message persistence", () => {
       { id: "long-resumed-assistant" },
     ]);
   });
+
+  it("saves the revision link passed with the response metadata", () => {
+    createChatRow("revision-chat");
+    seedMessage("revision-user", "revision-chat", null, "user");
+    const revision = {
+      sourceMessageId: "revision-original",
+      note: "Shorter.",
+      sourceText: "Long answer.",
+    };
+
+    persistGeneratedAssistantMessage({
+      chatId: "revision-chat",
+      message: requestMessage("revision-answer", "assistant", "revision-user"),
+      fallbackParentId: "revision-user",
+      responseMetadata: { model: "model", revision },
+      modelId: "model",
+    });
+
+    expect(getMessageById("revision-answer")?.metadata).toMatchObject({
+      parentId: "revision-user",
+      revision,
+    });
+  });
 });
 
 function createChatRow(id: string) {
