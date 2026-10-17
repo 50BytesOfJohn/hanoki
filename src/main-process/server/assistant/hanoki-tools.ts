@@ -17,6 +17,7 @@ import {
   createChat,
   createFolder,
   createMarkdown,
+  deleteChatTreeItems,
   getChatById,
   getChatCurrentBranchId,
   getChatTree,
@@ -279,6 +280,251 @@ function capChatMessages(page: readonly ReadableChatMessage[]): {
   return { messages: kept, truncated };
 }
 
+/** Port over TerminalService so tools stay testable without a PTY/Electron. */
+export interface HanokiTerminalPort {
+  create(input: { workspaceId: string; title: string; folderId: string | null }): { id: string };
+  getOutput(
+    id: string,
+  ): Promise<{ status: string; exitCode: number | null; output: string; truncated: boolean }>;
+  runCommand(
+    id: string,
+    command: string,
+    timeoutMs?: number,
+  ): Promise<{
+    status: string;
+    exitCode: number | null;
+    output: string;
+    truncated: boolean;
+    timedOut: boolean;
+    commandExitCode: number | null;
+  }>;
+  writeInput(
+    id: string,
+    data: string,
+  ): Promise<{ status: string; exitCode: number | null; output: string; truncated: boolean }>;
+  interrupt(
+    id: string,
+  ): Promise<{ status: string; exitCode: number | null; output: string; truncated: boolean }>;
+  disposeItem(id: string): Promise<void>;
+}
+
+export interface HanokiToolCatalogEntry {
+  name: string;
+  group: "read" | "write" | "terminal" | "discovery";
+  access: "core" | "deferred";
+  summary: string;
+}
+
+/**
+ * Single source of truth for tool discovery. Core tools are always active when
+ * Hanoki is enabled; deferred tools are loaded via hanokiFindTools + prepareStep
+ * (provider-agnostic tool search — native provider tool-search only exists on
+ * Anthropic/OpenAI Responses, Hanoki supports many providers).
+ */
+export const HANOKI_TOOL_CATALOG: readonly HanokiToolCatalogEntry[] = [
+  {
+    name: "hanokiFindTools",
+    group: "discovery",
+    access: "core",
+    summary: "Search for additional Hanoki tools by goal and load them for this turn.",
+  },
+  {
+    name: "hanokiGetItem",
+    group: "read",
+    access: "core",
+    summary: "Get detailed information about one item or folder by exact id.",
+  },
+  {
+    name: "hanokiBrowseItems",
+    group: "read",
+    access: "core",
+    summary: "Browse folders, chats, notes, and terminals in the workspace tree.",
+  },
+  {
+    name: "hanokiSearchChats",
+    group: "read",
+    access: "core",
+    summary: "Search chat titles and message content.",
+  },
+  {
+    name: "hanokiGetChatContent",
+    group: "read",
+    access: "core",
+    summary: "Read messages from a chat by id with pagination.",
+  },
+  {
+    name: "hanokiReadNote",
+    group: "read",
+    access: "core",
+    summary: "Read a markdown note body by id.",
+  },
+  {
+    name: "hanokiReadChat",
+    group: "read",
+    access: "core",
+    summary: "Read another chat's messages by id (refuses the hosting chat).",
+  },
+  {
+    name: "hanokiGetCurrentFolder",
+    group: "read",
+    access: "core",
+    summary: "Get the folder containing the chat hosting this turn.",
+  },
+  {
+    name: "hanokiGetItemLocation",
+    group: "read",
+    access: "deferred",
+    summary: "Get the folder and path of an item by id.",
+  },
+  { name: "hanokiCreateFolder", group: "write", access: "deferred", summary: "Create a folder." },
+  { name: "hanokiCreateChat", group: "write", access: "deferred", summary: "Create a chat." },
+  {
+    name: "hanokiListModels",
+    group: "write",
+    access: "deferred",
+    summary: "List enabled models for use with hanokiSendMessage.",
+  },
+  {
+    name: "hanokiSendMessage",
+    group: "write",
+    access: "deferred",
+    summary: "Append a user message to another chat, optionally starting a reply.",
+  },
+  {
+    name: "hanokiCreateMarkdown",
+    group: "write",
+    access: "deferred",
+    summary: "Create a markdown note, optionally with a body.",
+  },
+  {
+    name: "hanokiMoveItems",
+    group: "write",
+    access: "deferred",
+    summary: "Move items or folders to another folder.",
+  },
+  {
+    name: "hanokiRenameItem",
+    group: "write",
+    access: "deferred",
+    summary: "Rename a chat, note, terminal, or folder.",
+  },
+  {
+    name: "hanokiEditNote",
+    group: "write",
+    access: "deferred",
+    summary: "Replace or append to a markdown note's content.",
+  },
+  {
+    name: "hanokiDeleteItems",
+    group: "write",
+    access: "deferred",
+    summary: "Permanently delete items or folders (recursive for folders). Requires user approval.",
+  },
+  {
+    name: "hanokiCreateTerminal",
+    group: "terminal",
+    access: "deferred",
+    summary: "Create a Hanoki terminal item in the workspace.",
+  },
+  {
+    name: "hanokiTerminalGet",
+    group: "terminal",
+    access: "deferred",
+    summary: "Start a Hanoki terminal if needed and fetch its status and recent output.",
+  },
+  {
+    name: "hanokiTerminalRun",
+    group: "terminal",
+    access: "deferred",
+    summary: "Run a command in a Hanoki terminal and return new output. Requires user approval.",
+  },
+  {
+    name: "hanokiTerminalWrite",
+    group: "terminal",
+    access: "deferred",
+    summary: "Write raw input (keys/text) to a Hanoki terminal. Requires user approval.",
+  },
+  {
+    name: "hanokiTerminalInterrupt",
+    group: "terminal",
+    access: "deferred",
+    summary: "Send Ctrl-C to a Hanoki terminal. Requires user approval.",
+  },
+] as const;
+
+export function searchHanokiToolCatalog(query: string): HanokiToolCatalogEntry[] {
+  const tokens = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return [...HANOKI_TOOL_CATALOG];
+  const scored = HANOKI_TOOL_CATALOG.map((entry) => {
+    const haystack = `${entry.name} ${entry.group} ${entry.summary}`.toLowerCase();
+    const score = tokens.filter((token) => haystack.includes(token)).length;
+    return { entry, score };
+  }).filter(({ score }) => score > 0);
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(({ entry }) => entry);
+}
+
+function addDiscoveredFromOutput(output: unknown, found: Set<string>): void {
+  const known = new Set(HANOKI_TOOL_CATALOG.map((entry) => entry.name));
+  const tools = (output as { tools?: unknown[] } | null)?.tools;
+  if (!Array.isArray(tools)) return;
+  for (const entry of tools) {
+    const name = (entry as { name?: unknown } | null)?.name;
+    if (typeof name === "string" && known.has(name)) found.add(name);
+  }
+}
+
+/** Tool names discovered so far via hanokiFindTools results in prior steps of this call. */
+export function collectDiscoveredHanokiTools(steps: readonly unknown[]): string[] {
+  const found = new Set<string>();
+  for (const step of steps) {
+    const results = (step as { toolResults?: unknown[] } | null)?.toolResults;
+    if (!Array.isArray(results)) continue;
+    for (const result of results) {
+      const record = result as { toolName?: unknown; output?: unknown } | null;
+      if (!record || record.toolName !== "hanokiFindTools") continue;
+      addDiscoveredFromOutput(record.output, found);
+    }
+  }
+  return [...found];
+}
+
+/**
+ * Tool names discovered in earlier requests of this conversation. Approval
+ * resumptions and follow-up turns start a fresh agent call with empty steps,
+ * so discovery must also be recovered from hanokiFindTools results already
+ * present in the message history — otherwise loaded tools drop out between
+ * calls and the model has to search again before every step.
+ */
+export function collectDiscoveredHanokiToolsFromMessages(
+  messages: readonly { parts?: readonly unknown[] }[],
+): string[] {
+  const found = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.parts)) continue;
+    for (const part of message.parts) {
+      const record = part as {
+        type?: unknown;
+        toolName?: unknown;
+        output?: unknown;
+      } | null;
+      if (!record) continue;
+      const toolName =
+        record.type === "dynamic-tool"
+          ? record.toolName
+          : typeof record.type === "string" && record.type.startsWith("tool-")
+            ? record.type.slice("tool-".length)
+            : null;
+      if (toolName !== "hanokiFindTools") continue;
+      addDiscoveredFromOutput(record.output, found);
+    }
+  }
+  return [...found];
+}
+
 interface FlushedNote {
   id: string;
   workspaceId: string;
@@ -310,6 +556,8 @@ export function createHanokiTools({
   onMessagesChanged,
   onGenerationRequested,
   flushMarkdownContent = flushStoredMarkdown,
+  flushMarkdownEditors = flushOpenMarkdownEditorsInRenderer,
+  terminals,
 }: {
   workspaceId: string;
   chatId: string;
@@ -317,7 +565,21 @@ export function createHanokiTools({
   onMessagesChanged?: (chatId: string) => void;
   onGenerationRequested?: (chatId: string, modelId: string) => void;
   flushMarkdownContent?: (id: string) => FlushedNote;
+  flushMarkdownEditors?: () => Promise<void>;
+  terminals?: HanokiTerminalPort;
 }) {
+  const requireTerminals = (): HanokiTerminalPort => {
+    if (!terminals) throw new Error("Hanoki terminals are not available in this session.");
+    return terminals;
+  };
+  const requireTerminalItem = (terminalId: string) => {
+    const row = getItemById(terminalId);
+    if (!row || row.workspaceId !== workspaceId) {
+      throw new Error(`Terminal "${terminalId}" does not exist in this workspace.`);
+    }
+    if (row.type !== "terminal") throw new Error(`Item "${terminalId}" is not a terminal.`);
+    return row;
+  };
   const treeChanged = <T>(result: T): T => {
     onTreeChanged?.();
     return result;
@@ -392,6 +654,109 @@ export function createHanokiTools({
   const chatReadDescription = `Read messages from a chat in the current Hanoki workspace. Returns the latest page of the selected branch by default, in conversation order, at most 100 messages and ${HANOKI_READ_CHAR_CEILING} characters of message text. A truncated page ends with a truncation marker and sets truncated to true. Walk older history by calling again with beforeMessageId set to nextBeforeMessageId until that field is null. Does not modify the chat.`;
 
   return {
+    hanokiFindTools: tool({
+      description:
+        "Search for additional Hanoki tools by describing the goal (for example 'delete a note', 'run a command in a terminal', 'edit a note'). Matching tools become available on the next step. Core read tools are already available; use this before concluding a write or terminal action is impossible.",
+      inputSchema: jsonSchema<{ query: string }>({
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            minLength: 1,
+            description: "What you are trying to do, in plain words.",
+          },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      }),
+      execute: ({ query }) => ({
+        query,
+        tools: searchHanokiToolCatalog(query).map(({ name, group, summary }) => ({
+          name,
+          group,
+          summary,
+        })),
+      }),
+    }),
+
+    hanokiGetItem: tool({
+      description:
+        "Get detailed information about one Hanoki item or folder by exact ID returned by browse, search, or create tools. Returns its kind, title, folder path, timestamps, and kind-specific detail: message count and settings for chats, capped content for notes, and shell/working directory for terminals. Use hanokiReadNote/hanokiReadChat for full bodies and hanokiTerminalGet for live terminal output.",
+      inputSchema: jsonSchema<{ id: string }>({
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            minLength: 1,
+            description: "Exact item or folder ID returned by a Hanoki tool.",
+          },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      }),
+      execute: ({ id }) => {
+        const folderPaths = getFolderPaths(workspaceId);
+        const folder = getFolderById(id);
+        if (folder && folder.workspaceId === workspaceId) {
+          const children = getChatTreeChildren(workspaceId, folder.id);
+          return {
+            kind: "folder" as const,
+            id: folder.id,
+            name: folder.name,
+            title: folder.name,
+            parentFolderId: folder.parentId,
+            path: folderPaths.get(folder.id) ?? folder.name,
+            location: getFolderLocation(workspaceId, folder.parentId),
+            createdAt: folder.createdAt,
+            updatedAt: folder.updatedAt,
+            childFolderCount: children.folders.length,
+            childItemCount: children.items.length,
+          };
+        }
+        const row = getItemById(id);
+        if (!row || row.workspaceId !== workspaceId) {
+          throw new Error(`Item "${id}" does not exist in this workspace.`);
+        }
+        const base = {
+          ...summarizeItem(workspaceId, { kind: row.type, id: row.id }, folderPaths),
+          title: row.title,
+          createdAt: row.createdAt,
+          location: getFolderLocation(workspaceId, row.folderId),
+        };
+        if (row.type === "chat") {
+          return {
+            ...base,
+            currentBranchId: getChatCurrentBranchId(row.id),
+            messageCount: listAllMessagesByChatId(row.id).length,
+            settings: {
+              modelId: row.data.settings.modelId ?? null,
+              webEnabled: Boolean(row.data.settings.webEnabled),
+              hanokiEnabled: Boolean(row.data.settings.hanokiEnabled),
+              terminalEnabled: Boolean(row.data.settings.terminalEnabled),
+            },
+          };
+        }
+        if (row.type === "markdown") {
+          const flushed = flushMarkdownContent(row.id);
+          const capped = capReadText(flushed.data.markdown ?? "");
+          return {
+            ...base,
+            content: capped.text,
+            contentLength: (flushed.data.markdown ?? "").length,
+            truncated: capped.truncated,
+          };
+        }
+        return {
+          ...base,
+          workingDirectory: row.data.workingDirectory,
+          shell: row.data.shell,
+          columns: row.data.columns,
+          rows: row.data.rows,
+          scrollbackLength: row.data.scrollback.length,
+        };
+      },
+    }),
+
     hanokiBrowseItems: tool({
       description:
         "Browse chats, markdown notes, terminals, and folders in the current Hanoki workspace. Use this to inspect the root or the direct children of a known folder and to obtain exact IDs for other Hanoki tools. This does not search message content or modify anything.",
@@ -522,7 +887,7 @@ export function createHanokiTools({
       execute: (input) => readChatPage(input),
     }),
 
-    readNote: tool({
+    hanokiReadNote: tool({
       description: `Read a markdown note in the current workspace by exact note id. Flushes unsaved editor text before reading. Returns at most ${HANOKI_READ_CHAR_CEILING} characters; longer notes include a truncation marker and are not returned in full. Fails if the id is missing, in another workspace, or not a note.`,
       inputSchema: jsonSchema<{ noteId: string }>({
         type: "object",
@@ -559,7 +924,7 @@ export function createHanokiTools({
       },
     }),
 
-    readChat: tool({
+    hanokiReadChat: tool({
       description: `${chatReadDescription} Refuses the chat hosting this turn: that conversation is already in context, and the in-flight turn is not a stable snapshot.`,
       inputSchema: chatReadSchema,
       execute: (input) => {
@@ -943,7 +1308,7 @@ export function createHanokiTools({
         } else if (kind === "chat") {
           updateChatTitle(id, parseItemTitle(kind, newName));
         } else {
-          await flushOpenMarkdownEditorsInRenderer();
+          await flushMarkdownEditors();
           updateItemTitle(id, parseItemTitle(kind, newName));
         }
         return treeChanged({
@@ -952,27 +1317,278 @@ export function createHanokiTools({
         });
       },
     }),
+
+    hanokiEditNote: tool({
+      description:
+        "Edit a markdown note in the current workspace. mode 'replace' (default) replaces the whole body; mode 'append' adds content at the end. Flushes unsaved editor text first so edits apply to the latest content. Requires user approval. Use hanokiReadNote first when you need the current body.",
+      strict: true,
+      inputSchema: jsonSchema<{ noteId: string; content: string; mode?: "replace" | "append" }>({
+        type: "object",
+        properties: {
+          noteId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact note ID returned by a Hanoki tool.",
+          },
+          content: { type: "string", description: "Markdown to write (replace) or add (append)." },
+          mode: {
+            type: "string",
+            enum: ["replace", "append"],
+            default: "replace",
+            description: "Replace the whole body or append at the end.",
+          },
+        },
+        required: ["noteId", "content"],
+        additionalProperties: false,
+      }),
+      execute: async ({ noteId, content, mode = "replace" }) => {
+        const existing = getItemById(noteId);
+        if (!existing || existing.workspaceId !== workspaceId) {
+          throw new Error(`Note "${noteId}" does not exist in this workspace.`);
+        }
+        if (existing.type !== "markdown") throw new Error(`Item "${noteId}" is not a note.`);
+        await flushMarkdownEditors();
+        const flushed = flushMarkdownContent(noteId);
+        const before = flushed.data.markdown ?? "";
+        const next = mode === "append" ? `${before}${content}` : content;
+        if (next.length > MAX_MARKDOWN_LENGTH) {
+          throw new Error("Markdown content must be a string no larger than 5 MiB.");
+        }
+        const updated = updateMarkdownContent(noteId, next);
+        return {
+          kind: "markdown" as const,
+          id: updated.id,
+          title: updated.title,
+          mode,
+          beforeLength: before.length,
+          afterLength: next.length,
+        };
+      },
+    }),
+
+    hanokiDeleteItems: tool({
+      description:
+        "Permanently delete one or more chats, markdown notes, terminals, or folders in the current workspace. Deleting a folder deletes everything inside it recursively. This cannot be undone and always requires user approval. Refuses to delete the chat hosting this turn. Pass exact IDs returned by Hanoki tools.",
+      strict: true,
+      inputSchema: jsonSchema<{ items: ItemRef[] }>({
+        type: "object",
+        properties: {
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 50,
+            items: itemRefSchema,
+            description: "One to fifty exact items or folders to delete permanently.",
+          },
+        },
+        required: ["items"],
+        additionalProperties: false,
+      }),
+      execute: async ({ items }) => {
+        if (items.some((item) => item.kind === "chat" && item.id === chatId)) {
+          throw new Error("Cannot delete the chat hosting this turn.");
+        }
+        const folderPaths = getFolderPaths(workspaceId);
+        const before = items.map((item) => summarizeItem(workspaceId, item, folderPaths));
+        const result = deleteChatTreeItems(
+          workspaceId,
+          items.map((item) => toMoveRef(item)),
+        );
+        if (terminals) {
+          for (const item of before) {
+            if (item.kind === "terminal" && result.deletedItemIds.includes(item.id)) {
+              await terminals.disposeItem(item.id);
+            }
+          }
+          // Terminals inside deleted folders are gone too; dispose any known ones.
+          for (const deletedId of result.deletedItemIds) {
+            if (!before.some((item) => item.id === deletedId)) {
+              await terminals.disposeItem(deletedId).catch(() => undefined);
+            }
+          }
+        }
+        return treeChanged({
+          deleted: before,
+          deletedItemIds: result.deletedItemIds,
+          deletedFolderIds: result.deletedFolderIds,
+        });
+      },
+    }),
+
+    hanokiCreateTerminal: tool({
+      description:
+        "Create one Hanoki terminal item in the current workspace. The terminal starts lazily when first read or run. Pass an exact folder ID returned by a Hanoki tool, or null for the workspace root.",
+      strict: true,
+      inputSchema: jsonSchema<{ title: string; folderId: string | null }>({
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            minLength: 1,
+            maxLength: 256,
+            description: "Title for the new terminal.",
+          },
+          folderId: {
+            type: ["string", "null"],
+            description: "Exact parent folder ID, or null for the workspace root.",
+          },
+        },
+        required: ["title", "folderId"],
+        additionalProperties: false,
+      }),
+      execute: ({ title, folderId }) => {
+        const parsed = parseChatTitle(title);
+        if (!parsed.ok) throw new Error(parsed.error.replace("Chat", "Terminal"));
+        const created = requireTerminals().create({
+          workspaceId,
+          title: parsed.value,
+          folderId: normalizeNullableString(folderId),
+        });
+        return treeChanged(
+          summarizeItem(
+            workspaceId,
+            { kind: "terminal", id: created.id },
+            getFolderPaths(workspaceId),
+          ),
+        );
+      },
+    }),
+
+    hanokiTerminalGet: tool({
+      description:
+        "Get a Hanoki terminal's status and recent plain-text output by exact terminal ID. Starts the terminal's shell if it is not running yet. Use after hanokiTerminalRun when output was truncated or the command is still running.",
+      inputSchema: jsonSchema<{ terminalId: string }>({
+        type: "object",
+        properties: {
+          terminalId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact terminal ID returned by a Hanoki tool.",
+          },
+        },
+        required: ["terminalId"],
+        additionalProperties: false,
+      }),
+      execute: async ({ terminalId }) => {
+        const row = requireTerminalItem(terminalId);
+        const output = await requireTerminals().getOutput(terminalId);
+        return {
+          kind: "terminal" as const,
+          id: row.id,
+          title: row.title,
+          workingDirectory: row.data.workingDirectory,
+          shell: row.data.shell,
+          ...output,
+        };
+      },
+    }),
+
+    hanokiTerminalRun: tool({
+      description:
+        "Run one shell command inside a Hanoki terminal item (its persistent PTY shell, working directory, and scrollback) and return the new plain-text output. Waits until the command actually finishes or timeoutMs elapses. timedOut true means the wait elapsed and the command may still be running — fetch later output with hanokiTerminalGet or stop it with hanokiTerminalInterrupt. timedOut false with a commandExitCode means the command finished with that exit code. Requires user approval.",
+      strict: true,
+      inputSchema: jsonSchema<{ terminalId: string; command: string; timeoutMs?: number }>({
+        type: "object",
+        properties: {
+          terminalId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact terminal ID returned by a Hanoki tool.",
+          },
+          command: {
+            type: "string",
+            minLength: 1,
+            description: "Shell command to run in the terminal.",
+          },
+          timeoutMs: {
+            type: "integer",
+            minimum: 1000,
+            maximum: 120000,
+            description: "Max milliseconds to wait for the command to finish. Defaults to 30000.",
+          },
+        },
+        required: ["terminalId", "command"],
+        additionalProperties: false,
+      }),
+      execute: async ({ terminalId, command, timeoutMs }) => {
+        const row = requireTerminalItem(terminalId);
+        const result = await requireTerminals().runCommand(terminalId, command, timeoutMs);
+        return { kind: "terminal" as const, id: row.id, title: row.title, ...result };
+      },
+    }),
+
+    hanokiTerminalWrite: tool({
+      description:
+        "Write raw input to a Hanoki terminal, for interactive prompts or key presses (for example 'y\\n' or an arrow key escape sequence). Starts the terminal if needed. Requires user approval. Prefer hanokiTerminalRun for ordinary commands.",
+      strict: true,
+      inputSchema: jsonSchema<{ terminalId: string; data: string }>({
+        type: "object",
+        properties: {
+          terminalId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact terminal ID returned by a Hanoki tool.",
+          },
+          data: {
+            type: "string",
+            minLength: 1,
+            description: "Raw text/keys to write to the terminal.",
+          },
+        },
+        required: ["terminalId", "data"],
+        additionalProperties: false,
+      }),
+      execute: async ({ terminalId, data }) => {
+        const row = requireTerminalItem(terminalId);
+        const output = await requireTerminals().writeInput(terminalId, data);
+        return { kind: "terminal" as const, id: row.id, title: row.title, ...output };
+      },
+    }),
+
+    hanokiTerminalInterrupt: tool({
+      description:
+        "Interrupt what a Hanoki terminal is running by sending Ctrl-C, then return its latest output. Requires user approval.",
+      strict: true,
+      inputSchema: jsonSchema<{ terminalId: string }>({
+        type: "object",
+        properties: {
+          terminalId: {
+            type: "string",
+            minLength: 1,
+            description: "Exact terminal ID returned by a Hanoki tool.",
+          },
+        },
+        required: ["terminalId"],
+        additionalProperties: false,
+      }),
+      execute: async ({ terminalId }) => {
+        const row = requireTerminalItem(terminalId);
+        const output = await requireTerminals().interrupt(terminalId);
+        return { kind: "terminal" as const, id: row.id, title: row.title, ...output };
+      },
+    }),
   };
 }
 
-export const HANOKI_READ_TOOL_NAMES = ["readNote", "readChat"] as const;
+export const HANOKI_READ_TOOL_NAMES = ["hanokiReadNote", "hanokiReadChat"] as const;
 
-export const HANOKI_TOOL_NAMES = [
-  "hanokiBrowseItems",
-  "hanokiSearchChats",
-  "hanokiGetChatContent",
-  "readNote",
-  "readChat",
-  "hanokiGetCurrentFolder",
-  "hanokiGetItemLocation",
-  "hanokiCreateFolder",
-  "hanokiCreateChat",
-  "hanokiListModels",
-  "hanokiSendMessage",
-  "hanokiCreateMarkdown",
+export const HANOKI_TOOL_NAMES = HANOKI_TOOL_CATALOG.map((entry) => entry.name);
+
+export const HANOKI_CORE_TOOL_NAMES = HANOKI_TOOL_CATALOG.filter(
+  (entry) => entry.access === "core",
+).map((entry) => entry.name);
+
+export const HANOKI_DEFERRED_TOOL_NAMES = HANOKI_TOOL_CATALOG.filter(
+  (entry) => entry.access === "deferred",
+).map((entry) => entry.name);
+
+/** Destructive/mutating tools pause for Allow once. Creates do not. */
+export const HANOKI_MUTATING_TOOL_NAMES = [
   "hanokiMoveItems",
   "hanokiRenameItem",
+  "hanokiEditNote",
+  "hanokiDeleteItems",
+  "hanokiTerminalRun",
+  "hanokiTerminalWrite",
+  "hanokiTerminalInterrupt",
 ] as const;
-
-/** Move/rename pause for Allow once. No dedicated auto-approve setting this slice. */
-export const HANOKI_MUTATING_TOOL_NAMES = ["hanokiMoveItems", "hanokiRenameItem"] as const;

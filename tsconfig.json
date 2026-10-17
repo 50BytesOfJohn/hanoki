@@ -25,7 +25,8 @@
     "forge.config.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
-    "vite.*.config.ts",
+    "vite.*.config.mts",
+    "vite.config.mts",
     "forge.env.d.ts"
   ]
 }

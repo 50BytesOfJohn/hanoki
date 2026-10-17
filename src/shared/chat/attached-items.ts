@@ -2,7 +2,7 @@ export const ATTACHED_ITEM_KINDS = ["note", "chat"] as const;
 
 export type AttachedItemKind = (typeof ATTACHED_ITEM_KINDS)[number];
 
-/** Pointer from a TipTap item mention. Bodies are loaded later by readNote / readChat. */
+/** Pointer from a TipTap item mention. Bodies are loaded later by hanokiReadNote / hanokiReadChat. */
 export interface AttachedItemRef {
   kind: AttachedItemKind;
   itemId: string;
@@ -29,10 +29,10 @@ export function formatAttachedContextInstructions(
   });
   return [
     "Mentioned items for this turn. These are pointers only; bodies are not included.",
-    "Call readNote for a note or readChat for a chat when you need its body. Do not read every mentioned item on every turn.",
-    `readNote and readChat each return at most ${HANOKI_READ_CHAR_CEILING} characters and append a truncation marker when the source is longer.`,
-    "readChat also returns at most 100 messages per call. Walk older history by passing beforeMessageId from the previous result's nextBeforeMessageId until it is null.",
-    "readChat refuses the chat that is hosting this turn.",
+    "Call hanokiReadNote for a note or hanokiReadChat for a chat when you need its body. Do not read every mentioned item on every turn.",
+    `hanokiReadNote and hanokiReadChat each return at most ${HANOKI_READ_CHAR_CEILING} characters and append a truncation marker when the source is longer.`,
+    "hanokiReadChat also returns at most 100 messages per call. Walk older history by passing beforeMessageId from the previous result's nextBeforeMessageId until it is null.",
+    "hanokiReadChat refuses the chat that is hosting this turn.",
     ...lines,
   ].join("\n");
 }

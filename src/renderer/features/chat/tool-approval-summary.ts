@@ -62,6 +62,25 @@ export function formatHanokiMoveApproval(
   };
 }
 
+export function formatHanokiDeleteApproval(input: unknown): {
+  title: string;
+  summary: string;
+} {
+  const items = isRecord(input) && Array.isArray(input.items) ? input.items : [];
+  const kinds = items.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const kind = readString(item.kind);
+    return kind ? [kind] : [];
+  });
+  return {
+    title:
+      kinds.length === 1
+        ? "Delete this Hanoki item permanently?"
+        : "Delete these Hanoki items permanently?",
+    summary: `${formatHanokiKindCounts(kinds)}. This cannot be undone. Deleting a folder deletes everything inside it.`,
+  };
+}
+
 export function formatHanokiRenameApproval(
   input: unknown,
   currentName: string | null,

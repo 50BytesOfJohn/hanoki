@@ -32,6 +32,15 @@ describe("parseChatMessageMetadata", () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it("round-trips a revision link", () => {
+    const metadata = {
+      parentId: "user-1",
+      revision: { sourceMessageId: "assistant-1", note: "Shorter.", sourceText: "Long answer." },
+    };
+
+    expect(normalizeChatMessageMetadata(JSON.parse(JSON.stringify(metadata)))).toEqual(metadata);
+  });
+
   it("falls back to the parent id when metadata is invalid", () => {
     expect(normalizeChatMessageMetadata({ parentId: 42 }, "parent-1")).toEqual({
       parentId: "parent-1",
