@@ -8,8 +8,8 @@ export default defineConfig({
   plugins: [
     TanStackRouterVite({
       target: "react",
-      routesDirectory: path.resolve(__dirname, "src/renderer/routes"),
-      generatedRouteTree: path.resolve(__dirname, "src/renderer/routeTree.gen.ts"),
+      routesDirectory: path.resolve(import.meta.dirname, "src/renderer/routes"),
+      generatedRouteTree: path.resolve(import.meta.dirname, "src/renderer/routeTree.gen.ts"),
       autoCodeSplitting: true,
       quoteStyle: "double",
     }),
@@ -19,8 +19,8 @@ export default defineConfig({
   root: "src/renderer",
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src/renderer"),
-      "@shared": path.resolve(__dirname, "src/shared"),
+      "@": path.resolve(import.meta.dirname, "src/renderer"),
+      "@shared": path.resolve(import.meta.dirname, "src/shared"),
     },
   },
   build: {

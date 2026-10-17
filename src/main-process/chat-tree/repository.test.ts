@@ -6,6 +6,9 @@ import { eq, sql } from "drizzle-orm";
 import { HANOKI_READ_CHAR_CEILING } from "@shared/chat/attached-items";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
 
+import { isStepCount, ToolLoopAgent } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+
 import { closeAppDatabase, getAppDatabase } from "../db/database";
 import { items, noteLinks } from "../db/schema";
 import { beginChatGeneration, endChatGeneration } from "../server/chat-generation-gate";
@@ -15,11 +18,16 @@ import {
   upsertMessage,
 } from "../messages/repository";
 import {
+  collectDiscoveredHanokiTools,
+  collectDiscoveredHanokiToolsFromMessages,
   createHanokiTools,
   hanokiSendKickNeedsApproval,
+  HANOKI_CORE_TOOL_NAMES,
   HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
   resolveAttachedItemPointers,
+  searchHanokiToolCatalog,
+  type HanokiTerminalPort,
 } from "../server/assistant/hanoki-tools";
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
@@ -1031,7 +1039,7 @@ describe("Hanoki context reads", () => {
     });
 
     const read = unwrapToolResult(
-      await tools.readNote.execute!({ noteId: note.id }, toolExecuteOptions),
+      await tools.hanokiReadNote.execute!({ noteId: note.id }, toolExecuteOptions),
     );
     expect(read).toEqual({
       kind: "note",
@@ -1045,7 +1053,7 @@ describe("Hanoki context reads", () => {
     const long = "x".repeat(HANOKI_READ_CHAR_CEILING + 20);
     updateMarkdownContent(note.id, long);
     const truncated = unwrapToolResult(
-      await tools.readNote.execute!({ noteId: note.id }, toolExecuteOptions),
+      await tools.hanokiReadNote.execute!({ noteId: note.id }, toolExecuteOptions),
     );
     expect(truncated.truncated).toBe(true);
     expect(truncated.content.startsWith("x".repeat(HANOKI_READ_CHAR_CEILING))).toBe(true);
@@ -1054,10 +1062,10 @@ describe("Hanoki context reads", () => {
     );
 
     await expect(async () => {
-      await tools.readNote.execute!({ noteId: chat.id }, toolExecuteOptions);
+      await tools.hanokiReadNote.execute!({ noteId: chat.id }, toolExecuteOptions);
     }).rejects.toThrow(/not a note/);
     await expect(async () => {
-      await tools.readNote.execute!({ noteId: "missing-note" }, toolExecuteOptions);
+      await tools.hanokiReadNote.execute!({ noteId: "missing-note" }, toolExecuteOptions);
     }).rejects.toThrow(/does not exist/);
   });
 
@@ -1092,11 +1100,11 @@ describe("Hanoki context reads", () => {
     const tools = createHanokiTools({ workspaceId: "read-chat-workspace", chatId: host.id });
 
     await expect(async () => {
-      await tools.readChat.execute!({ chatId: host.id, limit: 10 }, toolExecuteOptions);
+      await tools.hanokiReadChat.execute!({ chatId: host.id, limit: 10 }, toolExecuteOptions);
     }).rejects.toThrow(/hosting this turn/);
 
     const latest = unwrapToolResult(
-      await tools.readChat.execute!({ chatId: other.id, limit: 100 }, toolExecuteOptions),
+      await tools.hanokiReadChat.execute!({ chatId: other.id, limit: 100 }, toolExecuteOptions),
     );
     expect(latest.truncated).toBe(true);
     expect(latest.messages).toHaveLength(1);
@@ -1105,7 +1113,7 @@ describe("Hanoki context reads", () => {
     expect(latest.nextBeforeMessageId).toBe("read-chat-new");
 
     const older = unwrapToolResult(
-      await tools.readChat.execute!(
+      await tools.hanokiReadChat.execute!(
         { chatId: other.id, limit: 100, beforeMessageId: latest.nextBeforeMessageId },
         toolExecuteOptions,
       ),
@@ -1128,6 +1136,357 @@ describe("Hanoki context reads", () => {
       { kind: "note", itemId: "missing", title: null },
       { kind: "chat", itemId: other.id, title: "Source" },
     ]);
+  });
+});
+
+describe("Hanoki getItem, edit, delete, terminals, and tool search", () => {
+  function fakeTerminals(): HanokiTerminalPort & { disposed: string[]; created: string[] } {
+    const disposed: string[] = [];
+    const created: string[] = [];
+    return {
+      disposed,
+      created,
+      create(input) {
+        const row = createTerminal({
+          workspaceId: input.workspaceId,
+          title: input.title,
+          folderId: input.folderId,
+          data: {
+            workingDirectory: "/tmp",
+            shell: "/bin/sh",
+            columns: 80,
+            rows: 24,
+            scrollback: "",
+            scrollbackVersion: 2,
+          },
+        });
+        created.push(row.id);
+        return row;
+      },
+      async getOutput(id) {
+        return { status: "running", exitCode: null, output: `output-of-${id}`, truncated: false };
+      },
+      async runCommand(id, command) {
+        return {
+          status: "running",
+          exitCode: null,
+          output: `ran:${command}`,
+          truncated: false,
+          timedOut: false,
+          commandExitCode: 0,
+        };
+      },
+      async writeInput(id) {
+        return { status: "running", exitCode: null, output: `output-of-${id}`, truncated: false };
+      },
+      async interrupt(id) {
+        return { status: "running", exitCode: null, output: `output-of-${id}`, truncated: false };
+      },
+      async disposeItem(id) {
+        disposed.push(id);
+      },
+    };
+  }
+
+  it("returns kind-specific detail from hanokiGetItem", async () => {
+    createWorkspace({ id: "get-item-workspace", name: "GetItem" });
+    const host = createChat({ workspaceId: "get-item-workspace", title: "Host", folderId: null });
+    const note = createMarkdown({
+      workspaceId: "get-item-workspace",
+      title: "Spec",
+      folderId: null,
+    });
+    updateMarkdownContent(note.id, "# Hello");
+    const folder = createFolder({
+      workspaceId: "get-item-workspace",
+      name: "Docs",
+      parentId: null,
+    });
+    const tools = createHanokiTools({ workspaceId: "get-item-workspace", chatId: host.id });
+
+    const noteDetail = unwrapToolResult(
+      await tools.hanokiGetItem.execute!({ id: note.id }, toolExecuteOptions),
+    );
+    expect(noteDetail).toMatchObject({
+      kind: "markdown",
+      title: "Spec",
+      content: "# Hello",
+      contentLength: 7,
+    });
+    const folderDetail = unwrapToolResult(
+      await tools.hanokiGetItem.execute!({ id: folder.id }, toolExecuteOptions),
+    );
+    expect(folderDetail).toMatchObject({ kind: "folder", name: "Docs" });
+    await expect(async () => {
+      await tools.hanokiGetItem.execute!({ id: "missing" }, toolExecuteOptions);
+    }).rejects.toThrow(/does not exist/);
+  });
+
+  it("edits notes with replace and append", async () => {
+    createWorkspace({ id: "edit-note-workspace", name: "Edit" });
+    const host = createChat({ workspaceId: "edit-note-workspace", title: "Host", folderId: null });
+    const note = createMarkdown({
+      workspaceId: "edit-note-workspace",
+      title: "Draft",
+      folderId: null,
+    });
+    updateMarkdownContent(note.id, "old");
+    const tools = createHanokiTools({
+      workspaceId: "edit-note-workspace",
+      chatId: host.id,
+      flushMarkdownEditors: async () => undefined,
+    });
+    const replaced = unwrapToolResult(
+      await tools.hanokiEditNote.execute!(
+        { noteId: note.id, content: "new body" },
+        toolExecuteOptions,
+      ),
+    );
+    expect(replaced).toMatchObject({ beforeLength: 3, afterLength: 8 });
+    expect(markdownOf(note.id)).toBe("new body");
+    await tools.hanokiEditNote.execute!(
+      { noteId: note.id, content: " +more", mode: "append" },
+      toolExecuteOptions,
+    );
+    expect(markdownOf(note.id)).toBe("new body +more");
+    expect(HANOKI_MUTATING_TOOL_NAMES).toContain("hanokiEditNote");
+  });
+
+  it("deletes items recursively, disposes terminals, and refuses the host chat", async () => {
+    createWorkspace({ id: "delete-workspace", name: "Delete" });
+    const host = createChat({ workspaceId: "delete-workspace", title: "Host", folderId: null });
+    const folder = createFolder({ workspaceId: "delete-workspace", name: "Trash", parentId: null });
+    const note = createMarkdown({
+      workspaceId: "delete-workspace",
+      title: "Bye",
+      folderId: folder.id,
+    });
+    const terminals = fakeTerminals();
+    const tools = createHanokiTools({
+      workspaceId: "delete-workspace",
+      chatId: host.id,
+      terminals,
+      flushMarkdownEditors: async () => undefined,
+    });
+    const created = unwrapToolResult(
+      await tools.hanokiCreateTerminal.execute!(
+        { title: "Shell", folderId: null },
+        toolExecuteOptions,
+      ),
+    );
+    const run = unwrapToolResult(
+      await tools.hanokiTerminalRun.execute!(
+        { terminalId: created.id, command: "echo hi" },
+        toolExecuteOptions,
+      ),
+    );
+    expect(run.output).toBe("ran:echo hi");
+    const fetched = unwrapToolResult(
+      await tools.hanokiTerminalGet.execute!({ terminalId: created.id }, toolExecuteOptions),
+    );
+    expect(fetched.output).toContain("output-of-");
+
+    await expect(async () => {
+      await tools.hanokiDeleteItems.execute!(
+        { items: [{ kind: "chat", id: host.id }] },
+        toolExecuteOptions,
+      );
+    }).rejects.toThrow(/hosting this turn/);
+
+    const deleted = unwrapToolResult(
+      await tools.hanokiDeleteItems.execute!(
+        {
+          items: [
+            { kind: "folder", id: folder.id },
+            { kind: "terminal", id: created.id },
+          ],
+        },
+        toolExecuteOptions,
+      ),
+    );
+    expect(deleted.deletedItemIds).toContain(note.id);
+    expect(getItemById(note.id)).toBeNull();
+    expect(getItemById(created.id)).toBeNull();
+    expect(terminals.disposed).toContain(created.id);
+    expect(HANOKI_MUTATING_TOOL_NAMES).toContain("hanokiDeleteItems");
+  });
+
+  it("activates a deferred tool on the next step after hanokiFindTools", async () => {
+    createWorkspace({ id: "tool-search-agent-workspace", name: "SearchAgent" });
+    const host = createChat({
+      workspaceId: "tool-search-agent-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const note = createMarkdown({
+      workspaceId: "tool-search-agent-workspace",
+      title: "Doomed",
+      folderId: null,
+    });
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    let call = 0;
+    const doGenerate = (async () => {
+      call += 1;
+      if (call === 1) {
+        return {
+          finishReason: { unified: "tool-calls", raw: "tool-calls" },
+          usage,
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: "hanokiFindTools",
+              input: JSON.stringify({ query: "delete a note" }),
+            },
+          ],
+          warnings: [],
+        };
+      }
+      if (call === 2) {
+        return {
+          finishReason: { unified: "tool-calls", raw: "tool-calls" },
+          usage,
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-2",
+              toolName: "hanokiDeleteItems",
+              input: JSON.stringify({ items: [{ kind: "markdown", id: note.id }] }),
+            },
+          ],
+          warnings: [],
+        };
+      }
+      return {
+        finishReason: { unified: "stop", raw: "stop" },
+        usage,
+        content: [{ type: "text", text: "done" }],
+        warnings: [],
+      };
+      // SAFETY: Mock model result literals are validated by the agent at runtime.
+    }) as never;
+    const agent = new ToolLoopAgent({
+      model: new MockLanguageModelV3({ doGenerate }),
+      tools: createHanokiTools({ workspaceId: "tool-search-agent-workspace", chatId: host.id }),
+      activeTools: [...HANOKI_CORE_TOOL_NAMES] as never,
+      prepareStep: ({ steps }) => ({
+        activeTools: [
+          ...HANOKI_CORE_TOOL_NAMES,
+          ...collectDiscoveredHanokiTools(steps as readonly unknown[]),
+        ] as never,
+      }),
+      stopWhen: isStepCount(5),
+    });
+    await agent.generate({ messages: [{ role: "user", content: "Delete the Doomed note" }] });
+    expect(getItemById(note.id)).toBeNull();
+  });
+
+  it("keeps discovered tools loaded on a resumed request via message history", async () => {
+    createWorkspace({ id: "tool-search-resume-workspace", name: "SearchResume" });
+    const host = createChat({
+      workspaceId: "tool-search-resume-workspace",
+      title: "Host",
+      folderId: null,
+    });
+    const note = createMarkdown({
+      workspaceId: "tool-search-resume-workspace",
+      title: "Doomed Again",
+      folderId: null,
+    });
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    let call = 0;
+    const doGenerate = (async () => {
+      call += 1;
+      if (call === 1) {
+        return {
+          finishReason: { unified: "tool-calls", raw: "tool-calls" },
+          usage,
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call-1",
+              toolName: "hanokiDeleteItems",
+              input: JSON.stringify({ items: [{ kind: "markdown", id: note.id }] }),
+            },
+          ],
+          warnings: [],
+        };
+      }
+      return {
+        finishReason: { unified: "stop", raw: "stop" },
+        usage,
+        content: [{ type: "text", text: "done" }],
+        warnings: [],
+      };
+      // SAFETY: Mock model result literals are validated by the agent at runtime.
+    }) as never;
+    // Simulates the chat route seeding a fresh (resumed) request from history.
+    const history = [
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "tool-hanokiFindTools" as const,
+            toolCallId: "find-1",
+            state: "output-available" as const,
+            input: { query: "delete a note" },
+            output: {
+              query: "delete a note",
+              tools: [{ name: "hanokiDeleteItems", group: "write", summary: "Delete items." }],
+            },
+          },
+        ],
+      },
+    ];
+    const agent = new ToolLoopAgent({
+      model: new MockLanguageModelV3({ doGenerate }),
+      tools: createHanokiTools({ workspaceId: "tool-search-resume-workspace", chatId: host.id }),
+      activeTools: [
+        ...HANOKI_CORE_TOOL_NAMES,
+        ...collectDiscoveredHanokiToolsFromMessages(history),
+      ] as never,
+      stopWhen: isStepCount(5),
+    });
+    // The route converts UI history to model messages separately; here the
+    // history only seeds activeTools, as it does in the route.
+    await agent.generate({
+      messages: [{ role: "user", content: "Delete the Doomed Again note" }],
+    });
+    expect(getItemById(note.id)).toBeNull();
+  });
+
+  it("searches the catalog and collects discovered tools for prepareStep", async () => {
+    expect(searchHanokiToolCatalog("delete a note").map((e) => e.name)).toContain(
+      "hanokiDeleteItems",
+    );
+    expect(searchHanokiToolCatalog("run command terminal").map((e) => e.name)).toContain(
+      "hanokiTerminalRun",
+    );
+    createWorkspace({ id: "find-tools-workspace", name: "Find" });
+    const host = createChat({ workspaceId: "find-tools-workspace", title: "Host", folderId: null });
+    const tools = createHanokiTools({ workspaceId: "find-tools-workspace", chatId: host.id });
+    const found = unwrapToolResult(
+      await tools.hanokiFindTools.execute!({ query: "edit a note" }, toolExecuteOptions),
+    );
+    expect(found.tools.map((t: { name: string }) => t.name)).toContain("hanokiEditNote");
+    expect(
+      collectDiscoveredHanokiTools([
+        { toolResults: [{ toolName: "hanokiFindTools", output: found }] },
+      ]),
+    ).toContain("hanokiEditNote");
+    // Discovery from a previous request (approval resume / follow-up turn)
+    // is recovered from the tool part stored in the message history.
+    expect(
+      collectDiscoveredHanokiToolsFromMessages([
+        {
+          parts: [
+            { type: "text", text: "hi" },
+            { type: "tool-hanokiFindTools", state: "output-available", output: found },
+          ],
+        },
+      ]),
+    ).toContain("hanokiEditNote");
   });
 });
 

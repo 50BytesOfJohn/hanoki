@@ -38,11 +38,14 @@ import { generateSumiItemTitle } from "../assistant/title-generation";
 import { webTools } from "../assistant/web-tools";
 import { formatAttachedContextInstructions } from "@shared/chat/attached-items";
 import {
+  collectDiscoveredHanokiTools,
+  collectDiscoveredHanokiToolsFromMessages,
   createHanokiTools,
   hanokiSendKickNeedsApproval,
+  HANOKI_CORE_TOOL_NAMES,
   HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_READ_TOOL_NAMES,
-  HANOKI_TOOL_NAMES,
+  type HanokiTerminalPort,
   resolveAttachedItemPointers,
 } from "../assistant/hanoki-tools";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "../assistant/terminal-tools";
@@ -80,6 +83,7 @@ interface CreateChatRouteOptions {
     type: "markdown";
     data: { markdown: string };
   };
+  terminals?: HanokiTerminalPort;
 }
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
@@ -275,6 +279,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ...createHanokiTools({
         workspaceId: chat.workspaceId,
         chatId: chat.id,
+        terminals: options?.terminals,
         flushMarkdownContent: options?.flushMarkdownContent,
         onTreeChanged: () => options?.onChatTreeChanged?.({ workspaceId: chat.workspaceId }),
         onMessagesChanged: (targetChatId) =>
@@ -287,11 +292,31 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         configuredCwd: terminalSettings.workingDirectory,
       }),
     };
-    const activeTools: (keyof typeof tools)[] = [];
-    if (isWebEnabledForRequest) activeTools.push("webSearch", "webFetch");
-    if (isHanokiEnabledForRequest) activeTools.push(...HANOKI_TOOL_NAMES);
-    else if (itemMentions.length > 0) activeTools.push(...HANOKI_READ_TOOL_NAMES);
-    if (isTerminalEnabledForRequest) activeTools.push(...TERMINAL_TOOL_NAMES);
+    // Tool search: only core Hanoki tools start active. Deferred tools are
+    // discovered with hanokiFindTools and activated by prepareStep below, so
+    // the model does not pay for every definition on every turn/provider.
+    const buildActiveTools = (discovered: readonly string[]): (keyof typeof tools)[] => {
+      const active: (keyof typeof tools)[] = [];
+      if (isWebEnabledForRequest) active.push("webSearch", "webFetch");
+      if (isHanokiEnabledForRequest) {
+        active.push(...(HANOKI_CORE_TOOL_NAMES as (keyof typeof tools)[]));
+        for (const name of discovered) {
+          if (name in tools && !active.includes(name as keyof typeof tools)) {
+            active.push(name as keyof typeof tools);
+          }
+        }
+      } else if (itemMentions.length > 0) {
+        active.push(...(HANOKI_READ_TOOL_NAMES as unknown as (keyof typeof tools)[]));
+      }
+      if (isTerminalEnabledForRequest) active.push(...TERMINAL_TOOL_NAMES);
+      return active;
+    };
+    // Discovery survives approval resumptions and follow-up turns: recover
+    // tools loaded by hanokiFindTools in earlier requests from the history.
+    const historyDiscovered = isHanokiEnabledForRequest
+      ? collectDiscoveredHanokiToolsFromMessages(messages)
+      : [];
+    const activeTools = buildActiveTools(historyDiscovered);
 
     const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
     if (needsTerminalApproval) {
@@ -328,7 +353,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const agent = new ToolLoopAgent({
       model: languageModel,
       instructions:
-        [chat.data.settings.systemPrompt?.trim() || "", mentionedInstructions ?? ""]
+        [
+          chat.data.settings.systemPrompt?.trim() || "",
+          mentionedInstructions ?? "",
+          isHanokiEnabledForRequest
+            ? "Additional Hanoki tools (creating, editing, deleting, moving, renaming, sending messages, and Hanoki terminals) are loaded on demand. Call hanokiFindTools with your goal to discover and load them before saying an action is unavailable."
+            : "",
+        ]
           .filter((part) => part.length > 0)
           .join("\n\n") || undefined,
       temperature,
@@ -337,6 +368,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         provider.catalogId as ProviderId,
         reasoningEffort,
         temperature,
+        model.providerModelId,
       ),
       tools,
       activeTools,
@@ -346,6 +378,16 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
               ...toolApproval,
               ...(isHanokiEnabledForRequest ? { hanokiSendMessage: sendMessageApproval } : {}),
             },
+          }
+        : {}),
+      ...(isHanokiEnabledForRequest
+        ? {
+            prepareStep: ({ steps }: { steps: readonly unknown[] }) => ({
+              activeTools: buildActiveTools([
+                ...historyDiscovered,
+                ...collectDiscoveredHanokiTools(steps),
+              ]),
+            }),
           }
         : {}),
       stopWhen: isStepCount(100),

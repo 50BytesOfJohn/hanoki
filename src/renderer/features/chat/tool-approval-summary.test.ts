@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatHanokiDeleteApproval,
   formatHanokiKindCounts,
   formatHanokiMoveApproval,
   formatHanokiRenameApproval,
@@ -57,6 +58,23 @@ describe("formatHanokiMoveApproval", () => {
       title: "Move this Hanoki item?",
       summary: "1 folder",
       destination: "a folder",
+    });
+  });
+});
+
+describe("formatHanokiDeleteApproval", () => {
+  it("warns that deletion is permanent and recursive", () => {
+    expect(
+      formatHanokiDeleteApproval({
+        items: [
+          { kind: "markdown", id: "n1" },
+          { kind: "folder", id: "f1" },
+        ],
+      }),
+    ).toEqual({
+      title: "Delete these Hanoki items permanently?",
+      summary:
+        "1 note and 1 folder. This cannot be undone. Deleting a folder deletes everything inside it.",
     });
   });
 });

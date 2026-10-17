@@ -77,6 +77,7 @@ if (!app.requestSingleInstanceLock()) {
           if (!backend) throw new Error("Backend is not initialized.");
           return backend.services.chatTree.flushMarkdownContent(id);
         },
+        terminals: backend?.services.terminals,
       });
       aiServerState = { status: "ready", port: aiServer.port, error: null };
       broadcastSystemEvent({ type: "ai-server:ready", port: aiServer.port });

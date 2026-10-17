@@ -47,7 +47,11 @@ import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { requestSidebarFolderReveal } from "@/features/chat/sidebar-reveal";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
-import { formatHanokiMoveApproval, formatHanokiRenameApproval } from "./tool-approval-summary";
+import {
+  formatHanokiDeleteApproval,
+  formatHanokiMoveApproval,
+  formatHanokiRenameApproval,
+} from "./tool-approval-summary";
 
 export { isToolUIPart };
 
@@ -232,7 +236,10 @@ function TerminalRunDetails({ input, output }: { input: unknown; output: unknown
           {command}
         </pre>
       ) : null}
-      <OutputStream label="Output" value={getStringField(output, "stdout")} />
+      <OutputStream
+        label="Output"
+        value={getStringField(output, "stdout") ?? getStringField(output, "output")}
+      />
       <OutputStream label="Errors" value={getStringField(output, "stderr")} />
       <p className="px-0.5 text-xs text-muted-foreground">
         {exitCode === null
@@ -401,7 +408,24 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Reading Hanoki chat failed",
     Details: ReadResultDetails,
   },
-  readNote: {
+  hanokiFindTools: {
+    icon: DatabaseSearchIcon,
+    pendingLabel: () => "Finding Hanoki tools…",
+    doneLabel: () => "Found Hanoki tools",
+    errorLabel: "Finding Hanoki tools failed",
+    Details: GenericToolDetails,
+  },
+  hanokiGetItem: {
+    icon: Database02Icon,
+    pendingLabel: () => "Reading a Hanoki item…",
+    doneLabel: (_input, output) => {
+      const title = getStringField(output, "title") ?? getStringField(output, "name");
+      return title ? `Read “${title}”` : "Read a Hanoki item";
+    },
+    errorLabel: "Reading the Hanoki item failed",
+    Details: GenericToolDetails,
+  },
+  hanokiReadNote: {
     icon: FileScriptIcon,
     pendingLabel: () => "Reading a note…",
     doneLabel: (_input, output) => {
@@ -411,7 +435,7 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Reading the note failed",
     Details: ReadResultDetails,
   },
-  readChat: {
+  hanokiReadChat: {
     icon: MessagesSquare,
     pendingLabel: () => "Reading a chat…",
     doneLabel: (_input, output) => {
@@ -520,6 +544,87 @@ const TOOL_CONFIGS: Record<string, ToolMarkerConfig> = {
     errorLabel: "Renaming Hanoki item failed",
     Details: GenericToolDetails,
   },
+  hanokiListModels: {
+    icon: Database02Icon,
+    pendingLabel: () => "Listing models…",
+    doneLabel: () => "Listed models",
+    errorLabel: "Listing models failed",
+    Details: GenericToolDetails,
+  },
+  hanokiEditNote: {
+    icon: FileEditIcon,
+    pendingLabel: () => "Editing a note…",
+    doneLabel: (_input, output) => {
+      const title = getStringField(output, "title");
+      return title ? `Edited “${title}”` : "Edited a note";
+    },
+    errorLabel: "Editing the note failed",
+    Details: GenericToolDetails,
+  },
+  hanokiDeleteItems: {
+    icon: ShieldBanIcon,
+    pendingLabel: (input) => {
+      const count = getArrayLength(input, "items");
+      return count > 0
+        ? `Deleting ${count} Hanoki ${count === 1 ? "item" : "items"}…`
+        : "Deleting Hanoki items…";
+    },
+    doneLabel: (input) => {
+      const count = getArrayLength(input, "items");
+      return count > 0
+        ? `Deleted ${count} Hanoki ${count === 1 ? "item" : "items"}`
+        : "Deleted Hanoki items";
+    },
+    errorLabel: "Deleting Hanoki items failed",
+    Details: GenericToolDetails,
+  },
+  hanokiCreateTerminal: {
+    icon: ComputerTerminal01Icon,
+    pendingLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Creating terminal “${title}”…` : "Creating a Hanoki terminal…";
+    },
+    doneLabel: (input) => {
+      const title = getStringField(input, "title");
+      return title ? `Created terminal “${title}”` : "Created a Hanoki terminal";
+    },
+    errorLabel: "Creating the Hanoki terminal failed",
+    Details: GenericToolDetails,
+  },
+  hanokiTerminalGet: {
+    icon: ComputerTerminal01Icon,
+    pendingLabel: () => "Reading terminal output…",
+    doneLabel: () => "Read terminal output",
+    errorLabel: "Reading terminal output failed",
+    Details: TerminalRunDetails,
+  },
+  hanokiTerminalRun: {
+    icon: ComputerTerminal01Icon,
+    pendingLabel: (input) => {
+      const command = getStringField(input, "command");
+      return command ? `Running ${command} in terminal…` : "Running a terminal command…";
+    },
+    doneLabel: (input) => {
+      const command = getStringField(input, "command");
+      return command ? `Ran ${command} in terminal` : "Ran a terminal command";
+    },
+    errorLabel: "Terminal command failed",
+    Details: TerminalRunDetails,
+  },
+  hanokiTerminalWrite: {
+    icon: ComputerTerminal01Icon,
+    pendingLabel: () => "Writing to terminal…",
+    doneLabel: () => "Wrote to terminal",
+    errorLabel: "Writing to the terminal failed",
+    Details: TerminalRunDetails,
+  },
+  hanokiTerminalInterrupt: {
+    icon: ComputerTerminal01Icon,
+    pendingLabel: () => "Interrupting terminal…",
+    doneLabel: () => "Interrupted terminal",
+    errorLabel: "Interrupting the terminal failed",
+    Details: TerminalRunDetails,
+  },
 };
 
 function getToolConfig(toolName: string): ToolMarkerConfig {
@@ -622,6 +727,53 @@ function describeApprovalRequest(
           from this chat’s tool
         </p>
       ),
+    };
+  }
+
+  if (toolName === "hanokiDeleteItems") {
+    const deletion = formatHanokiDeleteApproval(input);
+    return {
+      title: deletion.title,
+      body: (
+        <p className="rounded-md bg-surface-secondary px-2.5 py-2 text-xs text-foreground">
+          {deletion.summary}
+        </p>
+      ),
+    };
+  }
+
+  if (toolName === "hanokiEditNote") {
+    const content = getStringField(input, "content");
+    return {
+      title: "Edit this note?",
+      body: content ? (
+        <pre className="max-h-40 overflow-auto rounded-md bg-surface-secondary px-2.5 py-2 font-mono text-xs leading-5 whitespace-pre-wrap text-muted-foreground scrollbar">
+          {content}
+        </pre>
+      ) : null,
+    };
+  }
+
+  if (toolName === "hanokiTerminalRun") {
+    const command = getStringField(input, "command");
+    return {
+      title: "Run this command in a Hanoki terminal?",
+      body: command ? (
+        <pre className="overflow-x-auto rounded-md bg-surface-secondary px-2.5 py-2 font-mono text-xs leading-5 text-foreground scrollbar">
+          <span className="text-muted-foreground">$ </span>
+          {command}
+        </pre>
+      ) : null,
+    };
+  }
+
+  if (toolName === "hanokiTerminalWrite" || toolName === "hanokiTerminalInterrupt") {
+    return {
+      title:
+        toolName === "hanokiTerminalInterrupt"
+          ? "Interrupt this Hanoki terminal?"
+          : "Write to this Hanoki terminal?",
+      body: null,
     };
   }
 
@@ -752,7 +904,7 @@ function ToolApprovalCard({
   );
 }
 
-type OpenableItemType = "chat" | "markdown";
+type OpenableItemType = "chat" | "markdown" | "terminal";
 
 function openHanokiItem(
   itemId: string,
@@ -793,7 +945,9 @@ function doneMarkerTarget(toolName: string, output: unknown) {
       ? "chat"
       : toolName === "hanokiCreateMarkdown"
         ? "markdown"
-        : null;
+        : toolName === "hanokiCreateTerminal"
+          ? "terminal"
+          : null;
   if (!itemType) return null;
   const itemId =
     toolName === "hanokiSendMessage"
@@ -904,8 +1058,11 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
       (toolName !== "hanokiCreateFolder" &&
         toolName !== "hanokiCreateChat" &&
         toolName !== "hanokiCreateMarkdown" &&
+        toolName !== "hanokiCreateTerminal" &&
         toolName !== "hanokiMoveItems" &&
-        toolName !== "hanokiRenameItem")
+        toolName !== "hanokiRenameItem" &&
+        toolName !== "hanokiEditNote" &&
+        toolName !== "hanokiDeleteItems")
     ) {
       return;
     }

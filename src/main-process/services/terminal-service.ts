@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { WebContents } from "electron";
 import * as pty from "node-pty";
 
@@ -36,6 +38,49 @@ interface TerminalSession {
   exitDisposable: pty.IDisposable | null;
 }
 
+export interface TerminalOutputSnapshot {
+  itemId: string;
+  status: "running" | "exited" | "not-started";
+  exitCode: number | null;
+  /** Plain-text scrollback (ANSI stripped), most recent output last. */
+  output: string;
+  truncated: boolean;
+}
+
+export interface TerminalRunResult extends TerminalOutputSnapshot {
+  command: string;
+  /** True only when the wait elapsed and the command may still be running. */
+  timedOut: boolean;
+  /** Exit code of the command itself when it finished; null while running or unknown. */
+  commandExitCode: number | null;
+}
+
+/**
+ * Finds the completion marker runCommand appends after the command. Returns
+ * the output before the marker and the command's exit code, or null while the
+ * command has not finished. The echoed input line contains the marker text
+ * followed by `:$?`, never digits, so it cannot produce a false match.
+ */
+export function parseTerminalRunCompletion(
+  delta: string,
+  marker: string,
+): { output: string; exitCode: number } | null {
+  const prefix = `${marker}:`;
+  const index = delta.lastIndexOf(prefix);
+  if (index === -1) return null;
+  const match = /^(\d+)/.exec(delta.slice(index + prefix.length));
+  if (!match) return null;
+  return {
+    output: delta.slice(0, index).replace(/\n$/, ""),
+    exitCode: Number(match[1]),
+  };
+}
+
+function extractOutputDelta(before: string, after: string): string {
+  if (after.startsWith(before)) return after.slice(before.length);
+  return after.length > before.length ? after.slice(before.length) : after;
+}
+
 export interface TerminalService {
   create(input: { workspaceId: string; title: string; folderId: string | null }): TerminalInfo;
   start(id: string, sender: WebContents): Promise<TerminalSessionSnapshot>;
@@ -44,6 +89,37 @@ export interface TerminalService {
   disposeItem(id: string): Promise<void>;
   pruneMissingItems(): Promise<void>;
   disposeAll(): Promise<void>;
+  /** Starts the PTY if needed (no renderer subscriber) and returns plain-text output. */
+  ensureSession(id: string): Promise<TerminalOutputSnapshot>;
+  getOutput(id: string, maxChars?: number): Promise<TerminalOutputSnapshot>;
+  runCommand(id: string, command: string, timeoutMs?: number): Promise<TerminalRunResult>;
+  writeInput(id: string, data: string): Promise<TerminalOutputSnapshot>;
+  interrupt(id: string): Promise<TerminalOutputSnapshot>;
+}
+
+const MAX_AI_OUTPUT_CHARS = 30_000;
+const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const MAX_RUN_TIMEOUT_MS = 120_000;
+
+/** Strips ANSI/VT sequences so AI tools get readable plain text. */
+export function stripTerminalAnsi(text: string): string {
+  const esc = "\x1b";
+  const bel = "\x07";
+  const withoutSequences = text
+    .replace(new RegExp(`${esc}\\][^${bel}${esc}]*(?:${bel}|${esc}\\\\)`, "g"), "")
+    .replace(new RegExp(`${esc}\\[[0-9;?]*[ -/]*[@-~]`, "g"), "")
+    .replace(new RegExp(`${esc}[()][0-9A-B]`, "g"), "")
+    .replace(new RegExp(`${esc}.`, "g"), "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  return [...withoutSequences]
+    .filter((char) => char === "\n" || char === "\t" || char.charCodeAt(0) >= 32)
+    .join("");
+}
+
+function capOutput(text: string): { output: string; truncated: boolean } {
+  if (text.length <= MAX_AI_OUTPUT_CHARS) return { output: text, truncated: false };
+  return { output: text.slice(-MAX_AI_OUTPUT_CHARS), truncated: true };
 }
 
 function toTerminalInfo(terminal: TerminalRow): TerminalInfo {
@@ -279,6 +355,100 @@ export function createTerminalService(): TerminalService {
       subscribe(session, sender);
       flushData(session);
       return await snapshot(session);
+    },
+
+    async ensureSession(id): Promise<TerminalOutputSnapshot> {
+      return this.getOutput(id);
+    },
+
+    async getOutput(id, maxChars): Promise<TerminalOutputSnapshot> {
+      const item = getTerminal(id);
+      const session = sessions.get(id) ?? newSession(item);
+      await session.terminalState.whenIdle();
+      const plain = stripTerminalAnsi(session.terminalState.serializeForLiveSession());
+      const capped =
+        maxChars !== undefined && plain.length > maxChars
+          ? { output: plain.slice(-maxChars), truncated: true }
+          : capOutput(plain);
+      return {
+        itemId: id,
+        status: session.status,
+        exitCode: session.exitCode,
+        ...capped,
+      };
+    },
+
+    async runCommand(id, command, timeoutMs): Promise<TerminalRunResult> {
+      const trimmed = command.trim();
+      if (!trimmed) throw new Error("Terminal command cannot be empty.");
+      const item = getTerminal(id);
+      const session = sessions.get(id) ?? newSession(item);
+      if (!session.process || session.status !== "running") {
+        throw new Error(`Terminal "${id}" is not running. Its shell has exited.`);
+      }
+      await session.terminalState.whenIdle();
+      const before = stripTerminalAnsi(session.terminalState.serializeForLiveSession());
+      // Completion is detected by a marker echoed after the command, not by
+      // output going quiet — periodic output (ticks, progress) stays quiet
+      // between lines and previously looked "finished" long before it was.
+      const marker = `__hanoki_done_${randomUUID().replaceAll("-", "")}__`;
+      session.process.write(`${trimmed}; echo ${marker}:$?\r`);
+      const timeout = Math.min(
+        MAX_RUN_TIMEOUT_MS,
+        Math.max(1_000, timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS),
+      );
+      const deadline = Date.now() + timeout;
+      let timedOut = false;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await session.terminalState.whenIdle();
+        const nowText = stripTerminalAnsi(session.terminalState.serializeForLiveSession());
+        const completion = parseTerminalRunCompletion(extractOutputDelta(before, nowText), marker);
+        if (completion) {
+          const capped = capOutput(completion.output.replace(/^\n+/, ""));
+          return {
+            itemId: id,
+            status: session.status,
+            exitCode: session.exitCode,
+            ...capped,
+            command: trimmed,
+            timedOut: false,
+            commandExitCode: completion.exitCode,
+          };
+        }
+        if (session.status !== "running") break;
+        if (Date.now() >= deadline) {
+          timedOut = true;
+          break;
+        }
+      }
+      const after = stripTerminalAnsi(session.terminalState.serializeForLiveSession());
+      const delta = extractOutputDelta(before, after);
+      const capped = capOutput(delta.replace(/^\n+/, ""));
+      return {
+        itemId: id,
+        status: session.status,
+        exitCode: session.exitCode,
+        ...capped,
+        command: trimmed,
+        timedOut,
+        commandExitCode: null,
+      };
+    },
+
+    async writeInput(id, data): Promise<TerminalOutputSnapshot> {
+      const item = getTerminal(id);
+      const session = sessions.get(id) ?? newSession(item);
+      if (!session.process || session.status !== "running") {
+        throw new Error(`Terminal "${id}" is not running. Its shell has exited.`);
+      }
+      session.process.write(data);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return this.getOutput(id);
+    },
+
+    async interrupt(id): Promise<TerminalOutputSnapshot> {
+      return this.writeInput(id, "\x03");
     },
 
     write(id, data): void {

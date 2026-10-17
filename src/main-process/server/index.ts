@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { HanokiTerminalPort } from "./assistant/hanoki-tools";
 import { createChatRoute } from "./routes/chat";
 import { createSumiRoute } from "./routes/sumi";
 import type {
@@ -20,6 +21,7 @@ interface CreateAiServerOptions {
     type: "markdown";
     data: { markdown: string };
   };
+  terminals?: HanokiTerminalPort;
 }
 
 export async function createAiServer(options?: CreateAiServerOptions): Promise<{
@@ -40,6 +42,7 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
       onChatMessagesChanged: options?.onChatMessagesChanged,
       onChatGenerationRequested: options?.onChatGenerationRequested,
       flushMarkdownContent: options?.flushMarkdownContent,
+      terminals: options?.terminals,
     }),
   );
   app.route("/", createSumiRoute());
