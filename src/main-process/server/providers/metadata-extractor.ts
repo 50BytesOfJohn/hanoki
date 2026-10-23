@@ -16,6 +16,9 @@ const providerAdapters: Partial<Record<ProviderId, ProviderMetadataAdapter>> = {
 
 /**
  * Build response metadata from known request details and any available AI SDK usage data.
+ *
+ * `usage` is the total across every step; `lastStepUsage` is the final model
+ * call alone, which is what measures how full the context window is.
  */
 export function buildResponseMetadata(
   usage: LanguageModelUsage | undefined,
@@ -23,9 +26,11 @@ export function buildResponseMetadata(
   model: ModelTableRow,
   generationTimeMs: number,
   finishReason?: string,
+  lastStepUsage?: LanguageModelUsage,
 ): Omit<ChatMessageMetadata, "parentId"> {
   const providerExtras = usage ? (providerAdapters[providerId]?.(usage) ?? {}) : {};
   const cost = usage ? calculateUsageCost(model.metadata, usage) : undefined;
+  const contextUsage = lastStepUsage ? buildContextUsage(lastStepUsage) : undefined;
 
   return {
     ...(usage
@@ -41,6 +46,7 @@ export function buildResponseMetadata(
           },
         }
       : {}),
+    ...(contextUsage ? { contextUsage } : {}),
     ...(cost ? { cost } : {}),
     times: { generation: generationTimeMs },
     provider: providerId,
@@ -87,6 +93,19 @@ export function mergeLanguageModelUsage(
     },
     totalTokens: addTokenCounts(current.totalTokens, next.totalTokens),
   };
+}
+
+function buildContextUsage(
+  usage: LanguageModelUsage,
+): ChatMessageMetadata["contextUsage"] | undefined {
+  const entries = Object.entries({
+    input: usage.inputTokens,
+    output: usage.outputTokens,
+    reasoning: usage.outputTokenDetails?.reasoningTokens,
+    cached: usage.inputTokenDetails?.cacheReadTokens,
+  }).filter((entry): entry is [string, number] => typeof entry[1] === "number");
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function calculateUsageCost(

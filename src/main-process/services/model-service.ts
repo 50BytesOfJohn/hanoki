@@ -5,6 +5,7 @@ import type {
   UpdateModelResult,
 } from "@shared/ipc";
 import type { ProviderId } from "@shared/providers/catalog";
+import { getModelDetails } from "@shared/models/model-details";
 import { getModelReasoningEfforts } from "@shared/models/reasoning";
 import { getModelTemperatureMax } from "@shared/models/temperature";
 import { listProviders } from "../providers/repository";
@@ -42,6 +43,7 @@ export function createModelService(): ModelService {
           // efforts are resolved here instead of shipping the raw catalog.
           reasoningEfforts: catalogId ? getModelReasoningEfforts(catalogId, row.metadata) : [],
           temperatureMax: catalogId ? getModelTemperatureMax(catalogId, row.metadata) : null,
+          contextLength: getModelDetails(row.metadata, row.providerModelId).contextLength,
         };
       });
     },

@@ -236,6 +236,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const startTime = Date.now();
     let capturedResponseMetadata: Omit<ChatMessageMetadata, "parentId"> | undefined;
     let completedStepUsage: LanguageModelUsage | undefined;
+    let lastStepUsage: LanguageModelUsage | undefined;
     const modelInputMessages =
       mode === "continue-message"
         ? [
@@ -486,6 +487,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           model,
           Date.now() - startTime,
           "error",
+          lastStepUsage,
         );
         logError("[ai] Response stream failed.", { callId: currentCallId }, error);
         streamErrorMessage = getChatStreamErrorMessage(error);
@@ -497,6 +499,11 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           ? () => continuationTargetMessage.id
           : createUuidV7,
       messageMetadata: ({ part }) => {
+        // Read in stream order so it is always set before `finish` arrives.
+        if (part.type === "finish-step") {
+          lastStepUsage = part.usage;
+          return undefined;
+        }
         if (part.type === "start") {
           capturedResponseMetadata = {
             provider: provider.catalogId,
@@ -515,6 +522,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             model,
             Date.now() - startTime,
             part.finishReason,
+            lastStepUsage,
           );
           return {
             parentId: responseParentId,
@@ -533,6 +541,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             model,
             Date.now() - startTime,
             "abort",
+            lastStepUsage,
           );
         }
 

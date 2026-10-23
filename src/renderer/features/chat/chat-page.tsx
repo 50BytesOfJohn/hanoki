@@ -72,6 +72,7 @@ import {
   parseTiptapDocument,
   type TiptapDocument,
 } from "@shared/tiptap/document";
+import { ChatContextUsage } from "./chat-context-usage";
 import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
@@ -442,6 +443,7 @@ function ActiveChatContent() {
                   <ModelSelector />
                   <ReasoningSelector />
                   <div className="ml-auto flex items-center gap-1.5">
+                    <ChatContextUsage />
                     <SumiPromptAction
                       prompt={inputText}
                       isDisabled={isInteractionLocked || !inputIsTextOnly}

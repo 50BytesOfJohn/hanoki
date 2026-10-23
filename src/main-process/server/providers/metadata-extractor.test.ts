@@ -55,6 +55,37 @@ describe("buildResponseMetadata", () => {
     expect(metadata.cost?.input).toBeCloseTo(0.0001);
     expect(metadata.cost?.output).toBeCloseTo(0.00005);
     expect(metadata.cost?.total).toBeCloseTo(0.00015);
+    expect(metadata).not.toHaveProperty("contextUsage");
+  });
+
+  it("records the final step separately from the summed usage", () => {
+    const metadata = buildResponseMetadata(
+      createUsage({ input: 250, output: 25, cached: 50, reasoning: 5 }),
+      "openrouter",
+      model,
+      500,
+      "stop",
+      createUsage({ input: 150, output: 15, cached: 30, reasoning: 3 }),
+    );
+
+    expect(metadata.tokens?.input).toBe(250);
+    expect(metadata.contextUsage).toEqual({ input: 150, output: 15, reasoning: 3, cached: 30 });
+  });
+
+  it("omits context usage when the final step reported no counts", () => {
+    const metadata = buildResponseMetadata(undefined, "ollama", model, 500, "stop", {
+      inputTokens: undefined,
+      inputTokenDetails: {
+        noCacheTokens: undefined,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+      },
+      outputTokens: undefined,
+      outputTokenDetails: { textTokens: undefined, reasoningTokens: undefined },
+      totalTokens: undefined,
+    });
+
+    expect(metadata).not.toHaveProperty("contextUsage");
   });
 });
 

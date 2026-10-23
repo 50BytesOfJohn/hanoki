@@ -7,6 +7,12 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import { messagesApi } from "@/api/messages";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
+import {
+  getBranchCost,
+  getLatestContextUsage,
+  type BranchCost,
+  type LatestContextUsage,
+} from "@shared/chat/context-usage";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { ChatRevisionRequest } from "@shared/chat/revision";
@@ -768,6 +774,40 @@ export function useChatLastMessage(): { id: string; role: HanokiUiMessage["role"
 
     cacheRef.current = { id: last.id, role: last.role };
     return cacheRef.current;
+  }, [chat]);
+
+  return useChatSnapshot(subscribe, getSnapshot);
+}
+
+interface ChatContextUsage {
+  latest: LatestContextUsage;
+  cost: BranchCost | null;
+}
+
+/**
+ * Context-window usage and running cost of the current branch. Re-derived on
+ * each throttled stream tick, but keeps its identity until the result changes.
+ */
+export function useChatContextUsage(): ChatContextUsage {
+  const chat = useChatSession();
+  const cacheRef = React.useRef<{ key: string; value: ChatContextUsage } | null>(null);
+  const subscribe = React.useCallback(
+    (onStoreChange: () => void) =>
+      chat["~registerMessagesCallback"](onStoreChange, CHAT_STREAM_THROTTLE_MS),
+    [chat],
+  );
+  const getSnapshot = React.useCallback(() => {
+    const value = {
+      latest: getLatestContextUsage(chat.messages),
+      cost: getBranchCost(chat.messages),
+    };
+    const key = JSON.stringify(value);
+
+    if (cacheRef.current?.key !== key) {
+      cacheRef.current = { key, value };
+    }
+
+    return cacheRef.current.value;
   }, [chat]);
 
   return useChatSnapshot(subscribe, getSnapshot);

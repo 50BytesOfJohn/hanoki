@@ -506,6 +506,8 @@ export interface ProviderModelInfo {
   reasoningEfforts?: ReasoningEffort[];
   /** Custom temperature limit; null when unsupported. */
   temperatureMax?: number | null;
+  /** Context window in tokens; null when the provider does not report one. */
+  contextLength?: number | null;
 }
 
 export interface SaveProviderInput {

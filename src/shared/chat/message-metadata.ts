@@ -31,6 +31,15 @@ export const chatMessageMetadataSchema = type({
     "cacheWrite?": "number",
     "reasoning?": "number",
   },
+  // Usage of the final model call only. `usage`/`tokens` sum every step of a
+  // tool loop (right for billing), but each step re-sends the whole prompt, so
+  // only the last step says how full the context window is.
+  "contextUsage?": {
+    "input?": "number",
+    "output?": "number",
+    "reasoning?": "number",
+    "cached?": "number",
+  },
   "cost?": {
     "input?": "number",
     "output?": "number",
