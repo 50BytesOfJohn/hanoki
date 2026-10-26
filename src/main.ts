@@ -70,6 +70,9 @@ if (!app.requestSingleInstanceLock()) {
         onChatMessagesChanged: (event) => {
           broadcastSystemEvent({ type: "chat:messages-changed", ...event });
         },
+        onChatCostUpdated: (event) => {
+          broadcastSystemEvent({ type: "chat:cost-updated", ...event });
+        },
         onChatGenerationRequested: (event) => {
           broadcastSystemEvent({ type: "chat:generation-requested", ...event });
         },

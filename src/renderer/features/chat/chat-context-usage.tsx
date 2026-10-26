@@ -11,8 +11,10 @@ import {
   ContextUsageRow,
   formatTokens,
 } from "@/components/ai-elements/context";
-import { useChatContextUsage, useChatModelId } from "@/features/chat/chat-context";
+import { useChatContextUsage, useChatId, useChatModelId } from "@/features/chat/chat-context";
+import { getChatQueryOptions } from "@/queries/chats";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
+import type { ChatCost } from "@shared/chat/chat-cost";
 import type { BranchCost, LatestContextUsage } from "@shared/chat/context-usage";
 import type { ProviderModelInfo } from "@shared/ipc";
 
@@ -23,14 +25,19 @@ import type { ProviderModelInfo } from "@shared/ipc";
  * reported nothing — is spelled out rather than hidden.
  */
 export function ChatContextUsage() {
+  const chatId = useChatId();
   const modelId = useChatModelId();
   const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
-  const { latest, cost } = useChatContextUsage();
+  const { data: chatCost } = useQuery({
+    ...getChatQueryOptions(chatId),
+    select: (chat) => chat.data.cost,
+  });
+  const { latest, cost: branchCost } = useChatContextUsage();
 
   const selected = enabledModels.find((model) => model.id === modelId) ?? null;
   const usage = latest.status === "measured" ? latest.usage : null;
   const maxTokens = selected?.contextLength ?? null;
-  const notes = getNotes(latest, selected, enabledModels);
+  const notes = [...getNotes(latest, selected, enabledModels), ...getCostNotes(chatCost)];
   const isApproximate =
     usage !== null &&
     (usage.isPartial || usage.skippedResponses > 0 || isMeasuredByOtherModel(latest, selected));
@@ -63,21 +70,50 @@ export function ChatContextUsage() {
             ))}
           </ContextContentBody>
         ) : null}
-        {cost ? <CostFooter cost={cost} /> : null}
+        {branchCost || chatCost ? <CostFooter branchCost={branchCost} chatCost={chatCost} /> : null}
       </ContextContent>
     </Context>
   );
 }
 
-function CostFooter({ cost }: { cost: BranchCost }) {
+function CostFooter({
+  branchCost,
+  chatCost,
+}: {
+  branchCost: BranchCost | null;
+  chatCost: ChatCost | undefined;
+}) {
   return (
-    <ContextContentFooter>
-      <span className="text-muted-foreground">Branch cost</span>
-      <span className="font-mono text-foreground tabular-nums">
-        {cost.unpricedResponses > 0 ? "≥ " : null}
-        {formatCost(cost.total, cost.currency)}
-      </span>
+    <ContextContentFooter className="flex-col items-stretch gap-1.5">
+      {branchCost ? (
+        <CostRow
+          label="Branch cost"
+          value={`${branchCost.unpricedResponses > 0 ? "≥ " : ""}${formatCost(branchCost.total, branchCost.currency)}`}
+        />
+      ) : null}
+      {chatCost ? (
+        <CostRow
+          label="Chat cost"
+          title="All replies in this chat, including other branches, regenerations and deleted replies."
+          value={
+            chatCost.pricedResponses === 0
+              ? "Unknown"
+              : `${chatCost.unpricedResponses > 0 ? "≥ " : ""}${formatCost(chatCost.total, chatCost.currency)}`
+          }
+        />
+      ) : null}
     </ContextContentFooter>
+  );
+}
+
+function CostRow({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground" title={title}>
+        {label}
+      </span>
+      <span className="font-mono text-foreground tabular-nums">{value}</span>
+    </div>
   );
 }
 
@@ -114,6 +150,17 @@ function getNotes(
   }
 
   return notes;
+}
+
+function getCostNotes(cost: ChatCost | undefined): string[] {
+  if (!cost || cost.unpricedResponses === 0) {
+    return [];
+  }
+  if (cost.pricedResponses === 0) {
+    return ["No reply in this chat had a known price, so its cost is unknown."];
+  }
+  const replies = cost.unpricedResponses === 1 ? "1 reply" : `${cost.unpricedResponses} replies`;
+  return [`${replies} had no known price, so the chat cost is a lower bound.`];
 }
 
 function isMeasuredByOtherModel(

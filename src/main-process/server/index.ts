@@ -5,6 +5,7 @@ import type { HanokiTerminalPort } from "./assistant/hanoki-tools";
 import { createChatRoute } from "./routes/chat";
 import { createSumiRoute } from "./routes/sumi";
 import type {
+  ChatCostUpdatedEvent,
   ChatGenerationRequestedEvent,
   ChatMessagesChangedEvent,
   ChatTreeChangedEvent,
@@ -13,6 +14,7 @@ import type {
 interface CreateAiServerOptions {
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
+  onChatCostUpdated?: (event: Omit<ChatCostUpdatedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
   flushMarkdownContent?: (id: string) => {
     id: string;
@@ -40,6 +42,7 @@ export async function createAiServer(options?: CreateAiServerOptions): Promise<{
     createChatRoute({
       onChatTreeChanged: options?.onChatTreeChanged,
       onChatMessagesChanged: options?.onChatMessagesChanged,
+      onChatCostUpdated: options?.onChatCostUpdated,
       onChatGenerationRequested: options?.onChatGenerationRequested,
       flushMarkdownContent: options?.flushMarkdownContent,
       terminals: options?.terminals,

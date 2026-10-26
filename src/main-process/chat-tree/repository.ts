@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homedir } from "node:os";
 
+import { addResponseCost, parseChatCost, type ChatCost } from "@shared/chat/chat-cost";
+import type { ChatMessageMetadata } from "@shared/chat/message-metadata";
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { isTemperature } from "@shared/models/temperature";
@@ -137,11 +139,13 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
 }
 
 function normalizeChatData(value: unknown): ChatItemData {
-  const data = normalizeJsonObject(value);
+  const { cost: rawCost, ...data } = normalizeJsonObject(value);
+  const cost = parseChatCost(rawCost);
   return {
     ...data,
     settings: normalizeChatSettings(data.settings),
     ...(typeof data.currentBranchId === "string" ? { currentBranchId: data.currentBranchId } : {}),
+    ...(cost ? { cost } : {}),
   };
 }
 
@@ -1405,6 +1409,28 @@ export function setChatCurrentBranch(
     })
     .where(eq(items.id, chatId))
     .run();
+}
+
+/** Charges one finished model request to the chat; `cost` is absent when it could not be priced. */
+export function addChatResponseCost(
+  chatId: string,
+  cost: ChatMessageMetadata["cost"] | undefined,
+): ChatCost | null {
+  const db = getAppDatabase();
+  const existing = db
+    .select({ data: items.data })
+    .from(items)
+    .where(and(eq(items.id, chatId), eq(items.type, "chat")))
+    .get();
+  if (!existing) return null;
+  const currentData = normalizeChatData(existing.data);
+  const nextCost = addResponseCost(currentData.cost, cost);
+  // Spend is not an edit, so `updatedAt` (chat ordering) stays put.
+  db.update(items)
+    .set({ data: { ...currentData, cost: nextCost } })
+    .where(eq(items.id, chatId))
+    .run();
+  return nextCost;
 }
 
 export function getChatCurrentBranchId(chatId: string): string | null {

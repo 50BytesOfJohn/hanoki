@@ -9,6 +9,7 @@ import {
   notifyMarkdownBodiesRewritten,
 } from "@/features/items/item-title-events";
 import {
+  applyChatCostUpdate,
   notifyChatMessagesChanged,
   startRequestedChatGeneration,
 } from "@/features/chat/chat-messages-events";
@@ -49,6 +50,11 @@ export function SystemEventListener() {
 
       if (event.type === "chat:messages-changed") {
         notifyChatMessagesChanged(event.chatId);
+        return;
+      }
+
+      if (event.type === "chat:cost-updated") {
+        applyChatCostUpdate(event);
         return;
       }
 

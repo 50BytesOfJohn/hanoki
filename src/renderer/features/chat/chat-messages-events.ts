@@ -1,3 +1,5 @@
+import type { ChatCostUpdatedEvent } from "@shared/events";
+import type { ChatInfo } from "@shared/ipc";
 import { messagesApi } from "@/api/messages";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
@@ -25,6 +27,13 @@ export function notifyChatMessagesChanged(chatId: string): void {
     if (!chat || isChatBusy(chatId)) return;
     chat.messages = messages;
   });
+}
+
+/** Patches the cached chat in place rather than refetching it. */
+export function applyChatCostUpdate(event: ChatCostUpdatedEvent): void {
+  queryClient.setQueryData<ChatInfo>(queryKeys.chats.byId(event.chatId), (current) =>
+    current ? { ...current, data: { ...current.data, cost: event.cost } } : current,
+  );
 }
 
 /** Starts one reply for a draft saved in another chat. Does not open a pane. */

@@ -1,6 +1,7 @@
 import type { ProviderId } from "../providers/catalog";
 import type { ReasoningEffort } from "../models/reasoning";
 import type { HanokiUiMessage } from "../chat/message-metadata";
+import type { ChatCost } from "../chat/chat-cost";
 import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "../markdown/folder-io";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
@@ -262,6 +263,8 @@ export interface ChatInfo {
 export interface ChatItemData extends Record<string, unknown> {
   settings: ChatSettings;
   currentBranchId?: string;
+  /** Absent until the first reply ends. */
+  cost?: ChatCost;
 }
 
 export interface TerminalItemData extends Record<string, unknown> {

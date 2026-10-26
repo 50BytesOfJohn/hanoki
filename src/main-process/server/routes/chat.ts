@@ -12,6 +12,7 @@ import { appendContinuationParts, getContinuationParts } from "@shared/chat/cont
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
 import { insertRevisionTurn } from "@shared/chat/revision";
 import type {
+  ChatCostUpdatedEvent,
   ChatGenerationRequestedEvent,
   ChatMessagesChangedEvent,
   ChatTreeChangedEvent,
@@ -19,6 +20,7 @@ import type {
 import { type ChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import {
+  addChatResponseCost,
   getChatById,
   getChatCurrentBranchId,
   setChatCurrentBranch,
@@ -75,6 +77,7 @@ const CONTINUATION_PROMPT =
 interface CreateChatRouteOptions {
   onChatTreeChanged?: (event: Omit<ChatTreeChangedEvent, "type">) => void;
   onChatMessagesChanged?: (event: Omit<ChatMessagesChangedEvent, "type">) => void;
+  onChatCostUpdated?: (event: Omit<ChatCostUpdatedEvent, "type">) => void;
   onChatGenerationRequested?: (event: Omit<ChatGenerationRequestedEvent, "type">) => void;
   flushMarkdownContent?: (id: string) => {
     id: string;
@@ -543,6 +546,16 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             "abort",
             lastStepUsage,
           );
+        }
+
+        // Charged before any early return: failed continuations and replies
+        // that are never stored still cost money. Metadata is only missing
+        // when the stream never started.
+        if (capturedResponseMetadata) {
+          const chatCost = addChatResponseCost(chat.id, capturedResponseMetadata.cost);
+          if (chatCost) {
+            options?.onChatCostUpdated?.({ chatId: chat.id, cost: chatCost });
+          }
         }
 
         if (responseMessage.role !== "assistant") {

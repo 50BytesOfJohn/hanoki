@@ -1,3 +1,4 @@
+import type { ChatCost } from "../chat/chat-cost";
 import type { GlobalChatSettings, ItemType } from "../ipc";
 
 export const SYSTEM_EVENT_CHANNEL = "system:event" as const;
@@ -58,6 +59,13 @@ export interface ChatMessagesChangedEvent {
   chatId: string;
 }
 
+/** Emitted when a model request ends and is charged to its chat. */
+export interface ChatCostUpdatedEvent {
+  type: "chat:cost-updated";
+  chatId: string;
+  cost: ChatCost;
+}
+
 /** Asks the renderer to start one reply in a chat. The tool does not run an agent. */
 export interface ChatGenerationRequestedEvent {
   type: "chat:generation-requested";
@@ -101,6 +109,7 @@ export type SystemEvent =
   | MarkdownBodiesRewrittenEvent
   | ChatTreeChangedEvent
   | ChatMessagesChangedEvent
+  | ChatCostUpdatedEvent
   | ChatGenerationRequestedEvent
   | UpdateStateChangedEvent;
 
