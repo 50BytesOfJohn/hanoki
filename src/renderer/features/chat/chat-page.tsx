@@ -4,7 +4,6 @@ import { useHotkey } from "@tanstack/react-hotkeys";
 import { useDebouncedCallback } from "@tanstack/react-pacer";
 import {
   Add01Icon,
-  AiBrain01Icon,
   AiWebBrowsingIcon,
   Cancel01Icon,
   ComputerTerminal01Icon,
@@ -13,16 +12,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTrigger,
-  ComboboxValue,
-} from "@/components/ui/combobox";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import {
   DropdownMenu,
@@ -30,8 +19,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
@@ -48,7 +35,6 @@ import {
   useChatModelId,
   useChatSendMessage,
   useChatStop,
-  useSetChatModelId,
   resolveModelId,
 } from "@/features/chat/chat-context";
 import { getChatQueryOptions } from "@/queries/chats";
@@ -56,15 +42,11 @@ import { useIsActiveChatPane, useIsActiveChatTab } from "@/features/chat/chat-pa
 import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context";
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
-import { getProviderIconById } from "@/lib/provider-icons";
 import { useUpdateChatSettings } from "@/mutations/chats";
 import { cn } from "@/lib/utils";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
-import { listProvidersQueryOptions } from "@/queries/providers";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
-import type { ProviderModelInfo } from "@shared/ipc";
-import { REASONING_EFFORT_LABELS, type ReasoningEffort } from "@shared/models/reasoning";
 import {
   createEmptyTiptapDocument,
   createTiptapDocumentFromText,
@@ -79,6 +61,7 @@ import { Conversation } from "./conversation";
 import { SumiPromptAction } from "./sumi-prompt-action";
 import { MentionItemsMenu } from "./mention-context";
 import { ChatComposerEditor } from "./tiptap-editor";
+import { ChatModelPicker } from "./model-picker/chat-model-picker";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -440,8 +423,7 @@ function ActiveChatContent() {
                   className="flex w-full items-center gap-1.5 px-2 py-0"
                 >
                   <ChatToolsMenu />
-                  <ModelSelector />
-                  <ReasoningSelector />
+                  <ChatModelPicker />
                   <div className="ml-auto flex items-center gap-1.5">
                     <ChatContextUsage />
                     <SumiPromptAction
@@ -594,144 +576,5 @@ function ChatToolsMenu() {
         onOpenChange={setMentionOpen}
       />
     </>
-  );
-}
-
-const REASONING_DEFAULT_VALUE = "provider-default";
-
-function ReasoningSelector() {
-  const chatId = useChatId();
-  const { data: chat } = useQuery(getChatQueryOptions(chatId));
-  const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
-  const isInteractionLocked = useChatIsInteractionLocked();
-  const modelId = useChatModelId();
-  const updateChatSettings = useUpdateChatSettings();
-
-  const efforts = enabledModels.find((model) => model.id === modelId)?.reasoningEfforts ?? [];
-  const effort = chat?.data.settings.modelConfig?.reasoningEffort;
-
-  if (efforts.length === 0) {
-    return null;
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Thinking effort"
-            aria-pressed={effort !== undefined}
-            disabled={isInteractionLocked || updateChatSettings.isPending}
-            className="gap-1.5 px-2 text-[13px] font-normal text-foreground"
-          />
-        }
-      >
-        <HugeiconsIcon icon={AiBrain01Icon} className="size-4" />
-        {effort ? REASONING_EFFORT_LABELS[effort] : "Thinking"}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-40">
-        <DropdownMenuRadioGroup
-          value={effort ?? REASONING_DEFAULT_VALUE}
-          onValueChange={(value) => {
-            updateChatSettings.mutate({
-              id: chatId,
-              input: {
-                modelConfig: {
-                  reasoningEffort:
-                    value === REASONING_DEFAULT_VALUE ? null : (value as ReasoningEffort),
-                },
-              },
-            });
-          }}
-        >
-          <DropdownMenuRadioItem value={REASONING_DEFAULT_VALUE}>Default</DropdownMenuRadioItem>
-          {efforts.map((item) => (
-            <DropdownMenuRadioItem key={item} value={item}>
-              {REASONING_EFFORT_LABELS[item]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function ModelSelector() {
-  const chatId = useChatId();
-  const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
-  const { data: providers = [] } = useQuery(listProvidersQueryOptions);
-  const isInteractionLocked = useChatIsInteractionLocked();
-  const modelId = useChatModelId();
-  const setModelId = useSetChatModelId();
-  const updateChatSettings = useUpdateChatSettings();
-
-  const selected = enabledModels.find((m) => m.id === modelId) ?? null;
-
-  return (
-    <Combobox
-      items={enabledModels}
-      value={selected}
-      onValueChange={(model) => {
-        const nextModelId = model?.id ?? null;
-
-        if (nextModelId === modelId) {
-          return;
-        }
-
-        setModelId(nextModelId);
-        updateChatSettings.mutate(
-          { id: chatId, input: { modelId: nextModelId } },
-          { onError: () => setModelId(modelId) },
-        );
-      }}
-      itemToStringValue={(model) => model.displayName ?? model.providerModelId}
-      isItemEqualToValue={(item, value) => item.id === value.id}
-      disabled={isInteractionLocked || updateChatSettings.isPending}
-    >
-      <ComboboxTrigger
-        aria-label="Select model"
-        className="inline-flex h-7 max-w-48 min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 text-[13px] text-foreground shadow-none transition-colors duration-100 hover:bg-hover dark:bg-transparent dark:hover:bg-hover [&_svg]:text-foreground"
-      >
-        <ComboboxValue>
-          {(value: ProviderModelInfo | null) => {
-            if (!value) {
-              return <span>Select model</span>;
-            }
-
-            const provider = providers.find((p) => p.id === value.providerId);
-            const ProviderIcon = provider ? getProviderIconById(provider.catalogId) : null;
-
-            return (
-              <span className="flex min-w-0 items-center gap-2">
-                {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
-                <span className="truncate">{value.displayName ?? value.providerModelId}</span>
-              </span>
-            );
-          }}
-        </ComboboxValue>
-      </ComboboxTrigger>
-      <ComboboxContent side="top" align="start" className="w-72 min-w-72">
-        <ComboboxInput placeholder="Search models…" showTrigger={false} />
-        <ComboboxEmpty>No models found.</ComboboxEmpty>
-        <ComboboxList>
-          {(model: ProviderModelInfo) => {
-            const provider = providers.find((p) => p.id === model.providerId);
-            const ProviderIcon = provider ? getProviderIconById(provider.catalogId) : null;
-
-            return (
-              <ComboboxItem key={model.id} value={model}>
-                {ProviderIcon ? <ProviderIcon className="size-4 shrink-0" /> : null}
-                <span className="min-w-0 flex-1 truncate">
-                  {model.displayName ?? model.providerModelId}
-                </span>
-              </ComboboxItem>
-            );
-          }}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
   );
 }

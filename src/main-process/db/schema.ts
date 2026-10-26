@@ -207,6 +207,11 @@ export const models = sqliteTable(
     displayName: text("display_name"),
     // App-wide enable/disable flag for this model.
     isEnabled: integer("is_enabled", { mode: "boolean" }).notNull().default(true),
+    // When the model was pinned to the top of the picker; null when it is not pinned.
+    pinnedAt: integer("pinned_at"),
+    // Thinking effort last chosen for this model, restored when it is picked again.
+    // "default" records an explicit provider default; null means never chosen.
+    reasoningEffort: text("reasoning_effort"),
     // Workspace-specific enable/disable state lives in `workspace_model_overrides`.
     data: jsonObject("data"),
     metadata: jsonObject("metadata"),
@@ -219,6 +224,23 @@ export const models = sqliteTable(
     uniqueIndex("models_provider_model_unique").on(table.providerId, table.providerModelId),
     index("models_canonical_model_id_idx").on(table.canonicalModelId),
     index("models_provider_id_idx").on(table.providerId),
+  ],
+);
+
+/** Model + effort pairs sent with a chat request, newest first in the picker. */
+export const modelUsage = sqliteTable(
+  "model_usage",
+  {
+    modelId: text("model_id")
+      .notNull()
+      .references(() => models.id, { onDelete: "cascade" }),
+    // "" stands for the provider default so the pair can be part of the key.
+    reasoningEffort: text("reasoning_effort").notNull().default(""),
+    usedAt: timestampMs("used_at"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.modelId, table.reasoningEffort] }),
+    index("model_usage_used_at_idx").on(table.usedAt),
   ],
 );
 

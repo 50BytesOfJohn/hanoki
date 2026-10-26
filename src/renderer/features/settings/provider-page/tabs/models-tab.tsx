@@ -28,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
-import { useSetProviderModelsEnabled, useUpdateProviderModel } from "@/mutations/models";
+import { useSetProviderModelsEnabled, useUpdateModel } from "@/mutations/models";
 import { listProviderModelsQueryOptions } from "@/queries/providers";
 import {
   decorateModel,
@@ -57,7 +57,7 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
   const [sortOrder, setSortOrder] = useState<ModelSortOrder>("released");
   const deferredModelSearchQuery = useDeferredValue(modelSearchQuery);
   const modelsQuery = useQuery(listProviderModelsQueryOptions(providerId));
-  const updateModelMutation = useUpdateProviderModel();
+  const updateModelMutation = useUpdateModel();
   const setProviderModelsEnabledMutation = useSetProviderModelsEnabled();
   const models = modelsQuery.data ?? [];
 

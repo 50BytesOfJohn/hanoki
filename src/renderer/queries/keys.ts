@@ -50,6 +50,7 @@ export const queryKeys = {
   },
   models: {
     all: ["models"] as const,
-    enabled: () => [...queryKeys.models.all, "enabled"] as const,
+    list: () => [...queryKeys.models.all, "list"] as const,
+    recent: () => [...queryKeys.models.all, "recent"] as const,
   },
 } as const;

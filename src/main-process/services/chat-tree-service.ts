@@ -39,6 +39,7 @@ import type {
   ItemInfo,
   ItemLayoutNode,
   ItemPaneState,
+  ChatSettings,
   ChatSettingsUpdateInput,
   ChatTreeItemRef,
   ChatTreeChildrenSlice,
@@ -60,6 +61,8 @@ import {
   rebuildWorkspaceNoteLinks,
 } from "../chat-tree/note-links";
 import { getWorkspaceSettings, updateWorkspaceSettings } from "../workspaces/repository";
+import { getLatestUsableModelUsage } from "../models/repository";
+import { isReasoningEffort } from "@shared/models/reasoning";
 
 const CHAT_TREE_EXPANDED_FOLDER_IDS_SETTINGS_KEY = "chatTreeExpandedFolderIds";
 const TABS_SETTINGS_KEY = "tabs";
@@ -616,7 +619,7 @@ export function createChatTreeService(): ChatTreeService {
     },
 
     createChat(input): ChatInfo {
-      return toChatInfo(createChat(input));
+      return toChatInfo(createChat({ ...input, settings: getNewChatSettings() }));
     },
 
     createMarkdown(input): MarkdownInfo {
@@ -689,5 +692,20 @@ export function createChatTreeService(): ChatTreeService {
         deletedFolderIds: [],
       });
     },
+  };
+}
+
+/** New chats start on the model and effort that were sent last. */
+function getNewChatSettings(): ChatSettings {
+  const latest = getLatestUsableModelUsage();
+  if (!latest) {
+    return {};
+  }
+
+  return {
+    modelId: latest.modelId,
+    ...(isReasoningEffort(latest.reasoningEffort)
+      ? { modelConfig: { reasoningEffort: latest.reasoningEffort } }
+      : {}),
   };
 }

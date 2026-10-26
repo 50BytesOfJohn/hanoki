@@ -11,6 +11,8 @@ const model = {
   canonicalModelId: "canonical-model-id",
   displayName: "Model",
   isEnabled: true,
+  pinnedAt: null,
+  reasoningEffort: null,
   lifecycleStatus: "active",
   data: {},
   metadata: {

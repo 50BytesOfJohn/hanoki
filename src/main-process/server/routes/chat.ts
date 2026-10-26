@@ -26,7 +26,7 @@ import {
   setChatCurrentBranch,
 } from "../../chat-tree/repository";
 import { getMessageById, listAllMessagesByChatId, upsertMessage } from "../../messages/repository";
-import { getModelById } from "../../models/repository";
+import { getModelById, recordModelUsage } from "../../models/repository";
 import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { createLanguageModel } from "../providers/language-model-factory";
@@ -354,6 +354,8 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       )
         ? savedReasoningEffort
         : undefined;
+    // Feeds the picker's recent section with the pair that was actually sent.
+    recordModelUsage(model.id, reasoningEffort ?? "");
     const agent = new ToolLoopAgent({
       model: languageModel,
       instructions:

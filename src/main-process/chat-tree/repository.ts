@@ -1249,6 +1249,7 @@ export function createChat(input: {
   workspaceId: string;
   title: string;
   folderId: string | null;
+  settings?: ChatSettings;
 }): ChatRow {
   requireWorkspaceExists(input.workspaceId);
 
@@ -1269,7 +1270,7 @@ export function createChat(input: {
       folderId: input.folderId,
       type: "chat",
       title: input.title,
-      data: { settings: {} },
+      data: { settings: input.settings ?? {} },
     })
     .run();
 

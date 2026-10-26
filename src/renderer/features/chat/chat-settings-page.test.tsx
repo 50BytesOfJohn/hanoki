@@ -44,7 +44,7 @@ function renderSettings(temperatureMax: number | null, temperature?: number) {
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   });
   client.setQueryData(queryKeys.chats.byId(chat.id), chat);
-  client.setQueryData(queryKeys.models.enabled(), [model]);
+  client.setQueryData(queryKeys.models.list(), [model]);
   return render(
     <QueryClientProvider client={client}>
       <ChatSettingsPage chatId={chat.id} />

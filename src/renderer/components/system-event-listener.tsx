@@ -98,7 +98,7 @@ export function SystemEventListener() {
           exact: true,
         }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.models.enabled(),
+          queryKey: queryKeys.models.list(),
           exact: true,
         }),
       ]);

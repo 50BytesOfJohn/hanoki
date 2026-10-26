@@ -93,7 +93,9 @@ export const IPC_CHANNELS = {
     delete: "providers:delete",
   },
   models: {
-    listEnabled: "models:listEnabled",
+    list: "models:list",
+    listRecent: "models:listRecent",
+    removeRecent: "models:removeRecent",
     update: "models:update",
     setProviderEnabled: "models:setProviderEnabled",
   },
@@ -511,6 +513,23 @@ export interface ProviderModelInfo {
   temperatureMax?: number | null;
   /** Context window in tokens; null when the provider does not report one. */
   contextLength?: number | null;
+  /** Who made the model, as the provider reported it (e.g. "anthropic"). */
+  creator?: string | null;
+  /** When the model was pinned in the picker; null when it is not pinned. */
+  pinnedAt?: number | null;
+  /**
+   * Effort last chosen for this model, restored when it is picked again.
+   * `null` is an explicit provider default; absent means never chosen.
+   */
+  rememberedEffort?: ReasoningEffort | null;
+}
+
+/** A model + effort pair sent with a chat request. */
+export interface RecentModelUsage {
+  modelId: string;
+  /** Null for the provider default. */
+  reasoningEffort: ReasoningEffort | null;
+  usedAt: number;
 }
 
 export interface SaveProviderInput {
@@ -533,6 +552,9 @@ export interface UpdateProviderSecretsInput {
 export interface UpdateModelInput {
   isEnabled?: boolean;
   displayName?: string | null;
+  isPinned?: boolean;
+  /** Remembers the effort for this model; null records the provider default. */
+  rememberedEffort?: ReasoningEffort | null;
 }
 
 export interface UpdateModelResult {
@@ -542,6 +564,8 @@ export interface UpdateModelResult {
   displayName: string | null;
   isEnabled: boolean;
   status: ProviderModelStatus;
+  pinnedAt: number | null;
+  rememberedEffort?: ReasoningEffort | null;
 }
 
 export interface SetProviderModelsEnabledResult {
@@ -658,7 +682,10 @@ export interface IpcApi {
   saveProvider: (input: SaveProviderInput) => Promise<SaveProviderResult>;
   updateProviderSecrets: (input: UpdateProviderSecretsInput) => Promise<ProviderInfo>;
   deleteProvider: (providerId: string) => Promise<void>;
-  listEnabledModels: () => Promise<ProviderModelInfo[]>;
+  /** Every active model, enabled or not, with picker preferences. */
+  listModels: () => Promise<ProviderModelInfo[]>;
+  listRecentModels: () => Promise<RecentModelUsage[]>;
+  removeRecentModel: (modelId: string, reasoningEffort: ReasoningEffort | null) => Promise<void>;
   updateModel: (modelId: string, input: UpdateModelInput) => Promise<UpdateModelResult>;
   setProviderModelsEnabled: (
     providerId: string,

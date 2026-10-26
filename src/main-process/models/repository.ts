@@ -1,11 +1,13 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 
 import { getAppDatabase } from "../db/database";
-import { models } from "../db/schema";
+import { modelUsage, models } from "../db/schema";
 
 export type ModelTableRow = typeof models.$inferSelect;
 export type ModelLifecycleStatus = "active" | "deprecated" | "removed";
-const MODEL_MUTABLE_FIELDS = ["isEnabled", "displayName"] as const;
+const MODEL_MUTABLE_FIELDS = ["isEnabled", "displayName", "pinnedAt", "reasoningEffort"] as const;
+/** Usage rows kept for the picker's recent section; older pairs are dropped. */
+const MODEL_USAGE_LIMIT = 50;
 type ModelMutableField = (typeof MODEL_MUTABLE_FIELDS)[number];
 type ModelMutableUpdates = Partial<Pick<ModelTableRow, ModelMutableField>>;
 
@@ -36,6 +38,15 @@ export function listEnabledModels(): ModelTableRow[] {
     .select()
     .from(models)
     .where(and(eq(models.isEnabled, true), eq(models.lifecycleStatus, "active")))
+    .orderBy(asc(models.providerModelId))
+    .all();
+}
+
+export function listActiveModels(): ModelTableRow[] {
+  return getAppDatabase()
+    .select()
+    .from(models)
+    .where(eq(models.lifecycleStatus, "active"))
     .orderBy(asc(models.providerModelId))
     .all();
 }
@@ -109,6 +120,71 @@ export function updateModelsByProviderId(
     matchedCount: existingRows.length,
     updatedCount: rowIdsToUpdate.length,
   };
+}
+
+export interface ModelUsageRow {
+  modelId: string;
+  /** "" for the provider default. */
+  reasoningEffort: string;
+  usedAt: number;
+}
+
+export function recordModelUsage(modelId: string, reasoningEffort: string): void {
+  const usedAt = Date.now();
+
+  getAppDatabase().transaction((tx) => {
+    tx.insert(modelUsage)
+      .values({ modelId, reasoningEffort, usedAt })
+      .onConflictDoUpdate({
+        target: [modelUsage.modelId, modelUsage.reasoningEffort],
+        set: { usedAt },
+      })
+      .run();
+
+    const cutoff = tx
+      .select({ usedAt: modelUsage.usedAt })
+      .from(modelUsage)
+      .orderBy(desc(modelUsage.usedAt))
+      .limit(1)
+      .offset(MODEL_USAGE_LIMIT - 1)
+      .get();
+
+    if (cutoff) {
+      tx.delete(modelUsage).where(lt(modelUsage.usedAt, cutoff.usedAt)).run();
+    }
+  });
+}
+
+export function listModelUsage(limit: number): ModelUsageRow[] {
+  return getAppDatabase()
+    .select()
+    .from(modelUsage)
+    .orderBy(desc(modelUsage.usedAt))
+    .limit(limit)
+    .all();
+}
+
+/** The newest usage whose model can still be picked, for seeding new chats. */
+export function getLatestUsableModelUsage(): ModelUsageRow | undefined {
+  return getAppDatabase()
+    .select({
+      modelId: modelUsage.modelId,
+      reasoningEffort: modelUsage.reasoningEffort,
+      usedAt: modelUsage.usedAt,
+    })
+    .from(modelUsage)
+    .innerJoin(models, eq(models.id, modelUsage.modelId))
+    .where(and(eq(models.isEnabled, true), eq(models.lifecycleStatus, "active")))
+    .orderBy(desc(modelUsage.usedAt))
+    .limit(1)
+    .get();
+}
+
+export function deleteModelUsage(modelId: string, reasoningEffort: string): void {
+  getAppDatabase()
+    .delete(modelUsage)
+    .where(and(eq(modelUsage.modelId, modelId), eq(modelUsage.reasoningEffort, reasoningEffort)))
+    .run();
 }
 
 export function syncProviderModels(
@@ -213,22 +289,16 @@ function pickDefinedModelFields(
   input: ModelMutableUpdates,
   keys: readonly ModelMutableField[],
 ): ModelMutableUpdates {
-  const updates: ModelMutableUpdates = {};
+  const updates: Record<string, unknown> = {};
 
   for (const key of keys) {
-    if (key === "displayName") {
-      if (input.displayName !== undefined) {
-        updates.displayName = input.displayName;
-      }
-      continue;
-    }
-
-    if (input.isEnabled !== undefined) {
-      updates.isEnabled = input.isEnabled;
+    if (input[key] !== undefined) {
+      updates[key] = input[key];
     }
   }
 
-  return updates;
+  // SAFETY: every key comes from MODEL_MUTABLE_FIELDS and carries the input's own value.
+  return updates as ModelMutableUpdates;
 }
 
 function doesModelRowNeedUpdate(

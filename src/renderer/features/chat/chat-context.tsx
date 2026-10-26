@@ -5,6 +5,8 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { messagesApi } from "@/api/messages";
+import { queryClient } from "@/lib/query-client";
+import { queryKeys } from "@/queries/keys";
 
 import { createChatTransport, useChatStore } from "@/stores/chat-store";
 import {
@@ -600,7 +602,13 @@ function InitializedChatContextProvider({
       const nextStatus = chat.status;
       const didFinishStreaming =
         (prevStatus === "streaming" || prevStatus === "submitted") && nextStatus === "ready";
+      // The server records the model + effort once it accepts the request.
+      const didLeaveSubmitted = prevStatus === "submitted" && nextStatus !== "submitted";
       prevStatus = nextStatus;
+
+      if (didLeaveSubmitted) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.models.recent(), exact: true });
+      }
 
       if (!didFinishStreaming) {
         return;

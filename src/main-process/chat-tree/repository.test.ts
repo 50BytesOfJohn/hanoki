@@ -143,6 +143,8 @@ beforeAll(() => {
       canonical_model_id text not null,
       display_name text,
       is_enabled integer not null default 1,
+      pinned_at integer,
+      reasoning_effort text,
       data text not null default '{}',
       metadata text not null default '{}',
       extensions text not null default '{}',
