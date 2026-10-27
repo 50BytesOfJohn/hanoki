@@ -43,7 +43,7 @@ import {
 } from "../../messages/repository";
 import { isChatGenerationBusy, reserveChatKick } from "../chat-generation-gate";
 
-/** Cross-chat kick asks Allow once. Self-kick and a busy target skip the card and fail in execute. */
+/** Only a cross-chat kick asks. Self-kick and a busy target skip the card and fail in execute. */
 export function hanokiSendKickNeedsApproval(
   hostChatId: string,
   input: { kick?: boolean; chatId?: string },
@@ -418,7 +418,7 @@ export const HANOKI_TOOL_CATALOG: readonly HanokiToolCatalogEntry[] = [
     name: "hanokiDeleteItems",
     group: "write",
     access: "deferred",
-    summary: "Permanently delete items or folders (recursive for folders). Requires user approval.",
+    summary: "Permanently delete items or folders (recursive for folders).",
   },
   {
     name: "hanokiCreateTerminal",
@@ -436,19 +436,19 @@ export const HANOKI_TOOL_CATALOG: readonly HanokiToolCatalogEntry[] = [
     name: "hanokiTerminalRun",
     group: "terminal",
     access: "deferred",
-    summary: "Run a command in a Hanoki terminal and return new output. Requires user approval.",
+    summary: "Run a command in a Hanoki terminal and return new output.",
   },
   {
     name: "hanokiTerminalWrite",
     group: "terminal",
     access: "deferred",
-    summary: "Write raw input (keys/text) to a Hanoki terminal. Requires user approval.",
+    summary: "Write raw input (keys/text) to a Hanoki terminal.",
   },
   {
     name: "hanokiTerminalInterrupt",
     group: "terminal",
     access: "deferred",
-    summary: "Send Ctrl-C to a Hanoki terminal. Requires user approval.",
+    summary: "Send Ctrl-C to a Hanoki terminal.",
   },
 ] as const;
 
@@ -1320,7 +1320,7 @@ export function createHanokiTools({
 
     hanokiEditNote: tool({
       description:
-        "Edit a markdown note in the current workspace. mode 'replace' (default) replaces the whole body; mode 'append' adds content at the end. Flushes unsaved editor text first so edits apply to the latest content. Requires user approval. Use hanokiReadNote first when you need the current body.",
+        "Edit a markdown note in the current workspace. mode 'replace' (default) replaces the whole body; mode 'append' adds content at the end. Flushes unsaved editor text first so edits apply to the latest content. Use hanokiReadNote first when you need the current body.",
       strict: true,
       inputSchema: jsonSchema<{ noteId: string; content: string; mode?: "replace" | "append" }>({
         type: "object",
@@ -1368,7 +1368,7 @@ export function createHanokiTools({
 
     hanokiDeleteItems: tool({
       description:
-        "Permanently delete one or more chats, markdown notes, terminals, or folders in the current workspace. Deleting a folder deletes everything inside it recursively. This cannot be undone and always requires user approval. Refuses to delete the chat hosting this turn. Pass exact IDs returned by Hanoki tools.",
+        "Permanently delete one or more chats, markdown notes, terminals, or folders in the current workspace. Deleting a folder deletes everything inside it recursively. This cannot be undone. Refuses to delete the chat hosting this turn. Pass exact IDs returned by Hanoki tools.",
       strict: true,
       inputSchema: jsonSchema<{ items: ItemRef[] }>({
         type: "object",
@@ -1485,7 +1485,7 @@ export function createHanokiTools({
 
     hanokiTerminalRun: tool({
       description:
-        "Run one shell command inside a Hanoki terminal item (its persistent PTY shell, working directory, and scrollback) and return the new plain-text output. Waits until the command actually finishes or timeoutMs elapses. timedOut true means the wait elapsed and the command may still be running — fetch later output with hanokiTerminalGet or stop it with hanokiTerminalInterrupt. timedOut false with a commandExitCode means the command finished with that exit code. Requires user approval.",
+        "Run one shell command inside a Hanoki terminal item (its persistent PTY shell, working directory, and scrollback) and return the new plain-text output. Waits until the command actually finishes or timeoutMs elapses. timedOut true means the wait elapsed and the command may still be running — fetch later output with hanokiTerminalGet or stop it with hanokiTerminalInterrupt. timedOut false with a commandExitCode means the command finished with that exit code.",
       strict: true,
       inputSchema: jsonSchema<{ terminalId: string; command: string; timeoutMs?: number }>({
         type: "object",
@@ -1519,7 +1519,7 @@ export function createHanokiTools({
 
     hanokiTerminalWrite: tool({
       description:
-        "Write raw input to a Hanoki terminal, for interactive prompts or key presses (for example 'y\\n' or an arrow key escape sequence). Starts the terminal if needed. Requires user approval. Prefer hanokiTerminalRun for ordinary commands.",
+        "Write raw input to a Hanoki terminal, for interactive prompts or key presses (for example 'y\\n' or an arrow key escape sequence). Starts the terminal if needed. Prefer hanokiTerminalRun for ordinary commands.",
       strict: true,
       inputSchema: jsonSchema<{ terminalId: string; data: string }>({
         type: "object",
@@ -1547,7 +1547,7 @@ export function createHanokiTools({
 
     hanokiTerminalInterrupt: tool({
       description:
-        "Interrupt what a Hanoki terminal is running by sending Ctrl-C, then return its latest output. Requires user approval.",
+        "Interrupt what a Hanoki terminal is running by sending Ctrl-C, then return its latest output.",
       strict: true,
       inputSchema: jsonSchema<{ terminalId: string }>({
         type: "object",
@@ -1581,14 +1581,3 @@ export const HANOKI_CORE_TOOL_NAMES = HANOKI_TOOL_CATALOG.filter(
 export const HANOKI_DEFERRED_TOOL_NAMES = HANOKI_TOOL_CATALOG.filter(
   (entry) => entry.access === "deferred",
 ).map((entry) => entry.name);
-
-/** Destructive/mutating tools pause for Allow once. Creates do not. */
-export const HANOKI_MUTATING_TOOL_NAMES = [
-  "hanokiMoveItems",
-  "hanokiRenameItem",
-  "hanokiEditNote",
-  "hanokiDeleteItems",
-  "hanokiTerminalRun",
-  "hanokiTerminalWrite",
-  "hanokiTerminalInterrupt",
-] as const;

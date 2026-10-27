@@ -23,12 +23,12 @@ import {
   createHanokiTools,
   hanokiSendKickNeedsApproval,
   HANOKI_CORE_TOOL_NAMES,
-  HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_TOOL_NAMES,
   resolveAttachedItemPointers,
   searchHanokiToolCatalog,
   type HanokiTerminalPort,
 } from "../server/assistant/hanoki-tools";
+import { isApprovalToolName } from "@shared/chat/tool-approval";
 import { createChatTreeService } from "../services/chat-tree-service";
 import { createWorkspace } from "../workspaces/repository";
 import {
@@ -310,6 +310,45 @@ describe("updateChatSettings", () => {
     });
 
     expect(getChatById(chat.id)?.data.settings.modelId).toBe("selected-model");
+  });
+
+  it("stores approval choices and clears them back to the defaults", () => {
+    createWorkspace({ id: "approval-workspace", name: "Approvals" });
+    const chat = createChat({ workspaceId: "approval-workspace", title: "Chat", folderId: null });
+
+    expect(
+      updateChatSettings(chat.id, {
+        toolApprovalMode: "allow-all",
+        allowedTools: ["hanokiDeleteItems", "hanokiRenameItem", "hanokiRenameItem"],
+      }).data.settings,
+    ).toEqual({
+      toolApprovalMode: "allow-all",
+      allowedTools: ["hanokiRenameItem", "hanokiDeleteItems"],
+    });
+
+    expect(
+      updateChatSettings(chat.id, { toolApprovalMode: "ask", allowedTools: [] }).data.settings,
+    ).toEqual({});
+  });
+
+  it("reads the legacy terminal flag as terminal allowances and drops it on write", () => {
+    createWorkspace({ id: "legacy-approval-workspace", name: "Legacy" });
+    const chat = createChat({
+      workspaceId: "legacy-approval-workspace",
+      title: "Legacy",
+      folderId: null,
+    });
+    // Written raw: the flag is no longer part of the ChatSettings type.
+    getAppDatabase().run(
+      sql`update items set data = ${JSON.stringify({ settings: { terminalAutoApprove: true } })} where id = ${chat.id}`,
+    );
+
+    expect(getChatById(chat.id)?.data.settings).toEqual({
+      allowedTools: ["terminalRun", "terminalReadFile", "terminalWriteFile"],
+    });
+    const stored = updateChatSettings(chat.id, { webEnabled: true }).data.settings;
+    expect(stored).not.toHaveProperty("terminalAutoApprove");
+    expect(stored.allowedTools).toEqual(["terminalRun", "terminalReadFile", "terminalWriteFile"]);
   });
 });
 
@@ -698,7 +737,7 @@ describe("Hanoki create and browse kinds", () => {
       modelId: null,
     });
     expect(onGenerationRequested).not.toHaveBeenCalled();
-    expect(HANOKI_MUTATING_TOOL_NAMES).not.toContain("hanokiSendMessage");
+    expect(hanokiSendKickNeedsApproval("host-chat", { chatId: chat.id })).toBe(false);
     expect(onTreeChanged).not.toHaveBeenCalled();
     expect(onMessagesChanged).toHaveBeenCalledTimes(1);
     expect(onMessagesChanged).toHaveBeenCalledWith(chat.id);
@@ -1251,7 +1290,7 @@ describe("Hanoki getItem, edit, delete, terminals, and tool search", () => {
       toolExecuteOptions,
     );
     expect(markdownOf(note.id)).toBe("new body +more");
-    expect(HANOKI_MUTATING_TOOL_NAMES).toContain("hanokiEditNote");
+    expect(isApprovalToolName("hanokiEditNote")).toBe(true);
   });
 
   it("deletes items recursively, disposes terminals, and refuses the host chat", async () => {
@@ -1310,7 +1349,7 @@ describe("Hanoki getItem, edit, delete, terminals, and tool search", () => {
     expect(getItemById(note.id)).toBeNull();
     expect(getItemById(created.id)).toBeNull();
     expect(terminals.disposed).toContain(created.id);
-    expect(HANOKI_MUTATING_TOOL_NAMES).toContain("hanokiDeleteItems");
+    expect(isApprovalToolName("hanokiDeleteItems")).toBe(true);
   });
 
   it("activates a deferred tool on the next step after hanokiFindTools", async () => {

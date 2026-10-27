@@ -5,6 +5,7 @@ import { ToolLoopAgent, isStepCount, type ModelMessage, type ToolApprovalRespons
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 
+import { decideToolApproval } from "@shared/chat/tool-approval";
 import { createTerminalTools, TERMINAL_TOOL_NAMES } from "./terminal-tools";
 
 /*
@@ -59,6 +60,7 @@ function createAgent(options: {
   toolName: string;
   input: unknown;
   withApproval: boolean;
+  allowedTools?: string[];
 }) {
   return new ToolLoopAgent({
     model: createToolCallingModel(options.toolName, options.input),
@@ -68,9 +70,14 @@ function createAgent(options: {
     }),
     ...(options.withApproval
       ? {
-          toolApproval: Object.fromEntries(
-            TERMINAL_TOOL_NAMES.map((name) => [name, "user-approval" as const]),
-          ),
+          // Same policy the chat route applies.
+          toolApproval: ({ toolCall }: { toolCall: { toolName: string } }) => {
+            const decision = decideToolApproval(toolCall.toolName, {
+              allowedTools: options.allowedTools,
+              computerToolsAlwaysAllowed: false,
+            });
+            return decision.type === "not-applicable" ? undefined : decision;
+          },
         }
       : {}),
     stopWhen: isStepCount(5),
@@ -144,6 +151,38 @@ describe.skipIf(isWindows)("terminal tool approvals", () => {
 
     await agent.generate({ messages });
     await expect(readFile(target, "utf8")).rejects.toThrow();
+  });
+
+  it("runs at once and records an automatic approval when the chat allows the tool", async () => {
+    const cwd = await makeTempDir();
+    const target = path.join(cwd, "allowed.txt");
+    const agent = createAgent({
+      chatId: `chat-${crypto.randomUUID()}`,
+      configuredCwd: cwd,
+      toolName: "terminalWriteFile",
+      input: { path: target, content: "allowed" },
+      withApproval: true,
+      allowedTools: ["terminalWriteFile"],
+    });
+
+    const result = await agent.generate({ messages: [{ role: "user", content: "Write it" }] });
+
+    const parts = result.steps.flatMap((step) => step.content);
+    expect(parts.filter((part) => part.type === "tool-approval-request")).toEqual([
+      expect.objectContaining({ isAutomatic: true }),
+    ]);
+    expect(parts.filter((part) => part.type === "tool-approval-response")).toEqual([
+      expect.objectContaining({ approved: true, reason: "Allowed saving files in this chat." }),
+    ]);
+    await expect(readFile(target, "utf8")).resolves.toBe("allowed");
+  });
+
+  it("covers every terminal tool in the shared approval policy", () => {
+    for (const name of TERMINAL_TOOL_NAMES) {
+      expect(decideToolApproval(name, { computerToolsAlwaysAllowed: false })).toEqual({
+        type: "user-approval",
+      });
+    }
   });
 
   it("runs immediately when no approval policy is configured", async () => {

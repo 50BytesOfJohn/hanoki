@@ -2,6 +2,7 @@ import * as React from "react";
 import { getToolName, isToolUIPart, type DynamicToolUIPart, type ToolUIPart } from "ai";
 import {
   AlertCircleIcon,
+  ArrowDown01Icon,
   ChatAdd01Icon,
   MessageAdd01Icon,
   ComputerTerminal01Icon,
@@ -30,8 +31,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
-import { useUpdateChatSettings } from "@/mutations/chats";
-import { useChatId, useChatRespondToToolApproval } from "@/features/chat/chat-context";
+import { ButtonGroup } from "@/components/ui/group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useChatRespondToToolApproval } from "@/features/chat/chat-context";
 import {
   Popover,
   PopoverContent,
@@ -47,11 +49,13 @@ import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { requestSidebarFolderReveal } from "@/features/chat/sidebar-reveal";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { ChatTreeFolderNode, ChatTreeSnapshot, ItemInfo } from "@shared/ipc";
+import { APPROVAL_TOOLS, isApprovalToolName } from "@shared/chat/tool-approval";
 import {
   formatHanokiDeleteApproval,
   formatHanokiMoveApproval,
   formatHanokiRenameApproval,
 } from "./tool-approval-summary";
+import { useToolApprovalActions } from "./tool-approval-actions";
 
 export { isToolUIPart };
 
@@ -841,9 +845,8 @@ function ToolApprovalCard({
   toolName: string;
   input: unknown;
 }) {
-  const chatId = useChatId();
   const respondToToolApproval = useChatRespondToToolApproval();
-  const updateChatSettings = useUpdateChatSettings();
+  const { allowToolForChat, allowAllForChat } = useToolApprovalActions();
   const [hasResponded, setHasResponded] = React.useState(false);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const snapshot = queryClient.getQueryData<ChatTreeSnapshot>(
@@ -854,7 +857,7 @@ function ToolApprovalCard({
     input,
     approvalNamesFromInput(input, snapshot),
   );
-  const canAllowForThisChat = toolName.startsWith("terminal");
+  const allowableTool = isApprovalToolName(toolName) ? toolName : null;
   const icon = getToolConfig(toolName).icon;
 
   const respond = (approved: boolean, reason?: string) => {
@@ -878,24 +881,59 @@ function ToolApprovalCard({
         >
           Don&apos;t allow
         </Button>
-        {canAllowForThisChat ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={hasResponded}
-            onClick={() => {
-              // Persist first: the approval below immediately resumes the
-              // generation, and the server reads this flag on that request.
-              updateChatSettings.mutate(
-                { id: chatId, input: { terminalAutoApprove: true } },
-                { onSettled: () => respond(true) },
-              );
-              setHasResponded(true);
-            }}
-          >
-            Allow for this chat
-          </Button>
-        ) : null}
+        <ButtonGroup>
+          {allowableTool ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={hasResponded}
+                    onClick={() => {
+                      setHasResponded(true);
+                      allowToolForChat(allowableTool);
+                    }}
+                  />
+                }
+              >
+                Allow for this chat
+              </TooltipTrigger>
+              <TooltipContent>
+                Stop asking about {APPROVAL_TOOLS[allowableTool].label} in this chat
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="secondary"
+                  disabled={hasResponded}
+                  aria-label="More ways to allow"
+                />
+              }
+            >
+              <HugeiconsIcon icon={ArrowDown01Icon} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem
+                onClick={() => {
+                  setHasResponded(true);
+                  allowAllForChat();
+                }}
+              >
+                <span className="flex flex-col gap-0.5">
+                  <span>Allow all actions in this chat</span>
+                  <span className="text-xs text-muted-foreground">
+                    Nothing asks again until you switch back in the tools menu.
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ButtonGroup>
         <Button size="sm" disabled={hasResponded} onClick={() => respond(true)}>
           Allow once
         </Button>
@@ -1157,6 +1195,11 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
           ) : (
             <config.Details input={part.input} output={part.output} />
           )}
+          {part.approval?.isAutomatic && part.approval.reason ? (
+            <p className="text-xs text-muted-foreground">
+              Ran without asking. {part.approval.reason}
+            </p>
+          ) : null}
         </PopoverContent>
       </Popover>
       {target ? <DoneMarkerActions target={target} /> : null}

@@ -6,6 +6,11 @@ import type { ChatMessageMetadata } from "@shared/chat/message-metadata";
 import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { isTemperature } from "@shared/models/temperature";
+import {
+  isToolApprovalMode,
+  LEGACY_TERMINAL_APPROVAL_TOOLS,
+  normalizeAllowedTools,
+} from "@shared/chat/tool-approval";
 import { broadcastItemTitleUpdated } from "../broadcast-item-title";
 import { broadcastMarkdownBodiesRewritten } from "../broadcast-markdown-bodies";
 import { reindexNoteLinks, resolveOpenNoteLinks, rewriteNoteLinkTargets } from "./note-links";
@@ -262,8 +267,18 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.terminalEnabled = record.terminalEnabled;
   }
 
-  if (typeof record.terminalAutoApprove === "boolean") {
-    normalizedSettings.terminalAutoApprove = record.terminalAutoApprove;
+  if (isToolApprovalMode(record.toolApprovalMode)) {
+    normalizedSettings.toolApprovalMode = record.toolApprovalMode;
+  }
+
+  // `terminalAutoApprove` predates per-tool allowances; it is read once more
+  // here and dropped on the next write.
+  const allowedTools = normalizeAllowedTools([
+    ...(Array.isArray(record.allowedTools) ? record.allowedTools : []),
+    ...(record.terminalAutoApprove === true ? LEGACY_TERMINAL_APPROVAL_TOOLS : []),
+  ]);
+  if (allowedTools.length > 0) {
+    normalizedSettings.allowedTools = allowedTools;
   }
 
   return normalizedSettings;
@@ -319,8 +334,21 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
     nextSettings.terminalEnabled = settingsPatch.terminalEnabled ?? false;
   }
 
-  if ("terminalAutoApprove" in settingsPatch) {
-    nextSettings.terminalAutoApprove = settingsPatch.terminalAutoApprove ?? false;
+  if ("toolApprovalMode" in settingsPatch) {
+    if (settingsPatch.toolApprovalMode === "allow-all") {
+      nextSettings.toolApprovalMode = "allow-all";
+    } else {
+      delete nextSettings.toolApprovalMode;
+    }
+  }
+
+  if ("allowedTools" in settingsPatch) {
+    const allowedTools = normalizeAllowedTools(settingsPatch.allowedTools ?? []);
+    if (allowedTools.length > 0) {
+      nextSettings.allowedTools = allowedTools;
+    } else {
+      delete nextSettings.allowedTools;
+    }
   }
 
   return nextSettings;

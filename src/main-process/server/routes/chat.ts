@@ -6,11 +6,13 @@ import {
   smoothStream,
   ToolLoopAgent,
   type LanguageModelUsage,
+  type ToolApprovalStatus,
 } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
 import { insertRevisionTurn } from "@shared/chat/revision";
+import { decideToolApproval } from "@shared/chat/tool-approval";
 import type {
   ChatCostUpdatedEvent,
   ChatGenerationRequestedEvent,
@@ -45,7 +47,6 @@ import {
   createHanokiTools,
   hanokiSendKickNeedsApproval,
   HANOKI_CORE_TOOL_NAMES,
-  HANOKI_MUTATING_TOOL_NAMES,
   HANOKI_READ_TOOL_NAMES,
   type HanokiTerminalPort,
   resolveAttachedItemPointers,
@@ -275,8 +276,6 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       Boolean(chat.data.settings.terminalEnabled),
       latestUserMessage,
     );
-    const needsTerminalApproval =
-      terminalSettings.mode === "ask" && !chat.data.settings.terminalAutoApprove;
 
     const tools = {
       ...webTools,
@@ -322,19 +321,30 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       : [];
     const activeTools = buildActiveTools(historyDiscovered);
 
-    const toolApproval: Partial<Record<keyof typeof tools, "user-approval">> = {};
-    if (needsTerminalApproval) {
-      for (const name of TERMINAL_TOOL_NAMES) {
-        toolApproval[name] = "user-approval";
+    // One policy for every tool. Settings are re-read per call so "Allow for
+    // this chat" or a mode switch made mid-generation applies to the next call.
+    const toolApproval = ({
+      toolCall,
+    }: {
+      toolCall: { toolName: string; input: unknown };
+    }): ToolApprovalStatus => {
+      if (
+        toolCall.toolName === "hanokiSendMessage" &&
+        !hanokiSendKickNeedsApproval(
+          chat.id,
+          (toolCall.input ?? {}) as { kick?: boolean; chatId?: string },
+        )
+      ) {
+        return undefined;
       }
-    }
-    if (isHanokiEnabledForRequest) {
-      for (const name of HANOKI_MUTATING_TOOL_NAMES) {
-        toolApproval[name] = "user-approval";
-      }
-    }
-    const sendMessageApproval = (input: { kick?: boolean; chatId?: string }) =>
-      hanokiSendKickNeedsApproval(chat.id, input) ? ("user-approval" as const) : undefined;
+      const settings = getChatById(chat.id)?.data.settings ?? chat.data.settings;
+      const decision = decideToolApproval(toolCall.toolName, {
+        mode: settings.toolApprovalMode,
+        allowedTools: settings.allowedTools,
+        computerToolsAlwaysAllowed: readTerminalToolSettings().mode === "always",
+      });
+      return decision.type === "not-applicable" ? undefined : decision;
+    };
     let currentCallId: string | null = null;
     const loggedErrors = new WeakSet<object>();
     const logError = (message: string, details: Record<string, unknown>, error: unknown) => {
@@ -378,14 +388,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       ),
       tools,
       activeTools,
-      ...(Object.keys(toolApproval).length > 0 || isHanokiEnabledForRequest
-        ? {
-            toolApproval: {
-              ...toolApproval,
-              ...(isHanokiEnabledForRequest ? { hanokiSendMessage: sendMessageApproval } : {}),
-            },
-          }
-        : {}),
+      toolApproval,
       ...(isHanokiEnabledForRequest
         ? {
             prepareStep: ({ steps }: { steps: readonly unknown[] }) => ({

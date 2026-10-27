@@ -6,6 +6,7 @@ import {
 } from "@shared/chat/chat-export";
 import { parseChatId } from "@shared/chat/chat-id";
 import { parseChatTitle } from "@shared/chat/chat-title";
+import { isApprovalToolName, isToolApprovalMode } from "@shared/chat/tool-approval";
 import { parseFolderId } from "@shared/folder/folder-id";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import { isReasoningEffort } from "@shared/models/reasoning";
@@ -89,7 +90,8 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     "webEnabled",
     "hanokiEnabled",
     "terminalEnabled",
-    "terminalAutoApprove",
+    "toolApprovalMode",
+    "allowedTools",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -180,12 +182,23 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     parsedInput.terminalEnabled = inputRecord.terminalEnabled;
   }
 
-  if (inputRecord.terminalAutoApprove !== undefined) {
-    if (typeof inputRecord.terminalAutoApprove !== "boolean") {
-      throw AppError.badRequest("terminalAutoApprove must be a boolean.");
+  if (inputRecord.toolApprovalMode !== undefined) {
+    if (!isToolApprovalMode(inputRecord.toolApprovalMode)) {
+      throw AppError.badRequest('toolApprovalMode must be "ask" or "allow-all".');
     }
 
-    parsedInput.terminalAutoApprove = inputRecord.terminalAutoApprove;
+    parsedInput.toolApprovalMode = inputRecord.toolApprovalMode;
+  }
+
+  if (inputRecord.allowedTools !== undefined) {
+    if (
+      !Array.isArray(inputRecord.allowedTools) ||
+      !inputRecord.allowedTools.every(isApprovalToolName)
+    ) {
+      throw AppError.badRequest("allowedTools must be a list of tools that ask for approval.");
+    }
+
+    parsedInput.allowedTools = inputRecord.allowedTools;
   }
 
   return [chatId, parsedInput];

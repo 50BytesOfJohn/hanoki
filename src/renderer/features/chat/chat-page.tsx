@@ -8,6 +8,7 @@ import {
   Cancel01Icon,
   ComputerTerminal01Icon,
   Database02Icon,
+  FlashIcon,
   SentIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -19,6 +20,9 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
@@ -62,6 +66,8 @@ import { SumiPromptAction } from "./sumi-prompt-action";
 import { MentionItemsMenu } from "./mention-context";
 import { ChatComposerEditor } from "./tiptap-editor";
 import { ChatModelPicker } from "./model-picker/chat-model-picker";
+import { useToolApprovalActions } from "./tool-approval-actions";
+import { APPROVAL_TOOLS } from "@shared/chat/tool-approval";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -483,11 +489,15 @@ function ChatToolsMenu() {
   const isInteractionLocked = useChatIsInteractionLocked();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
   const updateChatSettings = useUpdateChatSettings();
+  const approvalActions = useToolApprovalActions();
   const toolsButtonRef = React.useRef<HTMLButtonElement>(null);
   const [mentionOpen, setMentionOpen] = React.useState(false);
   const webEnabled = chat?.data.settings.webEnabled ?? false;
   const hanokiEnabled = chat?.data.settings.hanokiEnabled ?? false;
   const terminalEnabled = chat?.data.settings.terminalEnabled ?? false;
+  const approvalMode = chat?.data.settings.toolApprovalMode ?? "ask";
+  const allowedTools = chat?.data.settings.allowedTools ?? [];
+  const isSaving = updateChatSettings.isPending || approvalActions.isSaving;
 
   return (
     <>
@@ -508,7 +518,7 @@ function ChatToolsMenu() {
         >
           <HugeiconsIcon icon={Add01Icon} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-44">
+        <DropdownMenuContent side="top" align="start" className="w-60">
           <DropdownMenuGroup>
             <DropdownMenuItem
               disabled={isInteractionLocked}
@@ -522,7 +532,7 @@ function ChatToolsMenu() {
             <DropdownMenuCheckboxItem
               variant="switch"
               checked={webEnabled}
-              disabled={updateChatSettings.isPending}
+              disabled={isSaving}
               onCheckedChange={(checked) => {
                 updateChatSettings.mutate({
                   id: chatId,
@@ -538,7 +548,7 @@ function ChatToolsMenu() {
             <DropdownMenuCheckboxItem
               variant="switch"
               checked={hanokiEnabled}
-              disabled={updateChatSettings.isPending}
+              disabled={isSaving}
               onCheckedChange={(checked) => {
                 updateChatSettings.mutate({
                   id: chatId,
@@ -554,7 +564,7 @@ function ChatToolsMenu() {
             <DropdownMenuCheckboxItem
               variant="switch"
               checked={terminalEnabled}
-              disabled={updateChatSettings.isPending}
+              disabled={isSaving}
               onCheckedChange={(checked) => {
                 updateChatSettings.mutate({
                   id: chatId,
@@ -568,8 +578,59 @@ function ChatToolsMenu() {
               </span>
             </DropdownMenuCheckboxItem>
           </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Approvals</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={approvalMode}
+              onValueChange={(next) => {
+                if (next === "allow-all") approvalActions.allowAllForChat();
+                else approvalActions.askBeforeActions();
+              }}
+            >
+              <DropdownMenuRadioItem value="ask" disabled={isSaving}>
+                Ask before actions
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="allow-all" disabled={isSaving}>
+                Allow all actions
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            {approvalMode === "ask" && allowedTools.length > 0 ? (
+              <DropdownMenuItem disabled={isSaving} onClick={approvalActions.forgetAllowedTools}>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span>Ask again for everything</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Allowed here:{" "}
+                    {allowedTools.map((name) => APPROVAL_TOOLS[name].label).join(", ")}
+                  </span>
+                </span>
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      {approvalMode === "allow-all" ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-warning hover:text-warning"
+                disabled={isSaving}
+                onClick={approvalActions.askBeforeActions}
+              />
+            }
+          >
+            <HugeiconsIcon icon={FlashIcon} data-icon="inline-start" />
+            Auto-approve
+          </TooltipTrigger>
+          <TooltipContent>
+            Every action in this chat runs without asking. Click to ask again.
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       <MentionItemsMenu
         anchorRef={toolsButtonRef}
         open={mentionOpen}

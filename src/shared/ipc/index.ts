@@ -6,6 +6,7 @@ import type { ChatExportFormat, ChatExportResult } from "../chat/chat-export";
 import type { NotesFolderExportResult, NotesFolderImportResult } from "../markdown/folder-io";
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
 import type { TiptapDocument } from "../tiptap/document";
+import type { ApprovalToolName, ToolApprovalMode } from "../chat/tool-approval";
 
 export const IPC_CHANNELS = {
   workspaces: {
@@ -347,8 +348,10 @@ export interface ChatSettings {
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
   terminalEnabled?: boolean;
-  /** Set by "Allow for this chat" on an approval card; skips further prompts. */
-  terminalAutoApprove?: boolean;
+  /** Unset means "ask". See `decideToolApproval`. */
+  toolApprovalMode?: ToolApprovalMode;
+  /** Tools the user chose "Allow for this chat" on; they stop asking here. */
+  allowedTools?: ApprovalToolName[];
 }
 
 export interface ChatModelConfig {
@@ -368,7 +371,9 @@ export interface ChatSettingsUpdateInput {
   webEnabled?: boolean;
   hanokiEnabled?: boolean;
   terminalEnabled?: boolean;
-  terminalAutoApprove?: boolean;
+  toolApprovalMode?: ToolApprovalMode;
+  /** Replaces the whole list; an empty list forgets every allowance. */
+  allowedTools?: ApprovalToolName[];
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {

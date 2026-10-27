@@ -163,7 +163,12 @@ export function ToolsPage() {
       <p className="px-0.5 text-xs text-muted-foreground">
         The assistant only gets the terminal in chats where you switch it on — from the tools menu
         next to the message box, or by typing @Terminal. This setting decides what happens once you
-        have.
+        have, including commands in Hanoki terminals.
+      </p>
+      <p className="px-0.5 text-xs text-muted-foreground">
+        Changes to your workspace, like moving, renaming, editing, or deleting items, ask first. On
+        any prompt, choose Allow for this chat to stop asking about that kind of action in that
+        chat, or switch a chat to Allow all actions from its tools menu.
       </p>
     </SettingsPageShell>
   );
