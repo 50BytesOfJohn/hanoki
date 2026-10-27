@@ -46,7 +46,8 @@ export function persistGeneratedAssistantMessage({
   message: HanokiUiMessage;
   fallbackParentId: string | null;
   responseMetadata: Omit<ChatMessageMetadata, "parentId"> | undefined;
-  modelId: string;
+  /** Saved as the chat's model; omitted when the user picked another one mid-reply. */
+  modelId: string | undefined;
 }): MessageRow {
   const existingMessage = getMessageById(message.id);
   const parentId = normalizeChatMessageMetadata(message.metadata, fallbackParentId).parentId;
@@ -64,9 +65,7 @@ export function persistGeneratedAssistantMessage({
   });
 
   setChatCurrentBranch(chatId, savedMessage.id, {
-    settingsPatch: {
-      modelId,
-    },
+    settingsPatch: modelId ? { modelId } : undefined,
   });
 
   return savedMessage;

@@ -113,11 +113,7 @@ function createChatContextStore({
     isRevisionComposerOpen: false,
     setModelId: (modelId) =>
       set((current) => {
-        if (
-          current.editingMessageId !== null ||
-          current.continuingMessageId !== null ||
-          current.modelId === modelId
-        ) {
+        if (current.editingMessageId !== null || current.modelId === modelId) {
           return current;
         }
 

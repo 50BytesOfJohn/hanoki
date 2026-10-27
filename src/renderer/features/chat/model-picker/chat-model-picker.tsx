@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useChatIsInteractionLocked } from "@/features/chat/chat-context";
+import { useChatIsSaveMode } from "@/features/chat/chat-context";
 import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
 import { listEnabledModelsQueryOptions, listRecentModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
@@ -53,7 +53,8 @@ const COMPOSER_INPUT_SELECTOR = '[data-chat-composer-input="true"] [contentedita
 export function ChatModelPicker() {
   const selection = useChatModelSelection();
   const { data: providers = [] } = useQuery(listProvidersQueryOptions);
-  const isInteractionLocked = useChatIsInteractionLocked();
+  // Only editing locks the picker: a pick made mid-reply applies to the next message.
+  const isLocked = useChatIsSaveMode();
   const isActivePane = useIsActiveChatPane();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
@@ -103,7 +104,7 @@ export function ChatModelPicker() {
       setOpen(!isOpen);
     },
     {
-      enabled: isActivePane && !isInteractionLocked,
+      enabled: isActivePane && !isLocked,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -123,7 +124,7 @@ export function ChatModelPicker() {
       },
     })),
     {
-      enabled: isActivePane && !isInteractionLocked && offered.length > 0,
+      enabled: isActivePane && !isLocked && offered.length > 0,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -140,7 +141,7 @@ export function ChatModelPicker() {
       setIsEffortOpen((open) => !open);
     },
     {
-      enabled: isActivePane && !isInteractionLocked && offered.length > 0,
+      enabled: isActivePane && !isLocked && offered.length > 0,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -152,7 +153,7 @@ export function ChatModelPicker() {
   return (
     <>
       <div className="flex min-w-0 items-center">
-        <ContextMenu disabled={isInteractionLocked}>
+        <ContextMenu disabled={isLocked}>
           <ContextMenuTrigger render={<div className="flex min-w-0" />}>
             <Popover open={isOpen} onOpenChange={setOpen}>
               <Tooltip>
@@ -166,7 +167,7 @@ export function ChatModelPicker() {
                           variant="ghost"
                           size="sm"
                           aria-label="Model"
-                          disabled={isInteractionLocked}
+                          disabled={isLocked}
                           className="max-w-64 min-w-0 gap-2 px-2 text-[13px] font-normal text-foreground data-popup-open:bg-hover"
                         />
                       }
@@ -213,7 +214,7 @@ export function ChatModelPicker() {
           <ModelQuickMenu selection={selection} onOpenLibrary={openLibrary} />
         </ContextMenu>
 
-        {offered.length > 0 && !isInteractionLocked ? (
+        {offered.length > 0 && !isLocked ? (
           <EffortControl
             offered={offered}
             value={effort}

@@ -128,6 +128,13 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       return c.json({ error: "Model not found or not enabled" }, 400);
     }
 
+    // The model can be switched while this reply streams; that pick is for the
+    // next message, so finishing must not write this request's model over it.
+    const getModelIdToSave = () =>
+      getChatById(chat.id)?.data.settings.modelId === chat.data.settings.modelId
+        ? model.id
+        : undefined;
+
     const provider = getProviderById(model.providerId);
     if (!provider) {
       return c.json({ error: "Model not found or not enabled" }, 400);
@@ -602,10 +609,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
             },
           });
 
+          const modelIdToSave = getModelIdToSave();
           setChatCurrentBranch(chat.id, getChatCurrentBranchId(chat.id), {
-            settingsPatch: {
-              modelId: model.id,
-            },
+            settingsPatch: modelIdToSave ? { modelId: modelIdToSave } : undefined,
           });
           return;
         }
@@ -622,7 +628,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           responseMetadata: revisionMetadata
             ? { ...capturedResponseMetadata, revision: revisionMetadata }
             : capturedResponseMetadata,
-          modelId: model.id,
+          modelId: getModelIdToSave(),
         });
       },
     });
