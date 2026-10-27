@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { Editor } from "@tiptap/core";
+import { Markdown } from "@tiptap/markdown";
+import StarterKit from "@tiptap/starter-kit";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { MarkdownEditor } from "./markdown-pane";
+import { NoteImage } from "./note-image";
 
 beforeAll(() => {
   Range.prototype.getClientRects = () => document.createElement("div").getClientRects();
@@ -73,5 +77,78 @@ describe("MarkdownEditor", () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["rich text", true],
+    ["preview", false],
+  ])("loads a note-relative image in %s", async (_label, editable) => {
+    const onChange = vi.fn();
+    render(
+      <MarkdownEditor
+        itemId="document-a"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={"![Fern](fern.png)"}
+        editable={editable}
+        onChange={onChange}
+        onBlur={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByRole("img", { name: "Fern" });
+    expect(image.getAttribute("src")).toContain("hanoki-asset:");
+    expect(image.getAttribute("src")).toContain("fern.png");
+    const saved = onChange.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(saved).not.toContain("hanoki-asset:");
+    if (editable) expect(saved).toContain("![Fern](fern.png)");
+
+    fireEvent.error(image);
+    const missing = await screen.findByRole("img", { name: "Image not found: Fern, fern.png" });
+    expect(missing.textContent).toBe("Fern · fern.png");
+    expect(missing.className).not.toContain("destructive");
+    fireEvent.focus(missing);
+    expect(await screen.findByText("fern.png", { selector: "span" })).toBeTruthy();
+  });
+
+  it.each([
+    ["![a](<my fern.png>)", "![a](<my fern.png>)"],
+    ["![a](<fern(1.png>)", "![a](<fern(1.png>)"],
+    ["![a](fern(1).png)", "![a](fern(1).png)"],
+    ["![a\\]b](fern.png)", "![a\\]b](fern.png)"],
+    ['![a](fern.png "say \\"hi\\"")', '![a](fern.png "say \\"hi\\"")'],
+  ])("round-trips %s", (markdown, expected) => {
+    const element = document.createElement("div");
+    const editor = new Editor({
+      element,
+      extensions: [StarterKit, NoteImage, Markdown],
+      content: markdown,
+      contentType: "markdown",
+    });
+    const first = editor.getMarkdown();
+    expect(first).toContain(expected);
+    editor.commands.setContent(first, { contentType: "markdown" });
+    const second = editor.getMarkdown();
+    expect(second).toContain(expected);
+    expect(second).not.toContain(`<${"fern(1).png"}>`);
+    expect(editor.getText()).not.toContain("![");
+    editor.destroy();
+  });
+
+  it("loads an image inside a sentence", async () => {
+    render(
+      <MarkdownEditor
+        itemId="document-a"
+        workspaceId="workspace"
+        folderId={null}
+        markdown={"See ![Fern](fern.png) today."}
+        editable={false}
+        onChange={vi.fn()}
+        onBlur={vi.fn()}
+      />,
+    );
+    const image = await screen.findByRole("img", { name: "Fern" });
+    expect(image.getAttribute("src")).toContain("hanoki-asset:");
+    expect(screen.getByLabelText("Markdown preview").textContent).toContain("today");
   });
 });
