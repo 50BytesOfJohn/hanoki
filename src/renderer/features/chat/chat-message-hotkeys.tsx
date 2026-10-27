@@ -3,6 +3,7 @@ import { useHotkey } from "@tanstack/react-hotkeys";
 import {
   useChatGetMessages,
   useChatIsInteractionLocked,
+  useChatIsRevisionComposerOpen,
   useChatRegenerateMessage,
 } from "@/features/chat/chat-context";
 import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
@@ -12,6 +13,7 @@ export function ChatMessageHotkeys() {
   const getMessages = useChatGetMessages();
   const regenerateMessage = useChatRegenerateMessage();
   const isInteractionLocked = useChatIsInteractionLocked();
+  const isRevisionComposerOpen = useChatIsRevisionComposerOpen();
   const scrollToBottom = useChatScrollToBottom();
   const isActivePane = useIsActiveChatPane();
 
@@ -30,7 +32,8 @@ export function ChatMessageHotkeys() {
         }
       }
 
-      if (isInteractionLocked || !latestAssistantMessageId) {
+      // Cmd+R while typing a note would regenerate without it.
+      if (isInteractionLocked || isRevisionComposerOpen || !latestAssistantMessageId) {
         return;
       }
 

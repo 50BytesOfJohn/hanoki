@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useChatIsSaveMode } from "@/features/chat/chat-context";
 import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
 import { listEnabledModelsQueryOptions, listRecentModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
@@ -49,18 +48,21 @@ const COMPOSER_INPUT_SELECTOR = '[data-chat-composer-input="true"] [contentedita
  * (Mod+/) and right-click on it a quick switcher; the effort button opens a
  * slider (Mod+Shift+E) and right-click on it lists every level. Mod+Alt+0–9
  * sets the effort by how many bars it lights.
+ *
+ * Nothing locks them: a pick made mid-reply or while editing a message applies
+ * to the next request, including the one saving an edit as a new branch sends.
  */
 export function ChatModelPicker() {
   const selection = useChatModelSelection();
   const { data: providers = [] } = useQuery(listProvidersQueryOptions);
-  // Only editing locks the picker: a pick made mid-reply applies to the next message.
-  const isLocked = useChatIsSaveMode();
   const isActivePane = useIsActiveChatPane();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
   const [isEffortOpen, setIsEffortOpen] = React.useState(false);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const returnFocusToComposerRef = React.useRef(false);
+  const returnFocusToEditorRef = React.useRef(false);
+  // The editor typed in when a control opened: the composer or a message being edited.
+  const focusedEditorRef = React.useRef<HTMLElement | null>(null);
   // The library takes focus as the picker closes; handing it back would steal it.
   const isHandingOffToLibraryRef = React.useRef(false);
 
@@ -73,13 +75,27 @@ export function ChatModelPicker() {
       ?.closest("[data-chat-composer-shell]")
       ?.querySelector<HTMLElement>(COMPOSER_INPUT_SELECTOR) ?? null;
 
+  const rememberFocusedEditor = () => {
+    const active = document.activeElement;
+    focusedEditorRef.current =
+      active instanceof HTMLElement && active.isContentEditable ? active : null;
+  };
+
+  const getEditorToRefocus = () =>
+    focusedEditorRef.current?.isConnected ? focusedEditorRef.current : getComposerInput();
+
   const setOpen = (open: boolean) => {
     if (open) {
-      // Typing resumes where it was if the picker was summoned from the prompt.
-      returnFocusToComposerRef.current =
-        getComposerInput()?.contains(document.activeElement) ?? false;
+      // Typing resumes where it was if the picker was summoned from an editor.
+      rememberFocusedEditor();
+      returnFocusToEditorRef.current = focusedEditorRef.current !== null;
     }
     setIsOpen(open);
+  };
+
+  const setEffortOpen = (open: boolean) => {
+    if (open) rememberFocusedEditor();
+    setIsEffortOpen(open);
   };
 
   const openLibrary = () => {
@@ -94,7 +110,7 @@ export function ChatModelPicker() {
       return false;
     }
 
-    return returnFocusToComposerRef.current ? getComposerInput() : true;
+    return returnFocusToEditorRef.current ? getEditorToRefocus() : true;
   };
 
   useHotkey(
@@ -104,7 +120,7 @@ export function ChatModelPicker() {
       setOpen(!isOpen);
     },
     {
-      enabled: isActivePane && !isLocked,
+      enabled: isActivePane,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -124,7 +140,7 @@ export function ChatModelPicker() {
       },
     })),
     {
-      enabled: isActivePane && !isLocked && offered.length > 0,
+      enabled: isActivePane && offered.length > 0,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -138,10 +154,10 @@ export function ChatModelPicker() {
     (event) => {
       event.preventDefault();
       setIsOpen(false);
-      setIsEffortOpen((open) => !open);
+      setEffortOpen(!isEffortOpen);
     },
     {
-      enabled: isActivePane && !isLocked && offered.length > 0,
+      enabled: isActivePane && offered.length > 0,
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -153,7 +169,7 @@ export function ChatModelPicker() {
   return (
     <>
       <div className="flex min-w-0 items-center">
-        <ContextMenu disabled={isLocked}>
+        <ContextMenu>
           <ContextMenuTrigger render={<div className="flex min-w-0" />}>
             <Popover open={isOpen} onOpenChange={setOpen}>
               <Tooltip>
@@ -167,7 +183,6 @@ export function ChatModelPicker() {
                           variant="ghost"
                           size="sm"
                           aria-label="Model"
-                          disabled={isLocked}
                           className="max-w-64 min-w-0 gap-2 px-2 text-[13px] font-normal text-foreground data-popup-open:bg-hover"
                         />
                       }
@@ -203,7 +218,7 @@ export function ChatModelPicker() {
                 <ModelPickerCommand
                   selection={selection}
                   onDone={() => {
-                    returnFocusToComposerRef.current = true;
+                    returnFocusToEditorRef.current = true;
                     setIsOpen(false);
                   }}
                   onOpenLibrary={openLibrary}
@@ -214,14 +229,14 @@ export function ChatModelPicker() {
           <ModelQuickMenu selection={selection} onOpenLibrary={openLibrary} />
         </ContextMenu>
 
-        {offered.length > 0 && !isLocked ? (
+        {offered.length > 0 ? (
           <EffortControl
             offered={offered}
             value={effort}
             onValueChange={selection.setEffort}
             open={isEffortOpen}
-            onOpenChange={setIsEffortOpen}
-            finalFocus={() => getComposerInput() ?? true}
+            onOpenChange={setEffortOpen}
+            finalFocus={() => getEditorToRefocus() ?? true}
           />
         ) : null}
       </div>
@@ -230,7 +245,7 @@ export function ChatModelPicker() {
         open={isLibraryOpen}
         onOpenChange={setIsLibraryOpen}
         currentModelId={model?.id ?? null}
-        finalFocus={() => getComposerInput() ?? true}
+        finalFocus={() => getEditorToRefocus() ?? true}
         onUseModel={(nextModel) => selection.selectModel(nextModel)}
       />
     </>

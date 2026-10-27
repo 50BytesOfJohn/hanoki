@@ -113,7 +113,7 @@ function createChatContextStore({
     isRevisionComposerOpen: false,
     setModelId: (modelId) =>
       set((current) => {
-        if (current.editingMessageId !== null || current.modelId === modelId) {
+        if (current.modelId === modelId) {
           return current;
         }
 
@@ -153,6 +153,7 @@ function createChatContextStore({
         set((current) => ({ ...current, continuationError: null }));
       }
 
+      get().closeRevisionComposer();
       transportRefs.markTabTouched?.();
 
       return transportRefs.sendMessage(message, {
@@ -200,6 +201,15 @@ function createChatContextStore({
         set((current) => ({ ...current, continuationError: null }));
       }
 
+      // The regenerated message is replaced, so its note draft goes with it.
+      set((current) => ({
+        ...current,
+        isRevisionComposerOpen: false,
+        revisionComposer:
+          current.revisionComposer?.messageId === options?.messageId
+            ? null
+            : current.revisionComposer,
+      }));
       transportRefs.markTabTouched?.();
 
       return transportRefs.regenerate({
@@ -243,7 +253,8 @@ function createChatContextStore({
         return;
       }
 
-      set((current) => ({ ...current, revisionComposer: null, isRevisionComposerOpen: false }));
+      // `regenerateMessage` clears the composer once the generation starts, so
+      // the note survives if it bails.
       const revision: ChatRevisionRequest = { sourceMessageId, note: trimmedNote };
       await get().regenerateMessage({ messageId, body: { revision } });
     },
@@ -294,6 +305,7 @@ function createChatContextStore({
         ...current,
         continuingMessageId: messageId,
         continuationError: null,
+        isRevisionComposerOpen: false,
       }));
 
       transportRefs.markTabTouched?.();
@@ -404,6 +416,7 @@ function createChatContextStore({
       }
 
       if (!transportRefs.setMessages) return;
+      get().closeRevisionComposer();
       const newMessages = await messagesApi.switchBranch(chatId, branchId);
       transportRefs.setMessages(newMessages);
     },
@@ -427,6 +440,7 @@ function createChatContextStore({
         return {
           ...current,
           editingMessageId: messageId,
+          isRevisionComposerOpen: false,
         };
       }),
     stopEditingMessage: () =>
@@ -488,6 +502,7 @@ function createChatContextStore({
       }
 
       if (!transportRefs.setMessages) return;
+      get().closeRevisionComposer();
       const newMessages = await messagesApi.deleteMessage(messageId, scope);
       transportRefs.setMessages(newMessages);
     },
@@ -858,6 +873,10 @@ export function useChatRevisionComposer(messageId: string) {
     () => ({ isOpen: note !== null, note: note ?? "", open, setNote, close }),
     [note, open, setNote, close],
   );
+}
+
+export function useChatIsRevisionComposerOpen() {
+  return useChatContext((state) => state.isRevisionComposerOpen);
 }
 
 export function useChatContinueMessage() {
