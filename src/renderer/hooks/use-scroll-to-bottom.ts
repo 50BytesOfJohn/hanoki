@@ -185,6 +185,13 @@ export function useScrollToBottom(
     };
 
     const finishPendingRestoration = () => {
+      // Once settled, scroll events keep the saved position current. Saving here
+      // would also run after the composer's Enter handler has already rendered
+      // the sent message, pinning the viewport above it.
+      if (isInitialPositionSettledRef.current) {
+        return;
+      }
+
       isInitialPositionSettledRef.current = true;
       initialPositionRef.current = null;
       savePosition();
