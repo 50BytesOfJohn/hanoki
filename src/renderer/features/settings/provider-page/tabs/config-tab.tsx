@@ -57,6 +57,7 @@ export function ProviderConfigModal({ providerId, trigger }: ProviderConfigModal
     Boolean(provider) &&
     secretFields.length > 0 &&
     secretFields.every(([key, field]) => !field.required || Boolean(secretValues[key]?.trim())) &&
+    secretFields.some(([key]) => Boolean(secretValues[key]?.trim())) &&
     !updateProviderSecrets.isPending;
 
   useEffect(() => {

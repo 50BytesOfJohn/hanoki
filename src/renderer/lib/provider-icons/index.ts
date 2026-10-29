@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { ProviderId } from "@shared/providers/catalog";
 import { OllamaIcon } from "./ollama-icon";
+import { OpenAiCompatibleIcon } from "./openai-compatible-icon";
 import { OpenRouterIcon } from "./openrouter-icon";
 import { createRemoteProviderIcon, type ProviderIconProps } from "./remote-provider-icon";
 
@@ -71,6 +72,7 @@ export const providerIconsById = {
   mistral: MistralIcon,
   ollama: OllamaIcon,
   openai: OpenAiIcon,
+  "openai-compatible": OpenAiCompatibleIcon,
   openrouter: OpenRouterIcon,
   togetherai: TogetherAiIcon,
   xai: XAiIcon,

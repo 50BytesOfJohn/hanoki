@@ -33,6 +33,7 @@ import {
 import { getCodexCredentials } from "../providers/codex-auth";
 import { fetchCodexModels } from "../providers/codex-models";
 import { buildOllamaBaseUrl } from "../providers/ollama-base-url";
+import { normalizeOpenAiCompatibleBaseUrl } from "../providers/openai-compatible-base-url";
 import {
   createProvider,
   deleteProvider as deleteStoredProvider,
@@ -49,7 +50,10 @@ import {
 } from "../providers/runtime-config";
 import { AppError } from "../ipc/core/errors";
 import {
+  buildOpenAiCompatibleModelsRequest,
   getSdkProviderRegistryEntry,
+  parseOpenAiCompatibleModels,
+  type ApiKeyProviderId,
   type ProviderRequestSpec,
 } from "../server/providers/sdk-provider-registry";
 import { encryptString, isEncryptionAvailable } from "./safe-storage";
@@ -125,6 +129,17 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         return testCodexCredentials();
       }
 
+      if (input.providerId === "openai-compatible") {
+        return testSdkProviderCredentials(
+          provider,
+          buildOpenAiCompatibleModelsRequest(
+            getRequiredDraftSecretConfigValue(config, "baseUrl"),
+            getOptionalDraftSecretConfigValue(config, "apiKey"),
+          ),
+          parseOpenAiCompatibleModels,
+        );
+      }
+
       if (input.providerId === "openrouter") {
         return testOpenRouterCredentials(getRequiredDraftSecretConfigValue(config, "apiKey"));
       }
@@ -139,6 +154,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       return testSdkProviderCredentials(
         provider,
         providerEntry.buildModelsRequest(getRequiredDraftSecretConfigValue(config, "apiKey")),
+        providerEntry.parseModels,
       );
     },
 
@@ -154,7 +170,8 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         throw AppError.internal("Encryption is not available. Cannot securely store credentials.");
       }
       const id = createUuidV7();
-      const displayName = input.displayName?.trim() || catalogEntry.name;
+      const displayName =
+        input.displayName?.trim() || getDefaultProviderDisplayName(catalogEntry, config);
 
       const row = createProvider({
         id,
@@ -319,10 +336,45 @@ function parseProviderDraftConfig(
         draft[key] = parsed;
         break;
       }
+      case "url": {
+        const rawValue = config[key];
+
+        if (rawValue == null || (typeof rawValue === "string" && !rawValue.trim())) {
+          if (field.required) {
+            throw AppError.badRequest(`${field.label} is required.`);
+          }
+          continue;
+        }
+
+        if (typeof rawValue !== "string") {
+          throw AppError.badRequest(`${field.label} must be a string.`);
+        }
+
+        try {
+          draft[key] = normalizeOpenAiCompatibleBaseUrl(rawValue);
+        } catch (error) {
+          throw AppError.badRequest(
+            error instanceof Error ? error.message : `${field.label} is invalid.`,
+          );
+        }
+        break;
+      }
     }
   }
 
   return draft;
+}
+
+function getDefaultProviderDisplayName(
+  provider: SupportedProviderDefinition,
+  draftConfig: ProviderDraftConfig,
+): string {
+  const baseUrl = draftConfig.baseUrl;
+  if (provider.id === "openai-compatible" && typeof baseUrl === "string") {
+    return new URL(baseUrl).host;
+  }
+
+  return provider.name;
 }
 
 function parseProviderSecretDraftConfig(
@@ -408,6 +460,14 @@ function buildStoredProviderConfig(
         storedConfig[key] = value;
         break;
       }
+      case "url": {
+        if (typeof value !== "string") {
+          throw AppError.badRequest(`Expected string config value for "${key}".`);
+        }
+
+        storedConfig[key] = value;
+        break;
+      }
     }
   }
 
@@ -470,6 +530,14 @@ function getRequiredDraftSecretConfigValue(config: ProviderDraftConfig, key: str
     throw AppError.badRequest(`Missing required config field "${key}".`);
   }
   return value;
+}
+
+function getOptionalDraftSecretConfigValue(
+  config: ProviderDraftConfig,
+  key: string,
+): string | undefined {
+  const value = config[key];
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function getRequiredDraftHostPortConfigValue(
@@ -590,6 +658,20 @@ async function fetchModelsForProviderSync(
 
   if (input.providerDef.id === "codex") {
     return fetchCodexModelsForSync();
+  }
+
+  if (input.providerDef.id === "openai-compatible") {
+    const apiKey = input.parsedConfig.apiKey;
+    return fetchSdkProviderModelsForSync(
+      input.providerDef.id,
+      buildOpenAiCompatibleModelsRequest(
+        normalizeOpenAiCompatibleBaseUrl(
+          getRequiredParsedSecretConfigValue(input.parsedConfig, "baseUrl"),
+        ),
+        typeof apiKey === "string" && apiKey ? apiKey : undefined,
+      ),
+      parseOpenAiCompatibleModels,
+    );
   }
 
   const providerEntry = getSdkProviderRegistryEntry(input.providerDef.id);
@@ -841,16 +923,19 @@ async function testOpenRouterCredentials(apiKey: string): Promise<ProviderCreden
 async function testSdkProviderCredentials(
   provider: SupportedProviderDefinition,
   request: ProviderRequestSpec,
+  parseModels: (body: unknown) => SyncProviderModelInput[],
 ): Promise<ProviderCredentialTestResult> {
   try {
     const body = await fetchJsonWithTimeout(request);
-    const providerEntry = getSdkProviderRegistryEntry(provider.id);
-    providerEntry?.parseModels(body);
+    const models = parseModels(body);
 
     return {
       providerId: provider.id,
       ok: true,
-      message: `${provider.name} API key is valid.`,
+      message:
+        provider.id === "openai-compatible"
+          ? `Connected successfully. ${models.length} models available.`
+          : `${provider.name} API key is valid.`,
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -927,7 +1012,7 @@ async function testOllamaCredentials(
 }
 
 async function fetchSdkProviderModelsForSync(
-  providerId: Exclude<ProviderId, "ollama">,
+  providerId: ApiKeyProviderId | "openai-compatible",
   request: ProviderRequestSpec,
   parseModels: (body: unknown) => SyncProviderModelInput[],
 ): Promise<SyncProviderModelInput[]> {

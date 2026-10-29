@@ -157,6 +157,7 @@ function createInitialConfigValues(provider: SupportedProviderDefinition): Recor
   for (const [key, field] of Object.entries(provider.configFields)) {
     switch (field.type) {
       case "secret":
+      case "url":
         values[key] = "";
         break;
       case "host+port":
@@ -181,6 +182,21 @@ function hasRequiredConfigValue(field: ProviderConfigFieldDefinition, value: unk
       return typeof value === "string" && value.trim().length > 0;
     case "host+port":
       return isValidHostPortValue(value);
+    case "url":
+      return isValidHttpUrl(value);
+  }
+}
+
+function isValidHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 

@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { ProviderId } from "@shared/providers/catalog";
 import type { CreateLanguageModelInput, LanguageModelResolver } from "./language-model-types";
-import { getSdkProviderRegistryEntry } from "./sdk-provider-registry";
+import { getSdkProviderRegistryEntry, type ApiKeyProviderId } from "./sdk-provider-registry";
 
 const languageModelResolvers = buildLanguageModelResolvers();
 
@@ -32,6 +32,11 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
       const { createOllamaLanguageModel } = await import("./resolvers/ollama-language-model");
       return createOllamaLanguageModel(input);
     },
+    "openai-compatible": async (input) => {
+      const { createOpenAiCompatibleLanguageModel } =
+        await import("./resolvers/openai-compatible-language-model");
+      return createOpenAiCompatibleLanguageModel(input);
+    },
     codex: async (input) => {
       const { createCodexLanguageModel } = await import("./resolvers/codex-language-model");
       return createCodexLanguageModel(input);
@@ -39,7 +44,7 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
   };
 }
 
-function createApiKeyLanguageModelResolver(providerId: Exclude<ProviderId, "ollama">) {
+function createApiKeyLanguageModelResolver(providerId: ApiKeyProviderId) {
   return async ({ providerRuntime, providerModelId }: CreateLanguageModelInput) => {
     const apiKey = providerRuntime.parsedConfig.apiKey;
     if (typeof apiKey !== "string" || !apiKey) {

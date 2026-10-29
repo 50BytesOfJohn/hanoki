@@ -3,7 +3,7 @@ import type { ProviderId } from "@shared/providers/catalog";
 import type { SyncProviderModelInput } from "../../models/repository";
 
 type ActiveModelLifecycleStatus = SyncProviderModelInput["lifecycleStatus"];
-export type ApiKeyProviderId = Exclude<ProviderId, "ollama" | "codex">;
+export type ApiKeyProviderId = Exclude<ProviderId, "ollama" | "codex" | "openai-compatible">;
 
 export interface ProviderRequestSpec {
   url: string;
@@ -242,11 +242,38 @@ export const sdkProviderRegistry = {
 export function getSdkProviderRegistryEntry(
   providerId: ProviderId,
 ): SdkProviderRegistryEntry | null {
-  if (providerId === "ollama" || providerId === "codex") {
+  if (providerId === "ollama" || providerId === "codex" || providerId === "openai-compatible") {
     return null;
   }
 
   return sdkProviderRegistry[providerId];
+}
+
+export function buildOpenAiCompatibleModelsRequest(
+  baseUrl: string,
+  apiKey: string | undefined,
+): ProviderRequestSpec {
+  const url = `${baseUrl}/models`;
+  if (apiKey) {
+    return buildBearerRequest(url, apiKey);
+  }
+
+  return {
+    url,
+    init: {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  };
+}
+
+export function parseOpenAiCompatibleModels(body: unknown): SyncProviderModelInput[] {
+  return normalizeModelList(
+    "openai-compatible",
+    extractArrayFromResponse(body, ["data", "models"], "OpenAI-compatible"),
+  );
 }
 
 function buildBearerRequest(url: string, apiKey: string): ProviderRequestSpec {

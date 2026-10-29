@@ -95,6 +95,24 @@ export function parseStoredProviderConfig(
         runtimeConfig[key] = parseStoredHostPortConfigValue(rawValue, key);
         break;
       }
+      case "url": {
+        const rawValue = parsedConfig[key];
+
+        if (rawValue == null) {
+          if (field.required) {
+            throw new Error(`Missing required stored config field "${key}".`);
+          }
+          continue;
+        }
+
+        const url = readTrimmedString(rawValue);
+        if (!url) {
+          throw new Error(`Stored url field "${key}" has invalid format.`);
+        }
+
+        runtimeConfig[key] = url;
+        break;
+      }
     }
   }
 

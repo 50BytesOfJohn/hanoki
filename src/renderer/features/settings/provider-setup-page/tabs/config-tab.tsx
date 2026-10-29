@@ -71,6 +71,29 @@ export function ProviderSetupConfigForm({
                   />
                 </SettingsRow>
               );
+            case "url":
+              return (
+                <SettingsRow
+                  key={key}
+                  title={field.label}
+                  htmlFor={`${provider.id}-${key}`}
+                  description={field.description}
+                >
+                  <Input
+                    id={`${provider.id}-${key}`}
+                    type="url"
+                    inputMode="url"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="max-w-md"
+                    placeholder={field.placeholder}
+                    value={typeof configValues[key] === "string" ? configValues[key] : ""}
+                    onChange={(event) => {
+                      onFieldChange(key, event.target.value);
+                    }}
+                  />
+                </SettingsRow>
+              );
             case "host+port": {
               const hostPortValue = getHostPortInputValue(
                 configValues[key],

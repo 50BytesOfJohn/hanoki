@@ -11,6 +11,7 @@ export type ProviderId =
   | "deepseek"
   | "cohere"
   | "huggingface"
+  | "openai-compatible"
   | "ollama";
 
 export interface ProviderHostPortConfigValue {
@@ -35,9 +36,18 @@ export interface ProviderConfigHostPortFieldDefinition {
   defaultPort?: number;
 }
 
+export interface ProviderConfigUrlFieldDefinition {
+  type: "url";
+  required?: boolean;
+  label: string;
+  description?: string;
+  placeholder?: string;
+}
+
 export type ProviderConfigFieldDefinition =
   | ProviderConfigSecretFieldDefinition
-  | ProviderConfigHostPortFieldDefinition;
+  | ProviderConfigHostPortFieldDefinition
+  | ProviderConfigUrlFieldDefinition;
 
 export interface SupportedProviderDefinition {
   id: ProviderId;
@@ -49,7 +59,7 @@ export interface SupportedProviderDefinition {
 }
 
 function createApiKeyProviderDefinition(
-  id: Exclude<ProviderId, "ollama" | "codex">,
+  id: Exclude<ProviderId, "ollama" | "codex" | "openai-compatible">,
   name: string,
   description: string,
 ): SupportedProviderDefinition {
@@ -123,6 +133,30 @@ export const SUPPORTED_PROVIDERS: readonly SupportedProviderDefinition[] = [
     isAvailable: true,
     supportsCredentialTest: true,
     configFields: {},
+  },
+  {
+    id: "openai-compatible",
+    name: "OpenAI-compatible",
+    description:
+      "Connect any server that speaks the OpenAI Chat Completions API using a custom base URL.",
+    isAvailable: true,
+    supportsCredentialTest: true,
+    configFields: {
+      baseUrl: {
+        type: "url",
+        required: true,
+        label: "Base URL",
+        description: "API root that serves /chat/completions and /models, usually ending in /v1.",
+        placeholder: "https://api.example.com/v1",
+      },
+      apiKey: {
+        type: "secret",
+        required: false,
+        label: "API Key",
+        description: "Sent as a Bearer token. Leave empty for servers that need no key.",
+        placeholder: "Enter your API key",
+      },
+    },
   },
   {
     id: "ollama",
