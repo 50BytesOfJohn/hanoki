@@ -61,7 +61,8 @@ export function ChatMessageHotkeys() {
   // message that has siblings, mirroring its toolbar arrows.
   const switchLatestBranch = (event: KeyboardEvent, step: -1 | 1) => {
     event.preventDefault();
-    if (isInteractionLocked) return;
+    // Holding the key would race the async switch against stale messages.
+    if (isInteractionLocked || event.repeat) return;
 
     const messages = getMessages();
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -90,7 +91,9 @@ export function ChatMessageHotkeys() {
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
-      requireReset: true,
+      // macOS sends no keyup for `]` while Cmd is held, so a reset would
+      // demand releasing Cmd between presses.
+      requireReset: false,
     },
   );
 
