@@ -249,9 +249,11 @@ export const sdkProviderRegistry = {
     },
     buildModelsRequest(apiKey) {
       // The full catalog is 20k+ models; sync only the most used ones.
+      // Featherless answers 404 to Node's default `User-Agent: node`, so send our own.
       return buildBearerRequest(
         "https://api.featherless.ai/v1/models?sort=-popularity&per_page=200",
         apiKey,
+        { "User-Agent": "Hanoki" },
       );
     },
     parseModels(body) {
@@ -316,7 +318,11 @@ export function parseOpenAiCompatibleModels(body: unknown): SyncProviderModelInp
   );
 }
 
-function buildBearerRequest(url: string, apiKey: string): ProviderRequestSpec {
+function buildBearerRequest(
+  url: string,
+  apiKey: string,
+  extraHeaders?: Record<string, string>,
+): ProviderRequestSpec {
   return {
     url,
     init: {
@@ -324,6 +330,7 @@ function buildBearerRequest(url: string, apiKey: string): ProviderRequestSpec {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders,
       },
     },
   };

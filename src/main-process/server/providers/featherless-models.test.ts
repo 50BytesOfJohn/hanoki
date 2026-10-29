@@ -7,6 +7,11 @@ describe("featherless model sync", () => {
     expect(request.url).toBe("https://api.featherless.ai/v1/models?sort=-popularity&per_page=200");
   });
 
+  it("overrides Node's default user agent, which Featherless rejects with a 404", () => {
+    const request = sdkProviderRegistry.featherless.buildModelsRequest("key");
+    expect(new Headers(request.init.headers).get("user-agent")).toBe("Hanoki");
+  });
+
   it("skips speech and classifier models", () => {
     const models = sdkProviderRegistry.featherless.parseModels({
       data: [
