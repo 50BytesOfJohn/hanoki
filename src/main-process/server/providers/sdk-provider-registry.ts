@@ -237,6 +237,46 @@ export const sdkProviderRegistry = {
       );
     },
   },
+  featherless: {
+    async createLanguageModel(apiKey, providerModelId) {
+      const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
+      return createOpenAICompatible({
+        name: "featherless",
+        baseURL: "https://api.featherless.ai/v1",
+        apiKey,
+        includeUsage: true,
+      }).chatModel(providerModelId);
+    },
+    buildModelsRequest(apiKey) {
+      // The full catalog is 20k+ models; sync only the most used ones.
+      return buildBearerRequest(
+        "https://api.featherless.ai/v1/models?sort=-popularity&per_page=200",
+        apiKey,
+      );
+    },
+    parseModels(body) {
+      return normalizeModelList(
+        "featherless",
+        extractArrayFromResponse(body, ["data"], "Featherless"),
+        {
+          include(rawModel) {
+            // Skip text-to-speech and classifier models; they can't chat.
+            const features = rawModel.features;
+            if (!features || typeof features !== "object") {
+              return true;
+            }
+
+            // SAFETY: checked above that `features` is a non-null object.
+            const featureFlags = features as Record<string, unknown>;
+            return (
+              !hasTruthyFlag(featureFlags, "audio_output") &&
+              !hasTruthyFlag(featureFlags, "classifier")
+            );
+          },
+        },
+      );
+    },
+  },
 } satisfies Record<ApiKeyProviderId, SdkProviderRegistryEntry>;
 
 export function getSdkProviderRegistryEntry(

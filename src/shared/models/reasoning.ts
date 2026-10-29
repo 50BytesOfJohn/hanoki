@@ -53,6 +53,7 @@ const REASONING_EFFORTS_BY_PROVIDER = {
   deepseek: ["low", "medium", "high", "xhigh"],
   togetherai: ["low", "medium", "high"],
   huggingface: ["low", "medium", "high"],
+  featherless: ["low", "medium", "high"],
   // Passed through verbatim as `reasoning_effort`; stick to the widely accepted values.
   "openai-compatible": ["low", "medium", "high"],
   codex: ["low", "medium", "high", "xhigh"],

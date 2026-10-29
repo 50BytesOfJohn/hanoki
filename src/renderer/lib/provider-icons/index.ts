@@ -61,11 +61,17 @@ const HuggingFaceIcon = createRemoteProviderIcon({
   alt: "Hugging Face",
 });
 
+const FeatherlessIcon = createRemoteProviderIcon({
+  lightUrl: "https://featherless.ai/favicon.ico",
+  alt: "Featherless",
+});
+
 export const providerIconsById = {
   anthropic: AnthropicIcon,
   codex: OpenAiIcon,
   cohere: CohereIcon,
   deepseek: DeepSeekIcon,
+  featherless: FeatherlessIcon,
   google: GoogleIcon,
   groq: GroqIcon,
   huggingface: HuggingFaceIcon,

@@ -11,6 +11,7 @@ export type ProviderId =
   | "deepseek"
   | "cohere"
   | "huggingface"
+  | "featherless"
   | "openai-compatible"
   | "ollama";
 
@@ -124,6 +125,11 @@ export const SUPPORTED_PROVIDERS: readonly SupportedProviderDefinition[] = [
     "huggingface",
     "Hugging Face",
     "Use Hugging Face API keys to access hosted chat models.",
+  ),
+  createApiKeyProviderDefinition(
+    "featherless",
+    "Featherless",
+    "Use Featherless API keys to access open-weight models from Hugging Face.",
   ),
   {
     id: "codex",
