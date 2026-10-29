@@ -61,12 +61,15 @@ import { encryptString, isEncryptionAvailable } from "./safe-storage";
 export interface ProviderService {
   listProviders(): ProviderInfo[];
   listProviderModels(providerId: string): ProviderModelInfo[];
+  syncProviderModels(providerId: string): Promise<void>;
   testCredentials(input: ProviderCredentialTestInput): Promise<ProviderCredentialTestResult>;
   saveProvider(input: SaveProviderInput): SaveProviderResult;
   updateProviderSecrets(input: UpdateProviderSecretsInput): ProviderInfo;
   deleteProvider(providerId: string): void;
   syncProvidersOnStartup(): Promise<void>;
 }
+
+type ProviderModelSyncResult = { status: "succeeded" } | { status: "failed"; error: string };
 
 interface ProviderModelSyncCompletedPayload {
   providerId: string;
@@ -105,6 +108,21 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         status: row.lifecycleStatus as ProviderModelInfo["status"],
         metadata: row.metadata,
       }));
+    },
+
+    async syncProviderModels(providerId) {
+      if (!getProviderById(providerId)) {
+        throw AppError.notFound(`Provider "${providerId}" not found.`);
+      }
+
+      const result = await syncProviderModelsInBackground(providerId, "manual");
+      if (!result) {
+        throw AppError.badRequest("Models are already syncing for this provider.");
+      }
+
+      if (result.status === "failed") {
+        throw AppError.internal(result.error);
+      }
     },
 
     async testCredentials(input) {
@@ -240,12 +258,12 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       let failedProviders = 0;
 
       for (const result of results) {
-        if (result === "succeeded") {
+        if (result?.status === "succeeded") {
           succeededProviders += 1;
           continue;
         }
 
-        if (result === "failed") {
+        if (result?.status === "failed") {
           failedProviders += 1;
         }
       }
@@ -261,7 +279,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
   async function syncProviderModelsInBackground(
     providerId: string,
     syncContext: ProviderModelSyncContext,
-  ): Promise<ProviderModelSyncStatus | null> {
+  ): Promise<ProviderModelSyncResult | null> {
     if (inFlightModelSyncProviderIds.has(providerId)) {
       return null;
     }
@@ -271,7 +289,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       return await runProviderModelSync(providerId, syncContext, options?.onModelSyncCompleted);
     } catch (error) {
       console.error(`Provider model sync crashed for provider "${providerId}".`, error);
-      return "failed";
+      return { status: "failed", error: formatModelSyncErrorMessage(error) };
     } finally {
       inFlightModelSyncProviderIds.delete(providerId);
     }
@@ -556,10 +574,10 @@ async function runProviderModelSync(
   providerId: string,
   syncContext: ProviderModelSyncContext,
   onModelSyncCompleted?: (payload: ProviderModelSyncCompletedPayload) => void,
-): Promise<ProviderModelSyncStatus> {
+): Promise<ProviderModelSyncResult> {
   const providerRow = getProviderById(providerId);
   if (!providerRow) {
-    return "failed";
+    return { status: "failed", error: `Provider "${providerId}" not found.` };
   }
 
   const startedAt = Date.now();
@@ -593,12 +611,13 @@ async function runProviderModelSync(
       providerId,
       status: "succeeded",
     });
-    return "succeeded";
+    return { status: "succeeded" };
   } catch (error) {
     const endedAt = Date.now();
+    const errorMessage = formatModelSyncErrorMessage(error);
     updateProviderModelsSyncStatus(providerId, "failed");
     updateProviderMetadataModelSync(providerId, {
-      error: formatModelSyncErrorMessage(error),
+      error: errorMessage,
       ended_at: endedAt,
       duration: endedAt - startedAt,
     });
@@ -609,7 +628,7 @@ async function runProviderModelSync(
       providerId,
       status: "failed",
     });
-    return "failed";
+    return { status: "failed", error: errorMessage };
   }
 }
 

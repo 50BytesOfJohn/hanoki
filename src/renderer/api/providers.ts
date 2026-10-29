@@ -13,6 +13,9 @@ export const providerApi = {
   listModels(providerId: string) {
     return window.electronAPI.listProviderModels(providerId);
   },
+  syncModels(providerId: string) {
+    return window.electronAPI.syncProviderModels(providerId);
+  },
   testCredentials(input: ProviderCredentialTestInput) {
     return window.electronAPI.testProviderCredentials(input);
   },

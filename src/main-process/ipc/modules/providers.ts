@@ -138,6 +138,13 @@ export function registerProvidersIpcModule(
       services.providers.listProviderModels(providerId),
   });
 
+  registerInvokeHandler<[string], void>(context, registeredChannels, {
+    channel: IPC_CHANNELS.providers.syncModels,
+    parseArgs: parseProviderRecordIdArg,
+    handler: ({ services }, _event, providerId) =>
+      services.providers.syncProviderModels(providerId),
+  });
+
   registerInvokeHandler<[ProviderCredentialTestInput], ProviderCredentialTestResult>(
     context,
     registeredChannels,

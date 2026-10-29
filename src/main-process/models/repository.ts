@@ -20,7 +20,7 @@ export interface SyncProviderModelInput {
 }
 
 export type UpdateModelInput = ModelMutableUpdates;
-export type ProviderModelSyncContext = "provider-added" | "startup";
+export type ProviderModelSyncContext = "provider-added" | "startup" | "manual";
 export interface SyncProviderModelsOptions {
   context: ProviderModelSyncContext;
 }
@@ -325,6 +325,7 @@ function getModelEnablementPolicyForSyncContext(context: ProviderModelSyncContex
         existingModelsEnabled: true,
       };
     case "startup":
+    case "manual":
       return {
         // Future startup sync should preserve user choices for existing rows and
         // keep newly discovered models disabled until explicitly enabled.

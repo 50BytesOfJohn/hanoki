@@ -63,3 +63,18 @@ export function useDeleteProvider() {
     },
   });
 }
+
+export function useSyncProviderModels() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (providerId: string) => providerApi.syncModels(providerId),
+    onSettled: (_data, _error, providerId) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.providers.models(providerId),
+        exact: true,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.models.list(), exact: true });
+    },
+  });
+}

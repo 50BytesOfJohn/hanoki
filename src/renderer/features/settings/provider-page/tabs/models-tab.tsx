@@ -4,6 +4,7 @@ import {
   Cancel01Icon,
   FilterHorizontalIcon,
   MoreIcon,
+  RefreshIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -28,7 +29,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSetProviderModelsEnabled, useUpdateModel } from "@/mutations/models";
+import { useSyncProviderModels } from "@/mutations/providers";
 import { listProviderModelsQueryOptions } from "@/queries/providers";
 import {
   decorateModel,
@@ -59,6 +62,7 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
   const modelsQuery = useQuery(listProviderModelsQueryOptions(providerId));
   const updateModelMutation = useUpdateModel();
   const setProviderModelsEnabledMutation = useSetProviderModelsEnabled();
+  const syncModelsMutation = useSyncProviderModels();
   const models = modelsQuery.data ?? [];
 
   // "codex" is the ChatGPT sign-in, not a lab — its models are OpenAI's.
@@ -92,6 +96,16 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
   const isBatchMutating = setProviderModelsEnabledMutation.isPending;
   const isModelMutating = isBatchMutating || updateModelMutation.isPending;
   const enabledCount = models.filter((model) => model.isEnabled).length;
+  const isSyncing = syncModelsMutation.isPending;
+  const syncModels = () => syncModelsMutation.mutate(providerId);
+
+  const syncErrorAlert = syncModelsMutation.isError ? (
+    <Alert variant="destructive">
+      <HugeiconsIcon icon={Alert01Icon} />
+      <AlertTitle>Failed to sync models</AlertTitle>
+      <AlertDescription>{getErrorMessage(syncModelsMutation.error)}</AlertDescription>
+    </Alert>
+  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border p-3">
@@ -107,11 +121,18 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
           <AlertDescription>{getErrorMessage(modelsQuery.error)}</AlertDescription>
         </Alert>
       ) : models.length === 0 ? (
-        <Alert>
-          <HugeiconsIcon icon={Alert01Icon} />
-          <AlertTitle>No models found</AlertTitle>
-          <AlertDescription>This provider has no synced models yet.</AlertDescription>
-        </Alert>
+        <div className="flex flex-col gap-3">
+          <Alert>
+            <HugeiconsIcon icon={Alert01Icon} />
+            <AlertTitle>No models found</AlertTitle>
+            <AlertDescription>This provider has no synced models yet.</AlertDescription>
+          </Alert>
+          {syncErrorAlert}
+          <Button className="self-start" variant="outline" disabled={isSyncing} onClick={syncModels}>
+            {isSyncing ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />}
+            Sync models
+          </Button>
+        </div>
       ) : (
         <div className="flex h-full min-h-0 flex-col gap-3">
           <div className="flex items-center gap-2">
@@ -138,6 +159,24 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
                 </InputGroupAddon>
               ) : null}
             </InputGroup>
+
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    className="shrink-0 text-muted-foreground"
+                    size="icon"
+                    aria-label="Sync models"
+                    variant="ghost"
+                    disabled={isSyncing}
+                    onClick={syncModels}
+                  />
+                }
+              >
+                {isSyncing ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} />}
+              </TooltipTrigger>
+              <TooltipContent>Sync models from provider</TooltipContent>
+            </Tooltip>
 
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -236,6 +275,8 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {syncErrorAlert}
 
           {updateModelMutation.isError ? (
             <Alert variant="destructive">

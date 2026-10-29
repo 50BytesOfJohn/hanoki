@@ -88,6 +88,7 @@ export const IPC_CHANNELS = {
   providers: {
     list: "providers:list",
     listModels: "providers:listModels",
+    syncModels: "providers:syncModels",
     testCredentials: "providers:testCredentials",
     save: "providers:save",
     updateSecrets: "providers:updateSecrets",
@@ -681,6 +682,8 @@ export interface IpcApi {
   importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
+  /** Re-fetches the provider's model list; rejects with the sync error on failure. */
+  syncProviderModels: (providerId: string) => Promise<void>;
   testProviderCredentials: (
     input: ProviderCredentialTestInput,
   ) => Promise<ProviderCredentialTestResult>;
