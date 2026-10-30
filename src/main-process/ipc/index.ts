@@ -1,4 +1,5 @@
 import type { IpcHandlerContext } from "./core/context";
+import { registerApplicationMenuIpcModule } from "./modules/application-menu";
 import { registerChatsIpcModule } from "./modules/chats";
 import { registerChatTreeIpcModule } from "./modules/chat-tree";
 import { registerContextMenuIpcModule } from "./modules/context-menu";
@@ -18,6 +19,7 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   registerWorkspaceIpcModule(context, registeredChannels);
   registerSettingsIpcModule(context, registeredChannels);
   registerContextMenuIpcModule(context, registeredChannels);
+  registerApplicationMenuIpcModule(context, registeredChannels);
   registerChatTreeIpcModule(context, registeredChannels);
   registerFoldersIpcModule(context, registeredChannels);
   registerItemsIpcModule(context, registeredChannels);

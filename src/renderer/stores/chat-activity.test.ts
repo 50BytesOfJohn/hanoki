@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyChatStatus,
+  countUnread,
   markRead,
   sortActivity,
   type ChatActivityEntries,
@@ -92,5 +93,19 @@ describe("sortActivity", () => {
       "new-unread",
       "old-unread",
     ]);
+  });
+});
+
+describe("countUnread", () => {
+  it("counts unread chats across workspaces and ignores working ones", () => {
+    const entry = { since: 1_000, outcome: "done" } as const;
+    const entries: ChatActivityEntries = {
+      a: { ...entry, chatId: "a", workspaceId: "ws-1", kind: "unread" },
+      b: { ...entry, chatId: "b", workspaceId: "ws-2", kind: "unread" },
+      c: { ...entry, chatId: "c", workspaceId: "ws-1", kind: "working", outcome: "running" },
+    };
+
+    expect(countUnread(entries)).toBe(2);
+    expect(countUnread({})).toBe(0);
   });
 });

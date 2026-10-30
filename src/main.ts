@@ -1,7 +1,7 @@
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import started from "electron-squirrel-startup";
-import { installApplicationMenu } from "./main-process/app/application-menu";
+import { installApplicationMenu, setUnreadChatCount } from "./main-process/app/application-menu";
 import { bootstrapBackend } from "./main-process/app/bootstrap-backend";
 import { createMainWindow } from "./main-process/app/create-main-window";
 import { getUpdateState, initUpdater } from "./main-process/app/updater";
@@ -132,6 +132,7 @@ if (!app.requestSingleInstanceLock()) {
       trustedSenders: backend.trustedSenders,
       onClosed: () => {
         mainWindow = null;
+        setUnreadChatCount(0);
       },
     });
     mainWindow.on("close", (event) => {

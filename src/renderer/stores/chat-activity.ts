@@ -74,6 +74,11 @@ export function markRead(
   return read.length > 0 ? omit(entries, read) : entries;
 }
 
+/** Chats that finished while the user was elsewhere, across every workspace. */
+export function countUnread(entries: ChatActivityEntries): number {
+  return Object.values(entries).filter((entry) => entry.kind === "unread").length;
+}
+
 /** Working chats first (longest running leading), then unread (most recent reply leading). */
 export function sortActivity(entries: readonly ChatActivityEntry[]): ChatActivityEntry[] {
   return [...entries].sort((a, b) => {

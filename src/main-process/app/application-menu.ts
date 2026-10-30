@@ -1,4 +1,4 @@
-import { Menu, type MenuItemConstructorOptions } from "electron";
+import { Menu, type MenuItemBadge, type MenuItemConstructorOptions } from "electron";
 
 import { getConfig } from "../config";
 import type { AppServices } from "../services";
@@ -20,6 +20,7 @@ interface ApplicationMenuDeps {
 }
 
 let deps: ApplicationMenuDeps | null = null;
+let unreadChatCount = 0;
 
 export function installApplicationMenu(next: ApplicationMenuDeps): void {
   deps = next;
@@ -36,6 +37,23 @@ export function syncApplicationMenu(): void {
   if (item) {
     item.checked = getConfig().chat.activityPanel.enabled;
   }
+}
+
+/**
+ * Shows unread chats on the activity panel item. The renderer owns the count: it lives
+ * in memory there, so main only mirrors it, and clears it when the window goes away.
+ */
+export function setUnreadChatCount(count: number): void {
+  unreadChatCount = count;
+  const item = Menu.getApplicationMenu()?.getMenuItemById(ACTIVITY_PANEL_ITEM_ID);
+  if (item) {
+    item.badge = unreadChatBadge();
+  }
+}
+
+/** A predefined badge type, so macOS localizes and pluralizes the text. macOS 14+ only. */
+function unreadChatBadge(): MenuItemBadge | undefined {
+  return isMac && unreadChatCount > 0 ? { type: "new-items", count: unreadChatCount } : undefined;
 }
 
 /**
@@ -91,6 +109,7 @@ function buildTemplate(): MenuItemConstructorOptions[] {
           label: "Show Activity Panel",
           type: "checkbox",
           checked: getConfig().chat.activityPanel.enabled,
+          badge: unreadChatBadge(),
           // A checkbox item flips `checked` itself before `click` runs.
           click: (item) => setActivityPanelEnabled(item.checked),
         },

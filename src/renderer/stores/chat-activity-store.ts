@@ -1,11 +1,13 @@
 import * as React from "react";
 import { create } from "zustand";
 
+import { applicationMenuApi } from "@/api/application-menu";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { getPanes } from "@/features/workspace/store/layout-tree";
 import type { WorkspaceStoreState } from "@/features/workspace/store/types";
 import {
   applyChatStatus,
+  countUnread,
   markRead,
   sortActivity,
   type ChatActivityEntries,
@@ -95,3 +97,19 @@ useWorkspaceStore.subscribe((state) => {
   if (visible.length === 0) return;
   useChatActivityStore.setState((activity) => ({ entries: markRead(activity.entries, visible) }));
 });
+
+// The native menu can't read this store, so mirror the count over. Publishing at load also
+// clears whatever a previous renderer left behind, since a reload empties the store.
+let publishedUnreadCount: number | null = null;
+
+function publishUnreadCount(entries: ChatActivityEntries) {
+  const count = countUnread(entries);
+  if (count === publishedUnreadCount) return;
+  publishedUnreadCount = count;
+  applicationMenuApi.setUnreadChatCount(count).catch((error: unknown) => {
+    console.error("[menu] Failed to update the unread chat badge:", error);
+  });
+}
+
+publishUnreadCount(useChatActivityStore.getState().entries);
+useChatActivityStore.subscribe((state) => publishUnreadCount(state.entries));

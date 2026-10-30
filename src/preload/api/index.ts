@@ -1,4 +1,5 @@
 import type { IpcApi } from "@shared/ipc";
+import { createApplicationMenuApi } from "./application-menu";
 import { createChatsApi } from "./chats";
 import { createChatTreeApi } from "./chat-tree";
 import { createContextMenuApi } from "./context-menu";
@@ -20,6 +21,7 @@ export function createElectronApi(): IpcApi {
     ...createWorkspaceApi(),
     ...createSettingsApi(),
     ...createContextMenuApi(),
+    ...createApplicationMenuApi(),
     ...createChatTreeApi(),
     ...createFoldersApi(),
     ...createItemsApi(),

@@ -32,6 +32,9 @@ export const IPC_CHANNELS = {
   contextMenu: {
     execute: "contextMenu:execute",
   },
+  applicationMenu: {
+    setUnreadChatCount: "applicationMenu:setUnreadChatCount",
+  },
   chatTree: {
     get: "chatTree:get",
     getChildren: "chatTree:getChildren",
@@ -614,6 +617,8 @@ export interface IpcApi {
   /** Opens a native folder picker. Resolves to null when the user cancels. */
   pickTerminalWorkingDirectory: () => Promise<string | null>;
   executeContextMenuCommand: (input: ContextMenuCommandInput) => Promise<void>;
+  /** Mirrors the unread chat count onto the application menu. */
+  setUnreadChatCount: (count: number) => Promise<void>;
   getChatTree: (workspaceId: string) => Promise<ChatTreeSnapshot>;
   getChatTreeChildren: (
     workspaceId: string,
