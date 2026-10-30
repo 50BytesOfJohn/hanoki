@@ -177,7 +177,7 @@ export function ProviderSetupConfigForm({
       ) : null}
 
       <div className="flex items-center justify-between gap-2">
-        <Button variant="ghost" render={<Link to="/settings/providers/new" />}>
+        <Button variant="ghost" nativeButton={false} render={<Link to="/settings/providers/new" />}>
           <span>Back</span>
         </Button>
         <div className="flex items-center gap-2">

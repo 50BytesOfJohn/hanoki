@@ -29,7 +29,11 @@ export function ProviderSetupPage({ providerId }: ProviderSetupPageProps) {
           title="Provider not supported"
           description="The selected provider is not available in this build yet."
         />
-        <Button variant="outline" render={<Link to="/settings/providers/new" />}>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link to="/settings/providers/new" />}
+        >
           <span>Back to providers</span>
         </Button>
       </SettingsPageShell>

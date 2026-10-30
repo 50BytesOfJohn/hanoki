@@ -30,6 +30,7 @@ export function ProviderPickerPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    nativeButton={false}
                     render={
                       <Link
                         to="/settings/providers/new/$providerId"

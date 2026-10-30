@@ -67,6 +67,7 @@ export function SettingsLayout() {
             size="xs"
             variant="ghost"
             className="text-muted-foreground"
+            nativeButton={false}
             render={<Link to="/chat" />}
           >
             <HugeiconsIcon icon={ArrowLeft01Icon} className="size-3.5!" />
@@ -127,7 +128,12 @@ export function SettingsLayout() {
             <SidebarGroup>
               <SidebarGroupLabel className="justify-between gap-2">
                 <span>Workspaces</span>
-                <Button size="xs" variant="ghost" render={<Link to="/settings/workspaces/new" />}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  nativeButton={false}
+                  render={<Link to="/settings/workspaces/new" />}
+                >
                   <HugeiconsIcon icon={Add01Icon} />
                   <span>New</span>
                 </Button>
@@ -170,7 +176,12 @@ export function SettingsLayout() {
             <SidebarGroup>
               <SidebarGroupLabel className="justify-between gap-2">
                 <span>Providers</span>
-                <Button size="xs" variant="ghost" render={<Link to="/settings/providers/new" />}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  nativeButton={false}
+                  render={<Link to="/settings/providers/new" />}
+                >
                   <HugeiconsIcon icon={Add01Icon} />
                   <span>New</span>
                 </Button>
