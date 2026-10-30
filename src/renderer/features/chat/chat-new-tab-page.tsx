@@ -15,7 +15,6 @@ import markUrl from "@/assets/hanoki-mark.png";
 import { chatTreeApi } from "@/api/chat-tree";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { useCreateChat } from "@/mutations/chats";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "cn";
@@ -24,7 +23,7 @@ import type { NativeChatDrag } from "./chat-layout";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { flattenSnapshotChats } from "./chat-sidebar-tree";
-import { applyItemTitleUpdate } from "../items/item-title-events";
+import { useNewChatTab } from "./use-new-chat-tab";
 import type { ItemType } from "@shared/ipc";
 
 const RECENT_LIMIT = 5;
@@ -39,8 +38,9 @@ const ENTER =
  */
 export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const openItem = useWorkspaceStore((state) => state.openItem);
   const openTab = useWorkspaceStore((state) => state.openTab);
-  const createChatMutation = useCreateChat();
+  const openNewChat = useNewChatTab();
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [isOver, setIsOver] = React.useState(false);
   const armed = drag?.kind === "item";
@@ -58,24 +58,6 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
     select: (snapshot) => flattenSnapshotChats(snapshot).slice(0, RECENT_LIMIT),
     enabled: Boolean(workspaceId),
   });
-
-  const createChat = async () => {
-    if (!workspaceId || createChatMutation.isPending) return;
-    const chat = await createChatMutation.mutateAsync({
-      workspaceId,
-      title: "New chat",
-      folderId: null,
-    });
-    // The tree sidebar loads its children outside react-query, so a query invalidation
-    // alone leaves it stale — this event is the refresh signal both sidebar modes listen to.
-    applyItemTitleUpdate({
-      type: "item:title-updated",
-      itemId: chat.id,
-      itemType: "chat",
-      workspaceId,
-      title: chat.title,
-    });
-  };
 
   return (
     <div
@@ -137,7 +119,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
           />
 
           <div className={cn("mt-6 flex items-center gap-2", ENTER)} style={delay(40)}>
-            <Button size="sm" disabled={!workspaceId} onClick={() => void createChat()}>
+            <Button size="sm" disabled={!workspaceId} onClick={openNewChat}>
               <HugeiconsIcon icon={ChatAdd01Icon} />
               New chat
             </Button>
@@ -161,7 +143,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
                   <li key={chat.id} className={ENTER} style={delay(160 + index * 30)}>
                     <button
                       type="button"
-                      onClick={() => openTab({ type: "chat", itemId: chat.id })}
+                      onClick={() => openItem(chat.id, "chat")}
                       className="group relative flex h-8 w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60"
                     >
                       <HugeiconsIcon
@@ -204,7 +186,7 @@ export function ChatNewTabPage({ drag }: { drag: NativeChatDrag | null }) {
           workspaceId={workspaceId}
           open={searchOpen}
           onOpenChange={setSearchOpen}
-          onSelectChat={(chatId) => openTab({ type: "chat", itemId: chatId })}
+          onSelectChat={(chatId) => openItem(chatId, "chat")}
         />
       ) : null}
     </div>

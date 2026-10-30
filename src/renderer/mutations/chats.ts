@@ -8,7 +8,7 @@ import { queryKeys } from "../queries/keys";
 
 export function useCreateChat() {
   const navigate = useNavigate();
-  const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
+  const openItem = useWorkspaceStore((state) => state.openItem);
 
   return useMutation({
     mutationFn: ({
@@ -19,9 +19,10 @@ export function useCreateChat() {
       workspaceId: string;
       title: string;
       folderId?: string | null;
+      newTab?: boolean;
     }) => chatsApi.create(workspaceId, title, folderId),
-    onSuccess: (chat) => {
-      setCurrentChat(chat.id);
+    onSuccess: (chat, { newTab }) => {
+      openItem(chat.id, "chat", { newTab });
       void navigate({ to: "/chat" });
     },
   });

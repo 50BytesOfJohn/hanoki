@@ -7,23 +7,13 @@ import { workspaceApi } from "@/api/workspaces";
 import { parseTiptapDocument } from "@shared/tiptap/document";
 import { getFocusedPane } from "../layout-tree";
 
-export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set, get) => ({
+export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set) => ({
   state: "idle",
   workspace: null,
   activeTabId: null,
   currentChatId: null,
   sidebarViewMode: null,
   chatDrafts: {},
-
-  setCurrentChat: (chatId) => {
-    if (chatId === null) {
-      set((state) => {
-        state.currentChatId = null;
-      });
-      return;
-    }
-    get().openItemInFocusedPane(chatId, "chat");
-  },
 
   setChatDraft: (chatId, draft) => {
     set((state) => {
@@ -68,6 +58,8 @@ export const createWorkspaceSlice: WorkspaceSliceCreator<WorkspaceSlice> = (set,
       state.workspace = newWorkspace;
 
       state.tabs = normalizedTabs;
+      state.tabHistory = [];
+      state.closedTabs = [];
       state.activeTabId = state.tabs.some((tab) => tab.id === newSettings.activeTabId)
         ? (newSettings.activeTabId ?? null)
         : (state.tabs[0]?.id ?? null);

@@ -9,9 +9,15 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Cancel01Icon, ComputerTerminal01Icon, FileScriptIcon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  Cancel01Icon,
+  ComputerTerminal01Icon,
+  FileScriptIcon,
+} from "@hugeicons/core-free-icons";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
+import { useNewChatTab } from "./use-new-chat-tab";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +30,7 @@ import {
 import { getItemQueryOptions } from "@/queries/items";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useChatStatus } from "@/stores/chat-store";
+import { modShortcut } from "@/lib/platform";
 import { cn } from "cn";
 import type { ChatTabsPosition, ItemType } from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
@@ -53,131 +60,102 @@ export function useChatTabsPosition(): ChatTabsPosition {
 function useTabStrip() {
   const tabs = useWorkspaceStore((s) => s.tabs);
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
-  const selectTab = useWorkspaceStore((s) => s.selectTab);
-  const closeTab = useWorkspaceStore((s) => s.closeTab);
-  const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs);
-  const closeTabsToLeft = useWorkspaceStore((s) => s.closeTabsToLeft);
-  const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight);
   const moveTab = useWorkspaceStore((s) => s.moveTab);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const handleDragEnd = React.useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) {
-        return;
-      }
-      const toIndex = tabs.findIndex((tab) => tab.id === over.id);
-      if (toIndex !== -1) {
-        moveTab(String(active.id), toIndex);
-      }
-    },
-    [moveTab, tabs],
-  );
-
-  return {
-    tabs,
-    activeTabId,
-    selectTab,
-    closeTab,
-    closeOtherTabs,
-    closeTabsToLeft,
-    closeTabsToRight,
-    sensors,
-    handleDragEnd,
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+    const toIndex = tabs.findIndex((tab) => tab.id === over.id);
+    if (toIndex !== -1) {
+      moveTab(String(active.id), toIndex);
+    }
   };
+
+  return { tabs, activeTabId, sensors, handleDragEnd };
 }
 
 /* ── Horizontal strip (window toolbar) ── */
 
 export function ChatTabsBar() {
-  const {
-    tabs,
-    activeTabId,
-    selectTab,
-    closeTab,
-    closeOtherTabs,
-    closeTabsToLeft,
-    closeTabsToRight,
-    sensors,
-    handleDragEnd,
-  } = useTabStrip();
+  const { tabs, activeTabId, sensors, handleDragEnd } = useTabStrip();
   const openTab = useWorkspaceStore((s) => s.openTab);
+  const openNewChat = useNewChatTab();
   const [isChatDropTarget, setIsChatDropTarget] = React.useState(false);
 
   const hasChatDrag = (event: React.DragEvent) =>
     event.dataTransfer.types.includes(CHAT_DRAG_FORMAT);
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
-        <div
-          role="tablist"
-          aria-label="Open chats"
-          aria-orientation="horizontal"
-          onDragOver={(event) => {
-            if (hasChatDrag(event)) {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "copy";
-              setIsChatDropTarget(true);
-            }
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-              setIsChatDropTarget(false);
-            }
-          }}
-          onDrop={(event) => {
-            setIsChatDropTarget(false);
-            if (!hasChatDrag(event)) {
-              return;
-            }
-            event.preventDefault();
-            for (const item of readDraggedItems(event))
-              openTab({ type: item.type, itemId: item.id });
-          }}
-          className={cn(
-            "flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            isChatDropTarget && "bg-hover ring-1 ring-muted-foreground/30 ring-dashed",
-          )}
-        >
-          {tabs.map((tab, index) => (
-            <ChatTabItem
-              key={tab.id}
-              tab={tab}
-              orientation="horizontal"
-              isActive={activeTabId === tab.id}
-              canCloseOthers={tabs.length > 1}
-              canCloseToLeft={index > 0}
-              canCloseToRight={index < tabs.length - 1}
-              onSelect={() => selectTab(tab.id)}
-              onClose={() => closeTab(tab.id)}
-              onCloseOthers={() => closeOtherTabs(tab.id)}
-              onCloseToLeft={() => closeTabsToLeft(tab.id)}
-              onCloseToRight={() => closeTabsToRight(tab.id)}
-            />
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
+    <div
+      onDragOver={(event) => {
+        if (hasChatDrag(event)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setIsChatDropTarget(true);
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsChatDropTarget(false);
+        }
+      }}
+      onDrop={(event) => {
+        setIsChatDropTarget(false);
+        if (!hasChatDrag(event)) {
+          return;
+        }
+        event.preventDefault();
+        for (const item of readDraggedItems(event)) openTab({ type: item.type, itemId: item.id });
+      }}
+      className={cn(
+        "flex h-full min-w-0 flex-1 items-center gap-1 rounded-md",
+        isChatDropTarget && "bg-hover ring-1 ring-muted-foreground/30 ring-dashed",
+      )}
+    >
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
+          <div
+            role="tablist"
+            aria-label="Open chats"
+            aria-orientation="horizontal"
+            className="flex h-full min-w-0 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {tabs.map((tab, index) => (
+              <ChatTabItem
+                key={tab.id}
+                tab={tab}
+                orientation="horizontal"
+                isActive={activeTabId === tab.id}
+                index={index}
+                tabCount={tabs.length}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        data-window-no-drag
+        className="shrink-0 text-muted-foreground"
+        aria-label="New chat tab"
+        title={`New chat tab (${modShortcut("T")})`}
+        onClick={openNewChat}
+      >
+        <HugeiconsIcon icon={Add01Icon} className="size-3.5!" />
+      </Button>
+    </div>
   );
 }
 
 /* ── Vertical list (sidebar "Tabs" section) ── */
 
 export function ChatTabsSidebarList() {
-  const {
-    tabs,
-    activeTabId,
-    selectTab,
-    closeTab,
-    closeOtherTabs,
-    closeTabsToLeft,
-    closeTabsToRight,
-    sensors,
-    handleDragEnd,
-  } = useTabStrip();
+  const { tabs, activeTabId, sensors, handleDragEnd } = useTabStrip();
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -194,14 +172,8 @@ export function ChatTabsSidebarList() {
               tab={tab}
               orientation="vertical"
               isActive={activeTabId === tab.id}
-              canCloseOthers={tabs.length > 1}
-              canCloseToLeft={index > 0}
-              canCloseToRight={index < tabs.length - 1}
-              onSelect={() => selectTab(tab.id)}
-              onClose={() => closeTab(tab.id)}
-              onCloseOthers={() => closeOtherTabs(tab.id)}
-              onCloseToLeft={() => closeTabsToLeft(tab.id)}
-              onCloseToRight={() => closeTabsToRight(tab.id)}
+              index={index}
+              tabCount={tabs.length}
             />
           ))}
         </div>
@@ -216,27 +188,25 @@ function ChatTabItem({
   tab,
   orientation,
   isActive,
-  canCloseOthers,
-  canCloseToLeft,
-  canCloseToRight,
-  onSelect,
-  onClose,
-  onCloseOthers,
-  onCloseToLeft,
-  onCloseToRight,
+  index,
+  tabCount,
 }: {
   tab: Tab;
   orientation: "horizontal" | "vertical";
   isActive: boolean;
-  canCloseOthers: boolean;
-  canCloseToLeft: boolean;
-  canCloseToRight: boolean;
-  onSelect: () => void;
-  onClose: () => void;
-  onCloseOthers: () => void;
-  onCloseToLeft: () => void;
-  onCloseToRight: () => void;
+  index: number;
+  tabCount: number;
 }) {
+  const selectTab = useWorkspaceStore((s) => s.selectTab);
+  const closeTab = useWorkspaceStore((s) => s.closeTab);
+  const closeOtherTabs = useWorkspaceStore((s) => s.closeOtherTabs);
+  const closeTabsToLeft = useWorkspaceStore((s) => s.closeTabsToLeft);
+  const closeTabsToRight = useWorkspaceStore((s) => s.closeTabsToRight);
+  const keepTab = useWorkspaceStore((s) => s.keepTab);
+  const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab);
+  const hasClosedTabs = useWorkspaceStore((s) => s.closedTabs.length > 0);
+  const onSelect = () => selectTab(tab.id);
+  const onClose = () => closeTab(tab.id);
   const focusedPane = getFocusedPane(tab);
   const paneCount = getPanes(tab.layout).length;
   const { data: item } = useQuery(getItemQueryOptions(focusedPane.itemId));
@@ -275,9 +245,10 @@ function ChatTabItem({
             aria-selected={isActive}
             data-window-no-drag
             tabIndex={0}
-            title={title}
+            title={tab.preview ? `${title} (preview: double-click to keep open)` : title}
             style={{ transform: CSS.Transform.toString(transform), transition }}
             onClick={onSelect}
+            onDoubleClick={() => keepTab(tab.id)}
             onAuxClick={(event) => {
               if (event.button === 1) {
                 event.preventDefault();
@@ -312,7 +283,7 @@ function ChatTabItem({
                   className="mr-1.5 size-3.5! shrink-0 text-muted-foreground"
                 />
               )}
-              <span className="truncate">{title}</span>
+              <span className={cn("truncate", tab.preview && "pr-0.5 italic")}>{title}</span>
             </span>
             {paneCount > 1 ? (
               <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
@@ -339,15 +310,21 @@ function ChatTabItem({
         }
       />
       <ContextMenuContent className="w-48">
+        {tab.preview ? (
+          <ContextMenuItem onClick={() => keepTab(tab.id)}>Keep Tab Open</ContextMenuItem>
+        ) : null}
         <ContextMenuItem onClick={onClose}>Close Tab</ContextMenuItem>
-        <ContextMenuItem disabled={!canCloseOthers} onClick={onCloseOthers}>
+        <ContextMenuItem disabled={tabCount < 2} onClick={() => closeOtherTabs(tab.id)}>
           Close Other Tabs
         </ContextMenuItem>
-        <ContextMenuItem disabled={!canCloseToLeft} onClick={onCloseToLeft}>
+        <ContextMenuItem disabled={index === 0} onClick={() => closeTabsToLeft(tab.id)}>
           Close Tabs to the Left
         </ContextMenuItem>
-        <ContextMenuItem disabled={!canCloseToRight} onClick={onCloseToRight}>
+        <ContextMenuItem disabled={index === tabCount - 1} onClick={() => closeTabsToRight(tab.id)}>
           Close Tabs to the Right
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!hasClosedTabs} onClick={reopenClosedTab}>
+          Reopen Closed Tab
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

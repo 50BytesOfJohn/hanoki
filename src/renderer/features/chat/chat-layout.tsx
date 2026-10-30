@@ -88,6 +88,7 @@ import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-pa
 import { ChatSettingsPage } from "./chat-settings-page";
 import { isReplaceableItemTitle } from "@shared/markdown/title-source";
 import { generateSumiItemTitle } from "../items/sumi-item-title-generation";
+import "@/stores/preview-tab-retention";
 
 export type NativeChatDrag =
   | { kind: "unsupported" }

@@ -23,6 +23,7 @@ import { generateSumiItemTitle } from "@/features/items/sumi-item-title-generati
 import { useFlushMarkdownContent } from "@/mutations/markdown";
 import { registerMarkdownEditor, registerMarkdownSaver } from "./markdown-session";
 import { BacklinksFooter, setWikilinkEditorContext, WikilinkEditor } from "./wikilink-ui";
+import { useWorkspaceStore } from "@/features/workspace/store";
 import { getItemQueryOptions } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
@@ -163,6 +164,7 @@ export function MarkdownPane({ itemId }: { itemId: string }) {
   const updateMarkdown = React.useCallback(
     (nextMarkdown: string) => {
       setDocument({ itemId, markdown: nextMarkdown });
+      useWorkspaceStore.getState().keepItem(itemId);
       queryClient.setQueryData<MarkdownInfo>(queryKeys.items.byId(itemId), (current) =>
         current ? { ...current, data: { ...current.data, markdown: nextMarkdown } } : current,
       );

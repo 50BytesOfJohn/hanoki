@@ -20,6 +20,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     tabs: {
       position: "top",
+      openBehavior: "preview",
+      insertPosition: "next-to-active",
+      closeFocus: "recent",
     },
     activityPanel: {
       enabled: true,

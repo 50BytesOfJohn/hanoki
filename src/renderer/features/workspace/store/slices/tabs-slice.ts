@@ -1,4 +1,12 @@
-import type { OpenTabOptions, TabContent, TabsSlice, WorkspaceSliceCreator } from "../types";
+import type {
+  OpenItemOptions,
+  OpenTabOptions,
+  Tab,
+  TabContent,
+  TabsSlice,
+  WorkspaceSliceCreator,
+  WorkspaceStoreState,
+} from "../types";
 import {
   createItemPane,
   createItemTab,
@@ -8,39 +16,182 @@ import {
   getPanes,
   insertPane,
   movePane as movePaneInLayout,
+  normalizeTab,
   removeItems,
   removePane,
   replacePaneItem,
   resizeSplit as resizeSplitInLayout,
   updatePane,
 } from "../layout-tree";
+import { getTabPreferences } from "../tab-preferences";
+
+const MAX_CLOSED_TABS = 20;
 
 const paneChatId = (pane: ReturnType<typeof getFocusedPane>) =>
   pane.itemType === "chat" ? pane.itemId : null;
 
+function activateTab(state: WorkspaceStoreState, tab: Tab) {
+  state.activeTabId = tab.id;
+  state.currentChatId = paneChatId(getFocusedPane(tab));
+  if (state.tabHistory[0] !== tab.id) {
+    state.tabHistory = [tab.id, ...state.tabHistory.filter((id) => id !== tab.id)];
+  }
+}
+
+function insertTab(state: WorkspaceStoreState, tab: Tab) {
+  const activeIndex = state.tabs.findIndex((candidate) => candidate.id === state.activeTabId);
+  const atEnd = getTabPreferences().tabInsertPosition === "end" || activeIndex === -1;
+  state.tabs.splice(atEnd ? state.tabs.length : activeIndex + 1, 0, tab);
+}
+
+/** Finds the item in any tab, preferring the active one so splits aren't left needlessly. */
+function findOpenItem(state: WorkspaceStoreState, itemId: string) {
+  const ordered = [...state.tabs].sort(
+    (a, b) => Number(b.id === state.activeTabId) - Number(a.id === state.activeTabId),
+  );
+  for (const tab of ordered) {
+    const pane = findPaneByItemId(tab.layout, itemId);
+    if (pane) return { tab, pane };
+  }
+  return null;
+}
+
+/** The tab that takes over from a closing active tab, chosen among the tabs that survive. */
+function pickNextTab(state: WorkspaceStoreState, closing: ReadonlySet<string>): Tab | null {
+  const remaining = state.tabs.filter((tab) => !closing.has(tab.id));
+  if (getTabPreferences().tabCloseFocus === "recent") {
+    const recentId = state.tabHistory.find((id) => !closing.has(id));
+    const recent = remaining.find((tab) => tab.id === recentId);
+    if (recent) return recent;
+  }
+  const activeIndex = state.tabs.findIndex((tab) => tab.id === state.activeTabId);
+  const after = state.tabs.slice(activeIndex + 1).find((tab) => !closing.has(tab.id));
+  return after ?? remaining[remaining.length - 1] ?? null;
+}
+
+function dropTabs(
+  state: WorkspaceStoreState,
+  tabIds: Iterable<string>,
+  { remember }: { remember: boolean },
+) {
+  const closing = new Set(tabIds);
+  if (closing.size === 0) return;
+  const next =
+    state.activeTabId && closing.has(state.activeTabId) ? pickNextTab(state, closing) : undefined;
+
+  if (remember) {
+    state.tabs.forEach((tab, index) => {
+      if (closing.has(tab.id)) state.closedTabs.push({ tab, index });
+    });
+    state.closedTabs = state.closedTabs.slice(-MAX_CLOSED_TABS);
+  }
+  state.tabs = state.tabs.filter((tab) => !closing.has(tab.id));
+  state.tabHistory = state.tabHistory.filter((id) => !closing.has(id));
+
+  if (next) activateTab(state, next);
+  else if (next === null) {
+    state.activeTabId = null;
+    state.currentChatId = null;
+  }
+}
+
 export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
   tabs: [],
+  tabHistory: [],
+  closedTabs: [],
+
+  openItem: (itemId, itemType, options?: OpenItemOptions) => {
+    set((state) => {
+      const existing = findOpenItem(state, itemId);
+      if (existing) {
+        existing.tab.focusedPaneId = existing.pane.id;
+        activateTab(state, existing.tab);
+        return;
+      }
+
+      const { tabOpenBehavior } = getTabPreferences();
+      const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+      if (tabOpenBehavior === "current-tab" && activeTab && !options?.newTab) {
+        activeTab.layout = replacePaneItem(
+          activeTab.layout,
+          activeTab.focusedPaneId,
+          itemId,
+          itemType,
+        );
+        activateTab(state, activeTab);
+        return;
+      }
+
+      // Replacing a terminal's tab would kill a running shell, so terminals always stay.
+      const asPreview = tabOpenBehavior === "preview" && itemType !== "terminal";
+      const previewTab = asPreview ? state.tabs.find((tab) => tab.preview) : undefined;
+      if (previewTab) {
+        previewTab.layout = replacePaneItem(
+          previewTab.layout,
+          previewTab.focusedPaneId,
+          itemId,
+          itemType,
+        );
+        activateTab(state, previewTab);
+        return;
+      }
+
+      const newTab = createItemTab(itemId, itemType);
+      if (asPreview) newTab.preview = true;
+      insertTab(state, newTab);
+      activateTab(state, newTab);
+    });
+  },
 
   openTab: (content: TabContent, options?: OpenTabOptions) => {
     const activate = options?.activate ?? true;
     set((state) => {
-      const existing = state.tabs
-        .map((tab) => ({ tab, pane: findPaneByItemId(tab.layout, content.itemId) }))
-        .find((entry) => entry.pane);
-      if (existing?.pane) {
+      const existing = findOpenItem(state, content.itemId);
+      if (existing) {
+        delete existing.tab.preview;
         if (activate) {
           existing.tab.focusedPaneId = existing.pane.id;
-          state.activeTabId = existing.tab.id;
-          state.currentChatId = paneChatId(existing.pane);
+          activateTab(state, existing.tab);
         }
         return;
       }
 
       const newTab = createItemTab(content.itemId, content.type);
-      state.tabs.push(newTab);
-      if (activate) {
-        state.activeTabId = newTab.id;
-        state.currentChatId = content.type === "chat" ? content.itemId : null;
+      insertTab(state, newTab);
+      if (activate) activateTab(state, newTab);
+    });
+  },
+
+  keepTab: (tabId) => {
+    set((state) => {
+      const tab = state.tabs.find((candidate) => candidate.id === tabId);
+      if (tab) delete tab.preview;
+    });
+  },
+
+  keepItem: (itemId) => {
+    set((state) => {
+      const tab = state.tabs.find(
+        (candidate) => candidate.preview && findPaneByItemId(candidate.layout, itemId),
+      );
+      if (tab) delete tab.preview;
+    });
+  },
+
+  reopenClosedTab: () => {
+    set((state) => {
+      const openItemIds = new Set(
+        state.tabs.flatMap((tab) => getPanes(tab.layout).map((pane) => pane.itemId)),
+      );
+      // Skip entries whose items have all been opened again since they were closed.
+      while (state.closedTabs.length > 0) {
+        const { tab, index } = state.closedTabs.pop()!;
+        const layout = removeItems(tab.layout, openItemIds);
+        const restored = layout ? normalizeTab({ ...tab, layout, preview: undefined }) : null;
+        if (!restored) continue;
+        state.tabs.splice(Math.min(index, state.tabs.length), 0, restored);
+        activateTab(state, restored);
+        return;
       }
     });
   },
@@ -48,9 +199,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
   selectTab: (tabId) => {
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === tabId);
-      if (!tab) return;
-      state.activeTabId = tab.id;
-      state.currentChatId = paneChatId(getFocusedPane(tab));
+      if (tab) activateTab(state, tab);
     });
   },
 
@@ -60,8 +209,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (!activeTab) {
         const newTab = createItemTab(itemId, itemType);
         state.tabs.push(newTab);
-        state.activeTabId = newTab.id;
-        state.currentChatId = itemType === "chat" ? itemId : null;
+        activateTab(state, newTab);
         return;
       }
 
@@ -76,18 +224,16 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
           itemType,
         );
       }
-      state.currentChatId = itemType === "chat" ? itemId : null;
+      activateTab(state, activeTab);
     });
   },
 
   focusPane: (tabId, paneId) => {
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === tabId);
-      const pane = tab ? findPane(tab.layout, paneId) : null;
-      if (!tab || !pane) return;
+      if (!tab || !findPane(tab.layout, paneId)) return;
       tab.focusedPaneId = paneId;
-      state.activeTabId = tabId;
-      state.currentChatId = paneChatId(pane);
+      activateTab(state, tab);
     });
   },
 
@@ -100,9 +246,7 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
         graphMessageId: view === "/chat/graph" ? graphMessageId : undefined,
       });
       tab.focusedPaneId = paneId;
-      state.activeTabId = tabId;
-      const pane = findPane(tab.layout, paneId);
-      state.currentChatId = pane ? paneChatId(pane) : state.currentChatId;
+      activateTab(state, tab);
     });
   },
 
@@ -119,8 +263,8 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       const pane = createItemPane(itemId, itemType);
       tab.layout = insertPane(tab.layout, paneId, pane, direction);
       tab.focusedPaneId = pane.id;
-      state.activeTabId = tab.id;
-      state.currentChatId = itemType === "chat" ? itemId : null;
+      delete tab.preview;
+      activateTab(state, tab);
     });
   },
 
@@ -132,28 +276,21 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       if (!source || !findPane(tab.layout, targetPaneId)) return;
       tab.layout = movePaneInLayout(tab.layout, sourcePaneId, targetPaneId, position);
       tab.focusedPaneId = sourcePaneId;
-      state.activeTabId = tab.id;
-      state.currentChatId = paneChatId(source);
+      activateTab(state, tab);
     });
   },
 
   closePane: (tabId, paneId) => {
     set((state) => {
-      const tabIndex = state.tabs.findIndex((candidate) => candidate.id === tabId);
-      if (tabIndex === -1) return;
-      const tab = state.tabs[tabIndex];
+      const tab = state.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab) return;
       const panes = getPanes(tab.layout);
       const closedIndex = panes.findIndex((pane) => pane.id === paneId);
       if (closedIndex === -1) return;
 
       const nextLayout = removePane(tab.layout, paneId);
       if (!nextLayout) {
-        state.tabs.splice(tabIndex, 1);
-        if (state.activeTabId === tabId) {
-          const neighbor = state.tabs[tabIndex] ?? state.tabs[tabIndex - 1];
-          state.activeTabId = neighbor?.id ?? null;
-          state.currentChatId = neighbor ? paneChatId(getFocusedPane(neighbor)) : null;
-        }
+        dropTabs(state, [tabId], { remember: true });
         return;
       }
 
@@ -191,13 +328,8 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
 
   closeTab: (tabId) => {
     set((state) => {
-      const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId);
-      if (tabIndex === -1) return;
-      state.tabs.splice(tabIndex, 1);
-      if (state.activeTabId === tabId) {
-        const neighbor = state.tabs[tabIndex] ?? state.tabs[tabIndex - 1];
-        state.activeTabId = neighbor?.id ?? null;
-        state.currentChatId = neighbor ? paneChatId(getFocusedPane(neighbor)) : null;
+      if (state.tabs.some((tab) => tab.id === tabId)) {
+        dropTabs(state, [tabId], { remember: true });
       }
     });
   },
@@ -205,10 +337,13 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
   closeOtherTabs: (tabId) => {
     set((state) => {
       const keptTab = state.tabs.find((tab) => tab.id === tabId);
-      if (!keptTab || state.tabs.length < 2) return;
-      state.tabs = [keptTab];
-      state.activeTabId = keptTab.id;
-      state.currentChatId = paneChatId(getFocusedPane(keptTab));
+      if (!keptTab) return;
+      dropTabs(
+        state,
+        state.tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id),
+        { remember: true },
+      );
+      activateTab(state, keptTab);
     });
   },
 
@@ -216,26 +351,23 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
     set((state) => {
       const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId);
       if (tabIndex <= 0) return;
-      const keptTabs = state.tabs.slice(tabIndex);
-      state.tabs = keptTabs;
-      if (!keptTabs.some((tab) => tab.id === state.activeTabId)) {
-        state.activeTabId = keptTabs[0].id;
-        state.currentChatId = paneChatId(getFocusedPane(keptTabs[0]));
-      }
+      dropTabs(
+        state,
+        state.tabs.slice(0, tabIndex).map((tab) => tab.id),
+        { remember: true },
+      );
     });
   },
 
   closeTabsToRight: (tabId) => {
     set((state) => {
       const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId);
-      if (tabIndex === -1 || tabIndex >= state.tabs.length - 1) return;
-      const keptTabs = state.tabs.slice(0, tabIndex + 1);
-      state.tabs = keptTabs;
-      if (!keptTabs.some((tab) => tab.id === state.activeTabId)) {
-        const neighbor = keptTabs[keptTabs.length - 1];
-        state.activeTabId = neighbor.id;
-        state.currentChatId = paneChatId(getFocusedPane(neighbor));
-      }
+      if (tabIndex === -1) return;
+      dropTabs(
+        state,
+        state.tabs.slice(tabIndex + 1).map((tab) => tab.id),
+        { remember: true },
+      );
     });
   },
 
@@ -244,15 +376,19 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
       const fromIndex = state.tabs.findIndex((tab) => tab.id === tabId);
       if (fromIndex === -1 || fromIndex === toIndex) return;
       const [tab] = state.tabs.splice(fromIndex, 1);
+      // Placing a tab somewhere on purpose means wanting it to stay there.
+      delete tab.preview;
       state.tabs.splice(toIndex, 0, tab);
     });
   },
 
   closeAllTabs: () => {
     set((state) => {
-      state.tabs = [];
-      state.activeTabId = null;
-      state.currentChatId = null;
+      dropTabs(
+        state,
+        state.tabs.map((tab) => tab.id),
+        { remember: true },
+      );
     });
   },
 
@@ -262,26 +398,25 @@ export const createTabsSlice: WorkspaceSliceCreator<TabsSlice> = (set) => ({
     set((state) => {
       for (const itemId of deletedItemIds) delete state.chatDrafts[itemId];
 
-      state.tabs = state.tabs.flatMap((tab) => {
+      state.closedTabs = state.closedTabs.flatMap(({ tab, index }) => {
         const layout = removeItems(tab.layout, deletedItemIds);
-        if (!layout) return [];
-        const panes = getPanes(layout);
-        return [
-          {
-            ...tab,
-            layout,
-            focusedPaneId: panes.some((pane) => pane.id === tab.focusedPaneId)
-              ? tab.focusedPaneId
-              : panes[0].id,
-          },
-        ];
+        const restored = layout ? normalizeTab({ ...tab, layout }) : null;
+        return restored ? [{ tab: restored, index }] : [];
       });
 
-      let activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-      if (!activeTab) {
-        activeTab = state.tabs[0];
-        state.activeTabId = activeTab?.id ?? null;
+      const emptied: string[] = [];
+      for (const tab of state.tabs) {
+        const layout = removeItems(tab.layout, deletedItemIds);
+        if (!layout) {
+          emptied.push(tab.id);
+          continue;
+        }
+        tab.layout = layout;
+        if (!findPane(layout, tab.focusedPaneId)) tab.focusedPaneId = getPanes(layout)[0].id;
       }
+      dropTabs(state, emptied, { remember: false });
+
+      const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
       state.currentChatId = activeTab ? paneChatId(getFocusedPane(activeTab)) : null;
     });
   },

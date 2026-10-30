@@ -30,7 +30,7 @@ import {
 } from "../server/assistant/hanoki-tools";
 import { isApprovalToolName } from "@shared/chat/tool-approval";
 import { createChatTreeService } from "../services/chat-tree-service";
-import { createWorkspace } from "../workspaces/repository";
+import { createWorkspace, updateWorkspaceSettings } from "../workspaces/repository";
 import {
   cloneChat,
   createChat,
@@ -1706,5 +1706,26 @@ describe("cloneChat", () => {
       expect.arrayContaining([revision(clonedOriginal!.id), revision("deleted-original")]),
     );
     expect(revisions).toHaveLength(2);
+  });
+
+  it("persists the preview flag of a tab in workspace settings", () => {
+    createWorkspace({ id: "preview-tab-workspace", name: "Preview tabs" });
+    const tab = {
+      id: "tab",
+      type: "item" as const,
+      layout: {
+        id: "pane",
+        type: "pane" as const,
+        itemId: "chat",
+        itemType: "chat" as const,
+        view: "/chat" as const,
+      },
+      focusedPaneId: "pane",
+      preview: true,
+    };
+
+    const workspace = updateWorkspaceSettings("preview-tab-workspace", { tabs: [tab] });
+
+    expect(workspace.settings?.tabs?.[0]?.preview).toBe(true);
   });
 });

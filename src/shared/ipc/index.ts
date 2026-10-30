@@ -136,6 +136,14 @@ export type ChatSidebarViewMode = "tree" | "activity";
 
 export type ChatTabsPosition = "top" | "sidebar";
 
+/** What a plain click on a sidebar item does when the item is not open yet. */
+export type ChatTabOpenBehavior = "preview" | "new-tab" | "current-tab";
+
+export type ChatTabInsertPosition = "next-to-active" | "end";
+
+/** Which tab takes over when the active one closes. */
+export type ChatTabCloseFocus = "recent" | "adjacent";
+
 /** Sort order of the sidebar folder tree. Per workspace; the activity view is always recency-sorted. */
 export type ChatTreeSortOrder =
   | "name-asc"
@@ -152,6 +160,9 @@ export interface GlobalChatSettings {
   formSubmitBehavior: ChatFormSubmitBehavior;
   sidebarViewMode: ChatSidebarViewMode;
   tabsPosition: ChatTabsPosition;
+  tabOpenBehavior: ChatTabOpenBehavior;
+  tabInsertPosition: ChatTabInsertPosition;
+  tabCloseFocus: ChatTabCloseFocus;
   activityPanelEnabled: boolean;
 }
 
@@ -160,6 +171,9 @@ export interface GlobalChatSettingsUpdateInput {
   formSubmitBehavior?: ChatFormSubmitBehavior;
   sidebarViewMode?: ChatSidebarViewMode;
   tabsPosition?: ChatTabsPosition;
+  tabOpenBehavior?: ChatTabOpenBehavior;
+  tabInsertPosition?: ChatTabInsertPosition;
+  tabCloseFocus?: ChatTabCloseFocus;
   activityPanelEnabled?: boolean;
 }
 
@@ -464,6 +478,8 @@ export interface TabStateItem {
   type: TabType;
   layout: ItemLayoutNode;
   focusedPaneId: string;
+  /** Temporary tab: the next item opened from the sidebar takes its place. Absent = kept. */
+  preview?: boolean;
 }
 
 export interface TabsUiState {

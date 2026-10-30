@@ -133,19 +133,21 @@ function parseTabsArray(input: unknown): TabStateItem[] {
     }
 
     const record = entry as Record<string, unknown>;
-    const allowedKeys = new Set(["id", "type", "layout", "focusedPaneId"]);
+    const allowedKeys = new Set(["id", "type", "layout", "focusedPaneId", "preview"]);
     for (const key of Object.keys(record)) {
       if (!allowedKeys.has(key)) {
         throw AppError.badRequest(`Unsupported tab field "${key}".`);
       }
     }
 
-    return {
+    const tab: TabStateItem = {
       id: parseValidTabId(record.id),
       type: parseValidTabType(record.type),
       layout: parseChatLayoutNode(record.layout),
       focusedPaneId: parseValidTabId(record.focusedPaneId),
     };
+    if (record.preview === true) tab.preview = true;
+    return tab;
   });
 }
 

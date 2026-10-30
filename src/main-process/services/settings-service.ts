@@ -5,6 +5,9 @@ import {
   TERMINAL_TOOL_MODES,
   type ChatFormSubmitBehavior,
   type ChatSidebarViewMode,
+  type ChatTabCloseFocus,
+  type ChatTabInsertPosition,
+  type ChatTabOpenBehavior,
   type ChatTabsPosition,
   type GlobalChatSettings,
   type GlobalChatSettingsUpdateInput,
@@ -27,6 +30,13 @@ import { AppError } from "../ipc/core/errors";
 const CHAT_FORM_SUBMIT_BEHAVIORS: readonly ChatFormSubmitBehavior[] = ["enter", "mod-enter"];
 const CHAT_SIDEBAR_VIEW_MODES: readonly ChatSidebarViewMode[] = ["tree", "activity"];
 const CHAT_TABS_POSITIONS: readonly ChatTabsPosition[] = ["top", "sidebar"];
+const CHAT_TAB_OPEN_BEHAVIORS: readonly ChatTabOpenBehavior[] = [
+  "preview",
+  "new-tab",
+  "current-tab",
+];
+const CHAT_TAB_INSERT_POSITIONS: readonly ChatTabInsertPosition[] = ["next-to-active", "end"];
+const CHAT_TAB_CLOSE_FOCUSES: readonly ChatTabCloseFocus[] = ["recent", "adjacent"];
 const DEFAULT_PROMPT_STICKY_POSITION = DEFAULT_CONFIG.chat.prompt.stickyPosition;
 const DEFAULT_FORM_SUBMIT_BEHAVIOR = DEFAULT_CONFIG.chat.form.submitBehavior;
 const DEFAULT_SIDEBAR_VIEW_MODE = DEFAULT_CONFIG.chat.sidebar.viewMode;
@@ -55,6 +65,9 @@ export function createSettingsService(): SettingsService {
         formSubmitBehavior: input.formSubmitBehavior ?? current.formSubmitBehavior,
         sidebarViewMode: input.sidebarViewMode ?? current.sidebarViewMode,
         tabsPosition: input.tabsPosition ?? current.tabsPosition,
+        tabOpenBehavior: input.tabOpenBehavior ?? current.tabOpenBehavior,
+        tabInsertPosition: input.tabInsertPosition ?? current.tabInsertPosition,
+        tabCloseFocus: input.tabCloseFocus ?? current.tabCloseFocus,
         activityPanelEnabled: input.activityPanelEnabled ?? current.activityPanelEnabled,
       };
 
@@ -71,6 +84,9 @@ export function createSettingsService(): SettingsService {
           },
           tabs: {
             position: next.tabsPosition,
+            openBehavior: next.tabOpenBehavior,
+            insertPosition: next.tabInsertPosition,
+            closeFocus: next.tabCloseFocus,
           },
           activityPanel: {
             enabled: next.activityPanelEnabled,
@@ -290,11 +306,30 @@ function readGlobalChatSettings(): GlobalChatSettings {
     formSubmitBehavior: resolveChatFormSubmitBehavior(config.chat.form.submitBehavior),
     sidebarViewMode: resolveChatSidebarViewMode(config.chat.sidebar?.viewMode),
     tabsPosition: resolveChatTabsPosition(config.chat.tabs?.position),
+    tabOpenBehavior: resolveOption(
+      config.chat.tabs?.openBehavior,
+      CHAT_TAB_OPEN_BEHAVIORS,
+      DEFAULT_CONFIG.chat.tabs.openBehavior,
+    ),
+    tabInsertPosition: resolveOption(
+      config.chat.tabs?.insertPosition,
+      CHAT_TAB_INSERT_POSITIONS,
+      DEFAULT_CONFIG.chat.tabs.insertPosition,
+    ),
+    tabCloseFocus: resolveOption(
+      config.chat.tabs?.closeFocus,
+      CHAT_TAB_CLOSE_FOCUSES,
+      DEFAULT_CONFIG.chat.tabs.closeFocus,
+    ),
     activityPanelEnabled:
       typeof config.chat.activityPanel?.enabled === "boolean"
         ? config.chat.activityPanel.enabled
         : DEFAULT_ACTIVITY_PANEL_ENABLED,
   };
+}
+
+function resolveOption<T extends string>(rawValue: unknown, options: readonly T[], fallback: T): T {
+  return options.includes(rawValue as T) ? (rawValue as T) : fallback;
 }
 
 function resolveChatTabsPosition(rawValue: unknown): ChatTabsPosition {

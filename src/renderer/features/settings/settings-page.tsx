@@ -81,6 +81,22 @@ const TABS_POSITIONS = [
   { id: "sidebar", label: "Sidebar" },
 ] as const;
 
+const TAB_OPEN_BEHAVIORS = [
+  { id: "preview", label: "Preview tab" },
+  { id: "new-tab", label: "New tab" },
+  { id: "current-tab", label: "Current tab" },
+] as const;
+
+const TAB_INSERT_POSITIONS = [
+  { id: "next-to-active", label: "Next to current tab" },
+  { id: "end", label: "At the end" },
+] as const;
+
+const TAB_CLOSE_FOCUSES = [
+  { id: "recent", label: "Last used tab" },
+  { id: "adjacent", label: "Neighboring tab" },
+] as const;
+
 function GeneralSettings() {
   const { data: globalChatSettings, isPending: isLoadingSettings } = useQuery(
     globalChatSettingsQueryOptions,
@@ -93,6 +109,9 @@ function GeneralSettings() {
   const submitBehavior = globalChatSettings?.formSubmitBehavior ?? "enter";
   const sidebarViewMode = globalChatSettings?.sidebarViewMode ?? "tree";
   const tabsPosition = globalChatSettings?.tabsPosition ?? "top";
+  const tabOpenBehavior = globalChatSettings?.tabOpenBehavior ?? "preview";
+  const tabInsertPosition = globalChatSettings?.tabInsertPosition ?? "next-to-active";
+  const tabCloseFocus = globalChatSettings?.tabCloseFocus ?? "recent";
   const activityPanelEnabled = globalChatSettings?.activityPanelEnabled ?? true;
 
   function updateSettings(input: GlobalChatSettingsUpdateInput) {
@@ -217,6 +236,45 @@ function GeneralSettings() {
             </Select>
           }
         />
+        <SettingsRow
+          title="Clicking in the sidebar opens"
+          description="A preview tab is reused by your next click until you send a message, type, or double-click it."
+          control={
+            <OptionSelect
+              label="Clicking in the sidebar opens"
+              value={tabOpenBehavior}
+              options={TAB_OPEN_BEHAVIORS}
+              disabled={isPending}
+              onChange={(value) => updateSettings({ tabOpenBehavior: value })}
+            />
+          }
+        />
+        <SettingsRow
+          title="New tabs appear"
+          description="Where a tab goes when it is added to the tab bar."
+          control={
+            <OptionSelect
+              label="New tabs appear"
+              value={tabInsertPosition}
+              options={TAB_INSERT_POSITIONS}
+              disabled={isPending}
+              onChange={(value) => updateSettings({ tabInsertPosition: value })}
+            />
+          }
+        />
+        <SettingsRow
+          title="After closing a tab, go to"
+          description="Which tab takes over when you close the one you are on."
+          control={
+            <OptionSelect
+              label="After closing a tab, go to"
+              value={tabCloseFocus}
+              options={TAB_CLOSE_FOCUSES}
+              disabled={isPending}
+              onChange={(value) => updateSettings({ tabCloseFocus: value })}
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection title="Activity">
@@ -238,6 +296,45 @@ function GeneralSettings() {
 
       <SettingsError>{updateError}</SettingsError>
     </>
+  );
+}
+
+function OptionSelect<T extends string>({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: ReadonlyArray<{ id: T; label: string }>;
+  disabled: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <Select
+      value={value}
+      items={Object.fromEntries(options.map((option) => [option.id, option.label]))}
+      disabled={disabled}
+      onValueChange={(next) => {
+        const option = options.find((candidate) => candidate.id === next);
+        if (option) onChange(option.id);
+      }}
+    >
+      <SelectTrigger aria-label={label} className="w-44">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 

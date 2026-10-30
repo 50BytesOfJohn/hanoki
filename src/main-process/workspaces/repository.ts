@@ -77,7 +77,7 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
 
         const tabRecord = entry as Record<string, unknown>;
         const hasOnlySupportedKeys = Object.keys(tabRecord).every((key) =>
-          ["id", "type", "layout", "focusedPaneId"].includes(key),
+          ["id", "type", "layout", "focusedPaneId", "preview"].includes(key),
         );
         if (!hasOnlySupportedKeys) {
           return true;
@@ -89,7 +89,8 @@ function isWorkspaceSettings(value: unknown): value is WorkspaceSettings {
           tabRecord.type !== "item" ||
           !isChatLayoutNode(tabRecord.layout) ||
           typeof tabRecord.focusedPaneId !== "string" ||
-          tabRecord.focusedPaneId.trim().length === 0
+          tabRecord.focusedPaneId.trim().length === 0 ||
+          (tabRecord.preview !== undefined && typeof tabRecord.preview !== "boolean")
         );
       }))
   ) {

@@ -450,7 +450,8 @@ function ChatSidebarTreeInner({
   const importMarkdownNotes = useImportMarkdownNotesFolder();
 
   const openTab = useWorkspaceStore((s) => s.openTab);
-  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const openItem = useWorkspaceStore((s) => s.openItem);
+  const openItemInFocusedPane = useWorkspaceStore((s) => s.openItemInFocusedPane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const tabs = useWorkspaceStore((s) => s.tabs);
@@ -772,10 +773,9 @@ function ChatSidebarTreeInner({
 
   const navigateToItem = React.useCallback(
     (item: ItemInfo) => {
-      if (item.type === "chat") setCurrentChat(item.id);
-      else useWorkspaceStore.getState().openItemInFocusedPane(item.id, item.type);
+      openItem(item.id, item.type);
     },
-    [setCurrentChat],
+    [openItem],
   );
 
   const openItemBeside = React.useCallback(
@@ -951,7 +951,7 @@ function ChatSidebarTreeInner({
                   } else if (action === "import-markdown-notes") {
                     void importMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "open-in-focused-pane" && data.kind === "item") {
-                    navigateToItem(data.item);
+                    openItemInFocusedPane(data.item.id, data.item.type);
                   } else if (action === "open-in-new-tab" && data.kind === "item") {
                     openItemInTab(data.item);
                   } else if (action === "open-to-left" && data.kind === "item") {
@@ -1110,7 +1110,7 @@ function ChatSidebarTreeInner({
         workspaceId={workspaceId}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        onSelectChat={setCurrentChat}
+        onSelectChat={(chatId) => openItem(chatId, "chat")}
       />
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}
@@ -1168,7 +1168,8 @@ function groupChatsByActivity(chats: ChatInfo[]): ActivitySection[] {
 function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const openTab = useWorkspaceStore((s) => s.openTab);
-  const setCurrentChat = useWorkspaceStore((s) => s.setCurrentChat);
+  const openItem = useWorkspaceStore((s) => s.openItem);
+  const openItemInFocusedPane = useWorkspaceStore((s) => s.openItemInFocusedPane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
   const activeTabId = useWorkspaceStore((s) => s.activeTabId);
   const tabs = useWorkspaceStore((s) => s.tabs);
@@ -1243,7 +1244,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         else openTab({ type: "chat", itemId: chat.id });
       };
       if (action === "open-in-focused-pane") {
-        setCurrentChat(chat.id);
+        openItemInFocusedPane(chat.id, "chat");
       } else if (action === "open-in-new-tab") {
         openTab({ type: "chat", itemId: chat.id });
       } else if (action === "open-to-left") {
@@ -1266,7 +1267,15 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         setPendingDeleteItems([{ kind: "item", id: chat.id }]);
       }
     },
-    [activeTabId, cloneChatMutation, invalidateSnapshot, openTab, setCurrentChat, splitPane, tabs],
+    [
+      activeTabId,
+      cloneChatMutation,
+      invalidateSnapshot,
+      openItemInFocusedPane,
+      openTab,
+      splitPane,
+      tabs,
+    ],
   );
 
   const handleDeleteConfirm = React.useCallback(() => {
@@ -1367,7 +1376,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
                           key={chat.id}
                           chat={chat}
                           isActive={chat.id === currentChatId}
-                          onSelect={() => setCurrentChat(chat.id)}
+                          onSelect={() => openItem(chat.id, "chat")}
                           onOpenInTab={(options) =>
                             openTab({ type: "chat", itemId: chat.id }, options)
                           }
@@ -1386,7 +1395,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         workspaceId={workspaceId}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        onSelectChat={setCurrentChat}
+        onSelectChat={(chatId) => openItem(chatId, "chat")}
       />
       <DeleteTreeItemsDialog
         items={pendingDeleteItems}

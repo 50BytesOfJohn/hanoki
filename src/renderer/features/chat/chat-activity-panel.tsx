@@ -205,7 +205,7 @@ function ActivityList({
 }
 
 function ActivityRow({ entry, onOpenChat }: { entry: ChatActivityEntry; onOpenChat: () => void }) {
-  const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
+  const openItem = useWorkspaceStore((state) => state.openItem);
   const { data: chat } = useQuery(getChatQueryOptions(entry.chatId));
 
   return (
@@ -213,7 +213,7 @@ function ActivityRow({ entry, onOpenChat }: { entry: ChatActivityEntry; onOpenCh
       type="button"
       className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left outline-hidden transition-colors duration-100 hover:bg-hover focus-visible:bg-hover"
       onClick={() => {
-        setCurrentChat(entry.chatId);
+        openItem(entry.chatId, "chat");
         onOpenChat();
       }}
     >

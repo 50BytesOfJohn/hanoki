@@ -133,7 +133,7 @@ function PinnedBranchItem({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pane = useOptionalChatPane();
-  const setCurrentChat = useWorkspaceStore((state) => state.setCurrentChat);
+  const openItem = useWorkspaceStore((state) => state.openItem);
   const setPaneView = useWorkspaceStore((state) => state.setPaneView);
 
   const switchBranchMutation = useMutation({
@@ -160,7 +160,7 @@ function PinnedBranchItem({
   });
 
   const handleOpenInChat = () => {
-    if (!pane) setCurrentChat(summary.chatId);
+    if (!pane) openItem(summary.chatId, "chat");
     switchBranchMutation.mutate(undefined, {
       onSuccess: () => {
         if (pane) {

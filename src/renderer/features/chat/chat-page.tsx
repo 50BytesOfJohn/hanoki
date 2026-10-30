@@ -187,8 +187,10 @@ function ActiveChatContent() {
       inputRef.current = document;
       setInput(document);
       saveDraft(document);
+      // Typing is engagement: a half-written prompt shouldn't vanish with its preview tab.
+      useWorkspaceStore.getState().keepItem(chatId);
     },
-    [saveDraft],
+    [chatId, saveDraft],
   );
 
   // Convert legacy string drafts on load and flush on unmount so fast chat switches keep edits.

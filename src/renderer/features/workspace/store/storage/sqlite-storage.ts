@@ -21,11 +21,18 @@ export async function normalizePersistedTabs(
       return result.status === "rejected" || result.value.workspaceId !== workspaceId;
     }),
   );
-  return normalized.flatMap((tab) => {
-    const layout = removeItems(tab.layout, unavailableItemIds);
-    if (!layout) return [];
-    return [normalizeTab({ ...tab, layout })].filter((item) => item !== null);
-  });
+  return normalized
+    .flatMap((tab) => {
+      const layout = removeItems(tab.layout, unavailableItemIds);
+      if (!layout) return [];
+      return [normalizeTab({ ...tab, layout })].filter((item) => item !== null);
+    })
+    .map((tab, index, all) =>
+      // Only one tab may be temporary; anything else in that state came from a stale write.
+      tab.preview && all.findIndex((other) => other.preview) !== index
+        ? { ...tab, preview: undefined }
+        : tab,
+    );
 }
 
 export const syncWorkspaceSettingsStateToSqlite = new AsyncDebouncer(

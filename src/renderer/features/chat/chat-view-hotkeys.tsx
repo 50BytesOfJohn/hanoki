@@ -1,6 +1,7 @@
 import { useHotkey, useHotkeys } from "@tanstack/react-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { useOpenChatView } from "./use-chat-view";
+import { useNewChatTab } from "./use-new-chat-tab";
 
 export function ChatViewHotkeys() {
   const openChatView = useOpenChatView();
@@ -10,6 +11,13 @@ export function ChatViewHotkeys() {
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const focusAdjacentPane = useWorkspaceStore((s) => s.focusAdjacentPane);
   const closePane = useWorkspaceStore((s) => s.closePane);
+  const reopenClosedTab = useWorkspaceStore((s) => s.reopenClosedTab);
+  const openNewChat = useNewChatTab();
+
+  const selectAdjacentTab = (delta: 1 | -1) => {
+    const currentIndex = tabs.findIndex((tab) => tab.id === activeTabId);
+    selectTab(tabs[(currentIndex + delta + tabs.length) % tabs.length].id);
+  };
 
   const focusChatInput = (event: KeyboardEvent) => {
     if (event.isComposing || document.querySelector('[role="dialog"]')) return;
@@ -62,29 +70,30 @@ export function ChatViewHotkeys() {
     openChatView("/chat/settings");
   });
 
-  useHotkey(
-    "Control+Tab",
-    (event) => {
-      if (tabs.length < 2) return;
-      event.preventDefault();
-      const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
-      const nextIndex = (currentIndex + 1) % tabs.length;
-      selectTab(tabs[nextIndex].id);
-    },
+  useHotkeys(
+    [
+      { hotkey: "Control+Tab", callback: () => selectAdjacentTab(1) },
+      { hotkey: "Control+Shift+Tab", callback: () => selectAdjacentTab(-1) },
+      { hotkey: "Mod+Shift+]", callback: () => selectAdjacentTab(1) },
+      { hotkey: "Mod+Shift+[", callback: () => selectAdjacentTab(-1) },
+    ],
+    { ignoreInputs: false, enabled: tabs.length > 1 },
+  );
+
+  // Browser convention: 1-8 go to that position, 9 always goes to the last tab.
+  useHotkeys(
+    (["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const).map((digit) => ({
+      hotkey: `Mod+${digit}` as const,
+      callback: () => {
+        const tab = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
+        if (tab) selectTab(tab.id);
+      },
+    })),
     { ignoreInputs: false },
   );
 
-  useHotkey(
-    "Control+Shift+Tab",
-    (event) => {
-      if (tabs.length < 2) return;
-      event.preventDefault();
-      const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
-      const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
-      selectTab(tabs[prevIndex].id);
-    },
-    { ignoreInputs: false },
-  );
+  useHotkey("Mod+T", openNewChat, { ignoreInputs: false });
+  useHotkey("Mod+Shift+T", reopenClosedTab, { ignoreInputs: false });
 
   useHotkey(
     "Mod+W",

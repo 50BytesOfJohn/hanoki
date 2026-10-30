@@ -28,7 +28,6 @@ export interface WorkspaceSliceValue {
 
 export interface WorkspaceSlice extends WorkspaceSliceValue {
   switchWorkspace: (id: string) => Promise<void>;
-  setCurrentChat: (chatId: string | null) => void;
   setSidebarViewMode: (mode: ChatSidebarViewMode) => void;
   setChatDraft: (chatId: string, draft: TiptapDocument) => void;
 }
@@ -42,8 +41,25 @@ export type OpenTabOptions = {
   activate?: boolean;
 };
 
+export type OpenItemOptions = {
+  /** Never reuse the focused pane, even when the user's open behavior says "current-tab". */
+  newTab?: boolean;
+};
+
+/** A closed tab and where it stood, so reopening puts it back in place. */
+export type ClosedTab = { tab: Tab; index: number };
+
 export interface TabsSlice extends TabsSliceValue {
+  /** Tab ids, most recently active first. Session-only, like `closedTabs`. */
+  tabHistory: string[];
+  closedTabs: ClosedTab[];
+  /** Default "open this" intent: goes to an already open item, else follows the user's setting. */
+  openItem: (itemId: string, itemType: ItemType, options?: OpenItemOptions) => void;
+  /** Explicit "keep this" intent: opens the item in a tab of its own and never as a preview. */
   openTab: (content: TabContent, options?: OpenTabOptions) => void;
+  keepTab: (tabId: string) => void;
+  keepItem: (itemId: string) => void;
+  reopenClosedTab: () => void;
   closeTab: (tabId: string) => void;
   closeOtherTabs: (tabId: string) => void;
   closeTabsToLeft: (tabId: string) => void;

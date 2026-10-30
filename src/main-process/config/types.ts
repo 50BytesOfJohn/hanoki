@@ -1,6 +1,9 @@
 import type {
   ChatFormSubmitBehavior,
   ChatSidebarViewMode,
+  ChatTabCloseFocus,
+  ChatTabInsertPosition,
+  ChatTabOpenBehavior,
   ChatTabsPosition,
   TerminalToolMode,
 } from "@shared/ipc";
@@ -29,6 +32,9 @@ export interface AppConfig {
     };
     tabs: {
       position: ChatTabsPosition;
+      openBehavior: ChatTabOpenBehavior;
+      insertPosition: ChatTabInsertPosition;
+      closeFocus: ChatTabCloseFocus;
     };
     activityPanel: {
       enabled: boolean;

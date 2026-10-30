@@ -265,11 +265,14 @@ export function normalizeTab(tab: TabStateItem): TabStateItem | null {
     layout = removePane(layout, paneId) ?? panes[0];
   }
   const normalizedPanes = getPanes(layout);
-  return {
+  const normalized: TabStateItem = {
     ...tab,
     layout,
     focusedPaneId: normalizedPanes.some((pane) => pane.id === tab.focusedPaneId)
       ? tab.focusedPaneId
       : normalizedPanes[0].id,
   };
+  // A split is a deliberate arrangement, so it is never temporary.
+  if (!normalized.preview || normalizedPanes.length > 1) delete normalized.preview;
+  return normalized;
 }

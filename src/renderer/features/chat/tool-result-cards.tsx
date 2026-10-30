@@ -131,10 +131,10 @@ export function openHanokiItem(
   itemType: OpenableItemType,
   mode: "focus" | "split" | "tab",
 ) {
-  const { activeTabId, openItemInFocusedPane, openTab, splitPane, tabs } =
-    useWorkspaceStore.getState();
+  const { activeTabId, openItem, openTab, splitPane, tabs } = useWorkspaceStore.getState();
   if (mode === "focus") {
-    openItemInFocusedPane(itemId, itemType);
+    // The card lives in the focused chat, so opening must not replace the chat it sits in.
+    openItem(itemId, itemType, { newTab: true });
     return;
   }
   if (mode === "tab") {

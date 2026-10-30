@@ -55,6 +55,9 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
     "formSubmitBehavior",
     "sidebarViewMode",
     "tabsPosition",
+    "tabOpenBehavior",
+    "tabInsertPosition",
+    "tabCloseFocus",
     "activityPanelEnabled",
   ]);
   for (const key of Object.keys(inputRecord)) {
@@ -88,6 +91,34 @@ function parseGlobalChatSettingsUpdateInput(args: unknown[]): [GlobalChatSetting
       throw AppError.badRequest('tabsPosition must be "top" or "sidebar".');
     }
     parsedInput.tabsPosition = inputRecord.tabsPosition;
+  }
+
+  if (inputRecord.tabOpenBehavior !== undefined) {
+    if (
+      inputRecord.tabOpenBehavior !== "preview" &&
+      inputRecord.tabOpenBehavior !== "new-tab" &&
+      inputRecord.tabOpenBehavior !== "current-tab"
+    ) {
+      throw AppError.badRequest('tabOpenBehavior must be "preview", "new-tab" or "current-tab".');
+    }
+    parsedInput.tabOpenBehavior = inputRecord.tabOpenBehavior;
+  }
+
+  if (inputRecord.tabInsertPosition !== undefined) {
+    if (
+      inputRecord.tabInsertPosition !== "next-to-active" &&
+      inputRecord.tabInsertPosition !== "end"
+    ) {
+      throw AppError.badRequest('tabInsertPosition must be "next-to-active" or "end".');
+    }
+    parsedInput.tabInsertPosition = inputRecord.tabInsertPosition;
+  }
+
+  if (inputRecord.tabCloseFocus !== undefined) {
+    if (inputRecord.tabCloseFocus !== "recent" && inputRecord.tabCloseFocus !== "adjacent") {
+      throw AppError.badRequest('tabCloseFocus must be "recent" or "adjacent".');
+    }
+    parsedInput.tabCloseFocus = inputRecord.tabCloseFocus;
   }
 
   if (inputRecord.activityPanelEnabled !== undefined) {

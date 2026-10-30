@@ -332,7 +332,9 @@ function normalizeTabs(value: unknown): TabStateItem[] {
         : panes[0].id;
 
     seenTabIds.add(tabId);
-    normalizedTabs.push({ id: tabId, type: "item", layout, focusedPaneId });
+    const tab: TabStateItem = { id: tabId, type: "item", layout, focusedPaneId };
+    if (record.preview === true) tab.preview = true;
+    normalizedTabs.push(tab);
 
     if (normalizedTabs.length >= MAX_PERSISTED_TABS) {
       break;
