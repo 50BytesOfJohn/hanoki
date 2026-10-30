@@ -21,7 +21,12 @@ export const sdkProviderRegistry = {
   openrouter: {
     async createLanguageModel(apiKey, providerModelId) {
       const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
-      return createOpenRouter({ apiKey })(providerModelId);
+      return createOpenRouter({
+        apiKey,
+        appName: "Hanoki",
+        appUrl: "https://hanoki.app",
+        headers: { "X-OpenRouter-Categories": "general-chat" },
+      })(providerModelId);
     },
     buildModelsRequest(apiKey) {
       return buildBearerRequest("https://openrouter.ai/api/v1/models", apiKey);
