@@ -59,6 +59,9 @@ jobs:
           - os: macos-26
             artifact_name: macos-binaries
     runs-on: ${{ matrix.os }}
+    # Windows has not built since pnpm's shim stopped resolving under setup-node,
+    # and no release ships it yet, so it must not hold back `finalize-release`.
+    continue-on-error: ${{ matrix.os == 'windows-2022' }}
     # `secrets` cannot be read from a step `if`, so surface the one that gates
     # signing as an env flag. Without it the macOS build still succeeds, just
     # ad-hoc signed as before.

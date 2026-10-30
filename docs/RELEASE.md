@@ -19,9 +19,10 @@ A tag containing `-` (e.g. `v0.1.0-beta.1`) is published as a GitHub pre-release
 The update feed resolves through GitHub's "latest" release, which skips
 pre-releases, so those never reach existing installs.
 
-The release stays a draft until every platform has uploaded, then
-`finalize-release` publishes it. If a build fails, re-run it; the release
-stays hidden from updaters until then.
+The release stays a draft until macOS and Linux have uploaded, then
+`finalize-release` publishes it. Windows is allowed to fail and does not hold it
+back. If a macOS or Linux build fails, re-run it; the release stays hidden from
+updaters until then.
 
 ## How updates reach an install
 
