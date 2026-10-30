@@ -206,7 +206,11 @@ function ActiveChatContent() {
   const isStreaming = useChatIsStreaming();
   const isActiveTab = useIsActiveChatTab();
   const isActivePane = useIsActiveChatPane();
-  const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(chatId, isStreaming);
+  const { containerRef, anchorRef, scrollToBottom } = useScrollToBottom(
+    chatId,
+    isStreaming,
+    isActiveTab,
+  );
   const jumpToMessage = React.useCallback(
     (direction: "next" | "previous") => {
       const container = containerRef.current;
@@ -375,7 +379,12 @@ function ActiveChatContent() {
 
   return (
     <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto scrollbar">
+      <div
+        ref={containerRef}
+        role="region"
+        aria-label="Conversation"
+        className="flex-1 min-h-0 overflow-auto scrollbar"
+      >
         <ChatMessageHotkeys />
 
         <div className="flex flex-col min-h-full justify-end">

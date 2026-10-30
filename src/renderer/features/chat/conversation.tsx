@@ -31,7 +31,12 @@ export function Conversation() {
     continuingMessageId ?? (isBusy && lastMessage?.role === "assistant" ? lastMessage.id : null);
 
   return (
-    <div className="min-h-0 flex flex-col gap-8 w-full max-w-3xl mx-auto px-6 pt-8">
+    <div
+      role="log"
+      aria-relevant="additions"
+      aria-busy={isBusy}
+      className="min-h-0 flex flex-col gap-8 w-full max-w-3xl mx-auto px-6 pt-8"
+    >
       {messages.length === 0 ? (
         <p className="text-sm text-muted-foreground">Send a message to start chatting.</p>
       ) : (

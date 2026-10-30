@@ -677,6 +677,8 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
   stopEditingMessage,
   submitEditedMessage,
 }: EditableMessageToolsProps) {
+  const scrollToBottom = useChatScrollToBottom();
+
   return (
     <MessageTools forceVisible>
       <MessageButtonGroup>
@@ -695,6 +697,8 @@ const EditableMessageTools = React.memo(function EditableMessageTools({
           className={TOOLBAR_BUTTON_CLASS}
           disabled={!canSave}
           onClick={() => {
+            // A branch regenerates the reply, so the reader follows it like any other send.
+            scrollToBottom();
             void submitEditedMessage(messageId, draft, "branch");
           }}
         >
