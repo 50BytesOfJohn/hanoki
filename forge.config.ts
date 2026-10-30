@@ -235,6 +235,9 @@ const config: ForgeConfig = {
           continue;
         }
 
+        // ShipIt clears these bits on install, and a binary delta only applies to
+        // a byte-identical tree, modes included. Modes are outside the signature.
+        await execFile("chmod", ["-R", "go-w", appPath]);
         await ensureMacAppSignature(appPath);
       }
     },
@@ -269,8 +272,8 @@ const config: ForgeConfig = {
       },
       ["darwin"],
     ),
-    // Squirrel.Mac updates from a zipped .app, not a dmg — this is the artifact
-    // update.electronjs.org hands the running app. See src/main-process/app/updater.ts.
+    // Squirrel.Mac updates from a zipped .app, not a dmg. See
+    // src/main-process/app/updater.ts and scripts/publish-mac-update-feed.mts.
     new MakerZIP({}, ["darwin"]),
     new MakerRpm({
       options: {

@@ -1,21 +1,25 @@
 import { app, autoUpdater, dialog, shell } from "electron";
-import { updateElectronApp } from "update-electron-app";
+import { UpdateSourceType, updateElectronApp } from "update-electron-app";
 
 import type { SystemEvent, UpdateStateSnapshot } from "@shared/events";
 
 /**
- * Auto-updates via https://update.electronjs.org — the Electron team's free
- * update server for public GitHub repos. It reads our GitHub Releases and hands
- * Squirrel.Mac the matching `.zip` asset, so the only thing the release pipeline
- * owes it is a signed, notarized zip named `*-mac*-arm64-*.zip` (see forge.config.ts).
+ * Auto-updates from a static feed on our GitHub Releases: the Release workflow
+ * attaches a `RELEASES.json` to each release (see scripts/publish-mac-update-feed.mts),
+ * and `releases/latest/download` always resolves to the newest published,
+ * non-prerelease one.
+ *
+ * Squirrel.Mac does the rest. It applies a binary delta when the feed offers one
+ * from the running version, falls back to the `.zip` otherwise, and resumes an
+ * interrupted download on the next check because GitHub's CDN honours `Range`.
  *
  * Downloads happen in the background; the renderer drives the "restart now"
  * decision off the state broadcast below.
  */
 
 const RELEASES_URL = "https://github.com/50BytesOfJohn/hanoki/releases";
-// GitHub Releases move at human speed, so hourly is plenty and keeps us far
-// below the shared update service's rate limits.
+const UPDATE_FEED_BASE_URL = `${RELEASES_URL}/latest/download`;
+// GitHub Releases move at human speed, so hourly is plenty.
 const UPDATE_INTERVAL = "1 hour";
 
 let broadcast: ((event: SystemEvent) => void) | null = null;
@@ -41,11 +45,12 @@ function setState(patch: Partial<UpdateStateSnapshot>): void {
 
 /**
  * Squirrel only ships for macOS and Windows, and an unpackaged app has no
- * bundle to swap out. Hanoki targets macOS, so everything else stays
- * `unsupported` and the UI points at the releases page instead.
+ * bundle to swap out. Hanoki targets arm64 macOS and the feed only describes
+ * that build, so everything else stays `unsupported` and the UI points at the
+ * releases page instead.
  */
 function isUpdaterSupported(): boolean {
-  return app.isPackaged && process.platform === "darwin";
+  return app.isPackaged && process.platform === "darwin" && process.arch === "arm64";
 }
 
 export function initUpdater(deps: { broadcast: (event: SystemEvent) => void }): void {
@@ -105,6 +110,7 @@ export function initUpdater(deps: { broadcast: (event: SystemEvent) => void }): 
   });
 
   const { stopUpdates } = updateElectronApp({
+    updateSource: { type: UpdateSourceType.StaticStorage, baseUrl: UPDATE_FEED_BASE_URL },
     updateInterval: UPDATE_INTERVAL,
     // The renderer owns the prompt, so the module's native dialog stays off.
     notifyUser: false,

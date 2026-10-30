@@ -40,6 +40,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           generate_release_notes: true
+          # Stays a draft until `finalize-release`, so the updater's
+          # `releases/latest/download` feed never sees a half-uploaded release.
+          draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
   publish:
@@ -108,9 +111,36 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: pnpm release:publish
 
+      # Must match the Sparkle version Electron's Squirrel.Mac vendors closely
+      # enough to read its patches: delta format 3 or 4, not bzip2-compressed.
+      - name: Install Sparkle BinaryDelta
+        if: runner.os == 'macOS' && !contains(github.ref_name, '-')
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "${RUNNER_TEMP}/sparkle.tar.xz" \
+            https://github.com/sparkle-project/Sparkle/releases/download/2.9.5/Sparkle-2.9.5.tar.xz
+          echo "015336b601493e05c237964954bff6191370003d94edefe663724c88840d73cc  ${RUNNER_TEMP}/sparkle.tar.xz" | shasum -a 256 -c -
+          tar -xf "${RUNNER_TEMP}/sparkle.tar.xz" -C "${RUNNER_TEMP}" ./bin/BinaryDelta
+
+      - name: Publish macOS update feed
+        if: runner.os == 'macOS' && !contains(github.ref_name, '-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-mac-update-feed.mts "${GITHUB_REF_NAME}" "${RUNNER_TEMP}/bin/BinaryDelta"
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.artifact_name }}
           path: out/make/**
           if-no-files-found: error
+
+  finalize-release:
+    needs: publish
+    environment: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false

@@ -16,14 +16,42 @@ Release workflow refuses to build if the tag and `package.json` disagree, so
 never hand-edit one without the other.
 
 A tag containing `-` (e.g. `v0.1.0-beta.1`) is published as a GitHub pre-release.
-The update server skips pre-releases, so those never reach existing installs.
+The update feed resolves through GitHub's "latest" release, which skips
+pre-releases, so those never reach existing installs.
 
-## What auto-update needs from a release
+The release stays a draft until every platform has uploaded, then
+`finalize-release` publishes it. If a build fails, re-run it; the release
+stays hidden from updaters until then.
 
-Updates run through [update.electronjs.org](https://update.electronjs.org), the
-Electron team's free update server for public GitHub repos. It reads our
-releases and picks the asset by **filename**, so the naming in
-`forge.config.ts` is load-bearing:
+## How updates reach an install
+
+The app reads `RELEASES.json` from
+`https://github.com/50BytesOfJohn/hanoki/releases/latest/download/`.
+`scripts/publish-mac-update-feed.mts` attaches that file to each stable release,
+with the ZIP's digest and size and a binary delta from the previous release.
+
+- **Delta:** an install on exactly the previous version downloads the patch,
+  applies it to a copy of itself and verifies the signature. Any failure falls
+  back to the ZIP in the same check, as does being on an older version.
+- **Resume:** GitHub's CDN sends an `ETag` and honours `Range`, so an interrupted
+  download continues on the next check, including after a relaunch.
+
+Deltas are built from the signed, notarized ZIPs that shipped, and only apply to
+an identical bundle, so never re-upload the ZIP of a published release.
+
+To see what installs see:
+
+```sh
+curl -sL https://github.com/50BytesOfJohn/hanoki/releases/latest/download/RELEASES.json
+```
+
+## What older installs need from a release
+
+Installs on 0.0.37 or earlier still ask
+[update.electronjs.org](https://update.electronjs.org), which reads our releases
+and picks the asset by **filename**. Their next update moves them to the feed
+above, but until they have all moved the naming in `forge.config.ts` stays
+load-bearing:
 
 | Requirement                                   | Where it is satisfied                         |
 | --------------------------------------------- | --------------------------------------------- |
