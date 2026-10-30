@@ -1,9 +1,11 @@
 import * as React from "react";
+import type { Editor } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { HardBreak } from "@tiptap/extension-hard-break";
 import type { MentionNodeAttrs } from "@tiptap/extension-mention";
 import { Paragraph } from "@tiptap/extension-paragraph";
 import { Text } from "@tiptap/extension-text";
+import { UndoRedo } from "@tiptap/extensions";
 import { PluginKey } from "@tiptap/pm/state";
 import { EditorContent, ReactRenderer, useEditor } from "@tiptap/react";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
@@ -68,6 +70,7 @@ const composerExtensions = [
   Paragraph,
   Text,
   HardBreak,
+  UndoRedo,
   createEditorMention(toolSuggestion),
 ];
 
@@ -78,6 +81,7 @@ interface ChatComposerEditorProps {
   workspaceId: string | null;
   onChange: (document: TiptapDocument) => void;
   onSubmit: () => boolean;
+  ref?: React.Ref<Editor | null>;
 }
 
 export function ChatComposerEditor({
@@ -87,6 +91,7 @@ export function ChatComposerEditor({
   workspaceId,
   onChange,
   onSubmit,
+  ref,
 }: ChatComposerEditorProps) {
   const submitBehaviorRef = React.useRef(submitBehavior);
   const onSubmitRef = React.useRef(onSubmit);
@@ -137,6 +142,8 @@ export function ChatComposerEditor({
       }
     },
   });
+
+  React.useImperativeHandle<Editor | null, Editor | null>(ref, () => editor, [editor]);
 
   React.useEffect(() => {
     editor?.setEditable(!disabled);

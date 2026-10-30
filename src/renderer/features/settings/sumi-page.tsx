@@ -56,12 +56,12 @@ export function SumiPage() {
 
       <SettingsSection
         title="Prompt actions"
-        description="One-tap helpers that appear in the chat composer."
+        description="One-tap helpers for the chat composer and any text you edit."
       >
         <SettingsRow
           icon={<HugeiconsIcon icon={AiEditingIcon} className="size-4" />}
           title="Sumi prompt actions"
-          description="Enable Sumi's writing tools in the chat composer."
+          description="Shorten prompts in the composer, and fix grammar from the menu of any text field."
           control={
             <Switch
               aria-label="Enable Sumi prompt actions"

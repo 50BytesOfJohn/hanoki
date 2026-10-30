@@ -8,7 +8,6 @@ import { sanitizeGeneratedTitle, titleFromModelText } from "@shared/chat/chat-ti
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import type { ItemTitleUpdatedEvent } from "@shared/events";
-import type { SumiModelReference } from "@shared/ipc";
 import {
   buildMarkdownTitleSource,
   isReplaceableItemTitle,
@@ -16,17 +15,9 @@ import {
 } from "@shared/markdown/title-source";
 import { getItemById, updateItemTitle } from "../../chat-tree/repository";
 import { listMessagesByChatId, type MessageRow } from "../../messages/repository";
-import { getModelById } from "../../models/repository";
-import { getProviderById } from "../../providers/repository";
-import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { readSumiSettings } from "../../services/settings-service";
-import { createLanguageModel } from "../providers/language-model-factory";
 import { SUMI_CHAT_TITLE_INSTRUCTIONS, SUMI_MARKDOWN_TITLE_INSTRUCTIONS } from "./features";
-
-interface ResolvedSumiModel {
-  providerId: string;
-  providerModelId: string;
-}
+import { createSumiLanguageModel, resolveConfiguredSumiModel } from "./sumi-model";
 
 interface GenerateSumiItemTitleInput {
   itemId: string;
@@ -73,7 +64,7 @@ async function generateItemTitle(
     throw new Error("Sumi title generation is disabled.");
   }
 
-  const modelTarget = resolveSumiModel(settings.titleGeneration.model);
+  const modelTarget = resolveConfiguredSumiModel(settings.titleGeneration.model);
   if (!modelTarget) {
     throw new Error("The configured Sumi title model is unavailable.");
   }
@@ -155,40 +146,4 @@ function extractMessageText(message: MessageRow): string {
     parts: message.parts as HanokiUiMessage["parts"],
     role: message.role,
   });
-}
-
-async function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
-  const provider = getProviderById(modelTarget.providerId);
-  if (!provider) {
-    return null;
-  }
-
-  try {
-    const providerRuntime = await resolveProviderRuntimeContext(provider);
-    return await createLanguageModel({
-      providerRow: provider,
-      providerRuntime,
-      providerModelId: modelTarget.providerModelId,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function resolveSumiModel(configuredModel: SumiModelReference | null): ResolvedSumiModel | null {
-  if (!configuredModel) {
-    return null;
-  }
-
-  const storedModel = getModelById(
-    `${configuredModel.providerId}:${configuredModel.providerModelId}`,
-  );
-  if (storedModel && storedModel.lifecycleStatus !== "active") {
-    return null;
-  }
-
-  return {
-    providerId: configuredModel.providerId,
-    providerModelId: configuredModel.providerModelId,
-  };
 }

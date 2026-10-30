@@ -1,19 +1,26 @@
 import { Hono } from "hono";
-import { smoothStream, streamText } from "ai";
+import { generateText, smoothStream, streamText } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
-import type { SumiModelReference } from "@shared/ipc";
+import {
+  GRAMMAR_FIX_MAX_CHARS,
+  type GrammarFixRequest,
+  type GrammarFixSegments,
+} from "@shared/sumi/grammar-fix";
 import { getModelById } from "../../models/repository";
-import { getProviderById } from "../../providers/repository";
-import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { readSumiSettings } from "../../services/settings-service";
-import { SUMI_FEATURES, isSumiFeatureId } from "../assistant/features";
+import {
+  SUMI_FEATURES,
+  SUMI_GRAMMAR_FIX_INSTRUCTIONS,
+  isSumiFeatureId,
+} from "../assistant/features";
+import { GrammarFixRejectedError, fixGrammarSegments } from "../assistant/grammar-fix";
+import {
+  createSumiLanguageModel,
+  resolveConfiguredSumiModel,
+  sumiModelAcceptsTemperature,
+  type ResolvedSumiModel,
+} from "../assistant/sumi-model";
 import { generateSumiItemTitle } from "../assistant/title-generation";
-import { createLanguageModel } from "../providers/language-model-factory";
-
-interface ResolvedSumiModel {
-  providerId: string;
-  providerModelId: string;
-}
 
 export function createSumiRoute() {
   const app = new Hono();
@@ -64,6 +71,59 @@ export function createSumiRoute() {
     return result.toTextStreamResponse();
   });
 
+  app.post("/api/sumi/grammar", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const request = body as Partial<GrammarFixRequest> | null;
+    const segments = request?.segments;
+    if (
+      !Array.isArray(segments) ||
+      segments.length === 0 ||
+      !segments.every((segment) => typeof segment === "string")
+    ) {
+      return c.text("segments must be a non-empty array of strings.", 400);
+    }
+    if (segments.reduce((total, segment) => total + segment.length, 0) > GRAMMAR_FIX_MAX_CHARS) {
+      return c.text("This text is too long to fix at once. Select a smaller part of it.", 413);
+    }
+
+    const settings = readSumiSettings();
+    if (!settings.promptActions.enabled) {
+      return c.text("This Sumi feature is disabled.", 403);
+    }
+
+    const modelTarget = resolveConfiguredSumiModel(settings.promptActions.model);
+    const languageModel = modelTarget ? await createSumiLanguageModel(modelTarget) : null;
+    if (!modelTarget || !languageModel) {
+      return c.text("The configured Sumi model is unavailable.", 400);
+    }
+
+    const temperature = sumiModelAcceptsTemperature(modelTarget) ? 0 : undefined;
+    const maxOutputTokens = Math.max(1024, segments.join("").length * 2);
+
+    try {
+      const corrected = await fixGrammarSegments(
+        segments,
+        (prompt) =>
+          generateText({
+            abortSignal: c.req.raw.signal,
+            model: languageModel,
+            instructions: SUMI_GRAMMAR_FIX_INSTRUCTIONS,
+            prompt,
+            temperature,
+            maxOutputTokens,
+          }),
+        request?.startsMidSentence === true,
+      );
+      return c.json({ segments: corrected } satisfies GrammarFixSegments);
+    } catch (error) {
+      if (error instanceof GrammarFixRejectedError) {
+        return c.text(error.message, 422);
+      }
+      const message = error instanceof Error ? error.message : "Sumi could not fix this text.";
+      return c.text(message, 502);
+    }
+  });
+
   app.post("/api/sumi/title", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -102,27 +162,9 @@ export function createSumiRoute() {
   return app;
 }
 
-async function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
-  const provider = getProviderById(modelTarget.providerId);
-  if (!provider) {
-    return null;
-  }
-
-  try {
-    const providerRuntime = await resolveProviderRuntimeContext(provider);
-    return await createLanguageModel({
-      providerRow: provider,
-      providerRuntime,
-      providerModelId: modelTarget.providerModelId,
-    });
-  } catch {
-    return null;
-  }
-}
-
 function resolveSumiModel(
   overrideModelId: unknown,
-  configuredModel: SumiModelReference | null,
+  configuredModel: Parameters<typeof resolveConfiguredSumiModel>[0],
 ): ResolvedSumiModel | null {
   if (typeof overrideModelId === "string" && overrideModelId.trim().length > 0) {
     const model = getModelById(overrideModelId);
@@ -136,19 +178,5 @@ function resolveSumiModel(
     };
   }
 
-  if (!configuredModel) {
-    return null;
-  }
-
-  const storedModel = getModelById(
-    `${configuredModel.providerId}:${configuredModel.providerModelId}`,
-  );
-  if (storedModel && storedModel.lifecycleStatus !== "active") {
-    return null;
-  }
-
-  return {
-    providerId: configuredModel.providerId,
-    providerModelId: configuredModel.providerModelId,
-  };
+  return resolveConfiguredSumiModel(configuredModel);
 }

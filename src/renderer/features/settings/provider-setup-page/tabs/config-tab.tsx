@@ -113,6 +113,7 @@ export function ProviderSetupConfigForm({
                       id={`${provider.id}-${key}-host`}
                       type="text"
                       autoComplete="off"
+                      spellCheck={false}
                       placeholder={field.defaultHost ?? "127.0.0.1"}
                       value={hostPortValue.host}
                       onChange={(event) => {

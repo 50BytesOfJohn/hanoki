@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { Editor } from "@tiptap/core";
 import { useQuery } from "@tanstack/react-query";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useDebouncedCallback } from "@tanstack/react-pacer";
@@ -177,6 +178,7 @@ function ActiveChatContent() {
     return parsed.ok ? parsed.value.document : createEmptyTiptapDocument();
   });
   const inputRef = React.useRef(input);
+  const composerEditorRef = React.useRef<Editor | null>(null);
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const saveDraft = useDebouncedCallback(
     (document: TiptapDocument) => useWorkspaceStore.getState().setChatDraft(chatId, document),
@@ -428,6 +430,7 @@ function ActiveChatContent() {
                   empty — which made the sticky composer translucent over messages. */}
               <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
                 <ChatComposerEditor
+                  ref={composerEditorRef}
                   document={input}
                   disabled={isInteractionLocked}
                   submitBehavior={submitBehavior}
@@ -445,7 +448,9 @@ function ActiveChatContent() {
                     <ChatContextUsage />
                     <SumiPromptAction
                       prompt={inputText}
-                      isDisabled={isInteractionLocked || !inputIsTextOnly}
+                      isDisabled={isInteractionLocked}
+                      canShorten={inputIsTextOnly}
+                      editorRef={composerEditorRef}
                       onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
                     />
                     {canStop ? (

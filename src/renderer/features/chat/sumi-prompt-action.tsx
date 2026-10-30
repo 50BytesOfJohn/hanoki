@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { Editor } from "@tiptap/core";
 import { useCompletion } from "@ai-sdk/react";
 import { useQuery } from "@tanstack/react-query";
 import { AiEditingIcon, ArrowShrink01Icon, RefreshIcon } from "@hugeicons/core-free-icons";
@@ -20,44 +21,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { createTiptapGrammarTarget } from "@/features/sumi/grammar-fix-tiptap";
+import { useGrammarFix } from "@/features/sumi/use-grammar-fix";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
+import { modShortcut } from "@/lib/platform";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 
 interface SumiPromptActionProps {
   prompt: string;
   isDisabled: boolean;
+  canShorten: boolean;
+  editorRef: React.RefObject<Editor | null>;
   onReplace: (prompt: string) => void;
 }
 
-const SUMI_PROMPT_ACTIONS = [
-  {
-    id: "prompt-language-fix",
-    label: "Fix language & grammar",
-    description: "Correct mistakes and tidy the writing.",
-    dialogDescription: "Sumi preserves the prompt’s meaning while correcting the writing.",
-    loadingLabel: "Fixing your prompt…",
-    icon: AiEditingIcon,
-  },
-  {
-    id: "prompt-shorten",
-    label: "Shorten",
-    description: "Make the prompt concise and direct.",
-    dialogDescription: "Sumi removes repetition and filler while keeping the essential details.",
-    loadingLabel: "Shortening your prompt…",
-    icon: ArrowShrink01Icon,
-  },
-] as const;
-
-type SumiPromptActionId = (typeof SUMI_PROMPT_ACTIONS)[number]["id"];
-
-export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptActionProps) {
+export function SumiPromptAction({
+  prompt,
+  isDisabled,
+  canShorten,
+  editorRef,
+  onReplace,
+}: SumiPromptActionProps) {
   const port = useSystemStore(selectAiServerPort);
   const { data: settings } = useQuery(sumiSettingsQueryOptions);
+  const fixGrammar = useGrammarFix();
   const [isOpen, setIsOpen] = React.useState(false);
   const [sourcePrompt, setSourcePrompt] = React.useState("");
-  const [activeAction, setActiveAction] = React.useState<(typeof SUMI_PROMPT_ACTIONS)[number]>(
-    SUMI_PROMPT_ACTIONS[0],
-  );
   const api = port ? `http://127.0.0.1:${port}/api/sumi` : "";
   const { completion, complete, error, isLoading, setCompletion, stop } = useCompletion({
     api,
@@ -71,25 +60,30 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
     return null;
   }
 
-  function runRefinement(nextPrompt: string, actionId: SumiPromptActionId) {
+  function runShorten(nextPrompt: string) {
     if (!hasPromptContent(nextPrompt) || !api) {
       return;
     }
 
     setCompletion("");
-    void complete(nextPrompt, { body: { feature: actionId } });
+    void complete(nextPrompt, { body: { feature: "prompt-shorten" } });
   }
 
-  function startAction(actionId: SumiPromptActionId) {
-    const action = SUMI_PROMPT_ACTIONS.find((candidate) => candidate.id === actionId);
-    if (!action || !hasPromptContent(prompt)) {
+  function startShorten() {
+    if (!hasPromptContent(prompt)) {
       return;
     }
 
     setSourcePrompt(prompt);
-    setActiveAction(action);
     setIsOpen(true);
-    runRefinement(prompt, action.id);
+    runShorten(prompt);
+  }
+
+  function startGrammarFix() {
+    const editor = editorRef.current;
+    if (editor && fixGrammar) {
+      void fixGrammar(editor, createTiptapGrammarTarget(editor, false));
+    }
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -117,15 +111,24 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" aria-label="Sumi prompt actions">
           <DropdownMenuGroup>
-            {SUMI_PROMPT_ACTIONS.map((action) => (
-              <DropdownMenuItem key={action.id} onClick={() => startAction(action.id)}>
-                <HugeiconsIcon icon={action.icon} />
-                <span className="flex flex-col gap-0.5">
-                  <span>{action.label}</span>
-                  <span className="text-xs text-muted-foreground">{action.description}</span>
+            <DropdownMenuItem onClick={startGrammarFix}>
+              <HugeiconsIcon icon={AiEditingIcon} />
+              <span className="flex flex-col gap-0.5">
+                <span>Fix language & grammar</span>
+                <span className="text-xs text-muted-foreground">
+                  Correct mistakes in place. Undo with {modShortcut("Z")}.
                 </span>
-              </DropdownMenuItem>
-            ))}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!canShorten} onClick={startShorten}>
+              <HugeiconsIcon icon={ArrowShrink01Icon} />
+              <span className="flex flex-col gap-0.5">
+                <span>Shorten</span>
+                <span className="text-xs text-muted-foreground">
+                  Make the prompt concise and direct.
+                </span>
+              </span>
+            </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -133,14 +136,16 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
       <Dialog open={isOpen} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-lg gap-0 overflow-hidden p-0">
           <DialogHeader className="border-b border-border px-4 py-3 pr-12">
-            <DialogTitle>{activeAction.label}</DialogTitle>
-            <DialogDescription>{activeAction.dialogDescription}</DialogDescription>
+            <DialogTitle>Shorten</DialogTitle>
+            <DialogDescription>
+              Sumi removes repetition and filler while keeping the essential details.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-48 px-4 py-4">
             {error ? (
               <div className="flex min-h-40 items-center justify-center rounded-lg border border-danger/30 bg-danger/5 px-6 text-center text-sm text-danger">
-                {error.message || "Sumi could not refine this prompt."}
+                {error.message || "Sumi could not shorten this prompt."}
               </div>
             ) : completion ? (
               <div className="max-h-[min(24rem,50vh)] overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-secondary px-3 py-3 text-sm leading-relaxed scrollbar">
@@ -152,9 +157,9 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
             ) : (
               <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
                 <div className="flex size-9 items-center justify-center rounded-full border border-border bg-surface-secondary">
-                  <HugeiconsIcon icon={activeAction.icon} className="size-4 animate-pulse" />
+                  <HugeiconsIcon icon={ArrowShrink01Icon} className="size-4 animate-pulse" />
                 </div>
-                <span>{isLoading ? activeAction.loadingLabel : "Waiting for Sumi…"}</span>
+                <span>{isLoading ? "Shortening your prompt…" : "Waiting for Sumi…"}</span>
               </div>
             )}
           </div>
@@ -163,7 +168,7 @@ export function SumiPromptAction({ prompt, isDisabled, onReplace }: SumiPromptAc
             <Button
               variant="secondary"
               disabled={isLoading}
-              onClick={() => runRefinement(sourcePrompt, activeAction.id)}
+              onClick={() => runShorten(sourcePrompt)}
             >
               <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
               Try again

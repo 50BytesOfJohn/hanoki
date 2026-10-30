@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createHashHistory, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { ToastProvider } from "./components/ui/toast";
 import { QueryProvider } from "./providers/query-provider";
 import { SystemEventListener } from "./components/system-event-listener";
 import "./index.css";
@@ -34,7 +35,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <QueryProvider>
       <SystemEventListener />
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
     </QueryProvider>
   </StrictMode>,
 );

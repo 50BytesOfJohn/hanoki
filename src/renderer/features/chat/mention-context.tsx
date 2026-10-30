@@ -294,6 +294,7 @@ export const MentionPicker = React.forwardRef<MentionPickerHandle, MentionPicker
               />
               <input
                 autoFocus
+                spellCheck={false}
                 value={query}
                 onChange={(event) => onQueryChange?.(event.target.value)}
                 onKeyDown={(event) => {
