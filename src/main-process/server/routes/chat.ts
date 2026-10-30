@@ -156,7 +156,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
 
     let languageModel: Awaited<ReturnType<typeof createLanguageModel>>;
     try {
-      const providerRuntime = resolveProviderRuntimeContext(provider);
+      const providerRuntime = await resolveProviderRuntimeContext(provider);
       languageModel = await createLanguageModel({
         providerRow: provider,
         providerRuntime,

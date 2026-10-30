@@ -63,8 +63,8 @@ export interface ProviderService {
   listProviderModels(providerId: string): ProviderModelInfo[];
   syncProviderModels(providerId: string): Promise<void>;
   testCredentials(input: ProviderCredentialTestInput): Promise<ProviderCredentialTestResult>;
-  saveProvider(input: SaveProviderInput): SaveProviderResult;
-  updateProviderSecrets(input: UpdateProviderSecretsInput): ProviderInfo;
+  saveProvider(input: SaveProviderInput): Promise<SaveProviderResult>;
+  updateProviderSecrets(input: UpdateProviderSecretsInput): Promise<ProviderInfo>;
   deleteProvider(providerId: string): void;
   syncProvidersOnStartup(): Promise<void>;
 }
@@ -176,7 +176,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       );
     },
 
-    saveProvider(input) {
+    async saveProvider(input) {
       const catalogEntry = getSupportedProviderById(input.catalogId);
       if (!catalogEntry || !catalogEntry.isAvailable) {
         throw AppError.notFound(`Provider "${input.catalogId}" is not available.`);
@@ -184,7 +184,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
 
       const config = parseProviderDraftConfig(catalogEntry, input.config);
 
-      if (!isEncryptionAvailable()) {
+      if (!(await isEncryptionAvailable())) {
         throw AppError.internal("Encryption is not available. Cannot securely store credentials.");
       }
       const id = createUuidV7();
@@ -195,7 +195,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         id,
         displayName,
         catalogId: input.catalogId,
-        config: buildStoredProviderConfig(catalogEntry, config),
+        config: await buildStoredProviderConfig(catalogEntry, config),
       });
 
       void syncProviderModelsInBackground(row.id, "provider-added");
@@ -207,7 +207,7 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       };
     },
 
-    updateProviderSecrets(input) {
+    async updateProviderSecrets(input) {
       const existing = getProviderById(input.providerId);
       if (!existing) {
         throw AppError.notFound(`Provider "${input.providerId}" not found.`);
@@ -218,14 +218,22 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
         throw AppError.notFound(`Provider "${existing.catalogId}" is not available.`);
       }
 
-      if (!isEncryptionAvailable()) {
+      if (!(await isEncryptionAvailable())) {
         throw AppError.internal("Encryption is not available. Cannot securely store credentials.");
       }
 
       const config = parseProviderSecretDraftConfig(catalogEntry, input.config);
-      const updated = updateProviderConfig(existing.id, {
-        ...parseStoredProviderConfigObject(existing.config),
-        ...buildStoredProviderConfig(catalogEntry, config),
+      const storedSecrets = await buildStoredProviderConfig(catalogEntry, config);
+
+      // Read after encrypting: the row may have changed while waiting on the keychain.
+      const latest = getProviderById(existing.id);
+      if (!latest) {
+        throw AppError.notFound(`Provider "${input.providerId}" not found.`);
+      }
+
+      const updated = updateProviderConfig(latest.id, {
+        ...parseStoredProviderConfigObject(latest.config),
+        ...storedSecrets,
       });
 
       void syncProviderModelsInBackground(updated.id, "provider-added");
@@ -446,10 +454,10 @@ function parseProviderSecretDraftConfig(
   return draft;
 }
 
-function buildStoredProviderConfig(
+async function buildStoredProviderConfig(
   provider: SupportedProviderDefinition,
   draftConfig: ProviderDraftConfig,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const storedConfig: Record<string, unknown> = {};
 
   for (const [key, field] of Object.entries(provider.configFields)) {
@@ -465,7 +473,7 @@ function buildStoredProviderConfig(
         }
 
         const secretValue: StoredSecretConfigValue = {
-          $secret: encryptString(value),
+          $secret: await encryptString(value),
         };
         storedConfig[key] = secretValue;
         break;
@@ -590,7 +598,7 @@ async function runProviderModelSync(
   });
 
   try {
-    const { providerDef, parsedConfig } = resolveProviderRuntimeContext(providerRow);
+    const { providerDef, parsedConfig } = await resolveProviderRuntimeContext(providerRow);
     const normalizedModels = await fetchModelsForProviderSync({
       providerRow,
       providerDef,

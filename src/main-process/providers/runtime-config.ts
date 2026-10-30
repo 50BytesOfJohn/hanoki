@@ -23,9 +23,9 @@ interface StoredHostPortConfigValue {
   port: unknown;
 }
 
-export function resolveProviderRuntimeContext(
+export async function resolveProviderRuntimeContext(
   providerRow: ProviderTableRow,
-): ResolvedProviderRuntimeContext {
+): Promise<ResolvedProviderRuntimeContext> {
   const providerDef = getSupportedProviderById(providerRow.catalogId);
   if (!providerDef || !providerDef.isAvailable) {
     throw new Error(`Provider "${providerRow.catalogId}" is not available.`);
@@ -33,14 +33,14 @@ export function resolveProviderRuntimeContext(
 
   return {
     providerDef,
-    parsedConfig: parseStoredProviderConfig(providerDef, providerRow.config),
+    parsedConfig: await parseStoredProviderConfig(providerDef, providerRow.config),
   };
 }
 
-export function parseStoredProviderConfig(
+export async function parseStoredProviderConfig(
   providerDef: SupportedProviderDefinition,
   storedConfig: unknown,
-): ParsedProviderRuntimeConfig {
+): Promise<ParsedProviderRuntimeConfig> {
   const parsedConfig = parseStoredConfigObject(providerDef.id, storedConfig);
   const allowedKeys = new Set(Object.keys(providerDef.configFields));
 
@@ -70,7 +70,7 @@ export function parseStoredProviderConfig(
 
         let decrypted: string;
         try {
-          decrypted = decryptString(rawValue.$secret);
+          decrypted = await decryptString(rawValue.$secret);
         } catch (error) {
           throw new Error(`Failed to decrypt stored config field "${key}".`, { cause: error });
         }

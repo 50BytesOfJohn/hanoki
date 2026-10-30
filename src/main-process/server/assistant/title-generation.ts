@@ -164,7 +164,7 @@ async function createSumiLanguageModel(modelTarget: ResolvedSumiModel) {
   }
 
   try {
-    const providerRuntime = resolveProviderRuntimeContext(provider);
+    const providerRuntime = await resolveProviderRuntimeContext(provider);
     return await createLanguageModel({
       providerRow: provider,
       providerRuntime,

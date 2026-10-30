@@ -1,15 +1,16 @@
 import { safeStorage } from "electron";
 
-export function encryptString(plaintext: string): string {
-  const encrypted = safeStorage.encryptString(plaintext);
+export async function encryptString(plaintext: string): Promise<string> {
+  const encrypted = await safeStorage.encryptStringAsync(plaintext);
   return encrypted.toString("base64");
 }
 
-export function decryptString(base64Ciphertext: string): string {
+export async function decryptString(base64Ciphertext: string): Promise<string> {
   const buffer = Buffer.from(base64Ciphertext, "base64");
-  return safeStorage.decryptString(buffer);
+  const { result } = await safeStorage.decryptStringAsync(buffer);
+  return result;
 }
 
-export function isEncryptionAvailable(): boolean {
-  return safeStorage.isEncryptionAvailable();
+export function isEncryptionAvailable(): Promise<boolean> {
+  return safeStorage.isAsyncEncryptionAvailable();
 }
