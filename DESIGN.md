@@ -52,20 +52,21 @@ ours. When upgrading, preview with `shadcn add --diff`, install coss items
 before shadcn ones (coss pulls its own `button`, `input`, `label`, …), and
 keep these:
 
-| Component      | Override                                             | Why                                                       |
-| -------------- | ---------------------------------------------------- | --------------------------------------------------------- |
-| `button`       | Soft `default` variant, `rounded-md`, svg edge nudge | Buttons never shout; most icons don't set `data-icon`     |
-| `command`      | `isPending` on `CommandInput`, `p-1` wrapper         | Model search spinner; gap above results                   |
-| `context-menu` | No `select-none` on the trigger                      | `TextContextMenu` wraps selectable chat text              |
-| `input-group`  | `!` on the combobox focus-within resets              | `has-[…:focus-visible]` otherwise out-specifies them      |
-| `popover`      | `anchor` on `PopoverContent`                         | Anchoring to message and composer elements                |
-| `separator`    | Vertical uses `self-center` + `min-h-4`              | `self-stretch` top-aligns once a caller sets a height     |
-| `sidebar`      | `13.5rem` width, `h-7` / 13px rows                   | Compact settings navigation                               |
-| `slider`       | `thumbProps`, `trackClassName`, `thumbClassName`     | Effort control's named steps and larger hit area          |
-| `spinner`      | Props typed from `HugeiconsIcon`                     | Upstream's svg props don't type-check against it          |
-| `autocomplete` | Plain `Input` and `ScrollArea`, no `cursor-pointer`  | We use shadcn's versions; default cursor in a desktop app |
-| `number-field` | No `cursor-pointer`                                  | Default cursor in a desktop app                           |
-| `menu`         | `select-none` on checkbox, radio and submenu items   | Menu labels shouldn't be selectable                       |
+| Component      | Override                                             | Why                                                        |
+| -------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
+| `button`       | Soft `default` variant, `rounded-md`, svg edge nudge | Buttons never shout; most icons don't set `data-icon`      |
+| `command`      | `isPending` on `CommandInput`, `p-1` wrapper         | Model search spinner; gap above results                    |
+| `context-menu` | No `select-none` on the trigger                      | `TextContextMenu` wraps selectable chat text               |
+| `input-group`  | `!` on the combobox focus-within resets              | `has-[…:focus-visible]` otherwise out-specifies them       |
+| `popover`      | `anchor` on `PopoverContent`                         | Anchoring to message and composer elements                 |
+| `separator`    | Vertical uses `self-center` + `min-h-4`              | `self-stretch` top-aligns once a caller sets a height      |
+| `sidebar`      | `13.5rem` width, `h-7` / 13px rows                   | Compact settings navigation                                |
+| `trace`        | `text-[13px]` lines, no `cursor-pointer`             | Agent steps read as compact chrome; desktop default cursor |
+| `slider`       | `thumbProps`, `trackClassName`, `thumbClassName`     | Effort control's named steps and larger hit area           |
+| `spinner`      | Props typed from `HugeiconsIcon`                     | Upstream's svg props don't type-check against it           |
+| `autocomplete` | Plain `Input` and `ScrollArea`, no `cursor-pointer`  | We use shadcn's versions; default cursor in a desktop app  |
+| `number-field` | No `cursor-pointer`                                  | Default cursor in a desktop app                            |
+| `menu`         | `select-none` on checkbox, radio and submenu items   | Menu labels shouldn't be selectable                        |
 
 ## Layout
 
@@ -97,6 +98,25 @@ Syntax colors are the `--code-*` tokens in `index.css`, mapped to grammar scopes
 by `hanokiCodeTheme` (`features/chat/code-theme.ts`) and handed to Streamdown via
 `createCodePlugin`. Moss marks keywords; the other hues are low-chroma so a block
 reads as ink with a few warm notes rather than a second accent.
+
+## Agent steps
+
+Reasoning and tool calls are `Trace` rows (`message.tsx`,
+`tool-call-marker.tsx`), expanding inline rather than in a popover. Neighbouring
+steps share one `Trace`, and reply text splits the lists. `Marker` stays
+reserved for notes between turns.
+
+Hanoki is for creative work, so results read in plain language and never lead
+with code, and steps stay out of the way of the writing:
+
+- Every step is one collapsed row. Nothing but an approval expands by default.
+- Repeated calls to one tool share a row ("Renamed 12 chats") that expands into
+  one line per call.
+- Expanded results are flat lines, not boxes: the name in foreground, a quiet
+  note beside it, actions on hover (`tool-result-cards.tsx`). No borders, no
+  per-line icons, no filled buttons.
+- Raw input and output live in a `CodeBlock` behind a hover-revealed icon button
+  that opens a popover.
 
 ## Buttons
 

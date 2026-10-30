@@ -1246,10 +1246,14 @@ export function createHanokiTools({
       execute: ({ items, destinationFolderId }) => {
         const normalizedDestinationFolderId = normalizeNullableString(destinationFolderId);
         const beforePaths = getFolderPaths(workspaceId);
+        const previousFolderIds = new Map<string, string | null>();
         const result = moveChatTreeItems(
           workspaceId,
           items.map((item) => {
-            summarizeItem(workspaceId, item, beforePaths);
+            previousFolderIds.set(
+              item.id,
+              summarizeItem(workspaceId, item, beforePaths).parentFolderId,
+            );
             return toMoveRef(item);
           }),
           normalizedDestinationFolderId,
@@ -1257,9 +1261,10 @@ export function createHanokiTools({
         const folderPaths = getFolderPaths(workspaceId);
         return treeChanged({
           destinationFolderId: normalizedDestinationFolderId,
-          moved: result.movedItems.map((item) =>
-            summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
-          ),
+          moved: result.movedItems.map((item) => ({
+            ...summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
+            previousFolderId: previousFolderIds.get(item.id) ?? null,
+          })),
           unchanged: result.unchangedItems.map((item) =>
             summarizeItem(workspaceId, toToolItem(workspaceId, item), folderPaths),
           ),

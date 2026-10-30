@@ -33,6 +33,7 @@ import { listProviderModelsQueryOptions, listProvidersQueryOptions } from "@/que
 
 import "streamdown/styles.css";
 import {
+  AiBrain01Icon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Copy01Icon,
@@ -45,7 +46,15 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "cn";
-import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -59,6 +68,7 @@ import {
   serializeTiptapToMarkdown,
 } from "@shared/tiptap/extensions";
 import { hanokiCodeTheme } from "./code-theme";
+import { groupTraceParts } from "./group-trace-parts";
 import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
@@ -116,27 +126,79 @@ const AssistantMessageTextPart = React.memo(function AssistantMessageTextPart({
   );
 });
 
-function hasStreamingReasoning(message: HanokiUiMessage): boolean {
-  return message.parts.some((part) => part.type === "reasoning" && part.state === "streaming");
-}
-
-function hasRenderedText(message: HanokiUiMessage): boolean {
-  return message.parts.some(
-    (part) =>
-      (part.type === "text" && part.text.length > 0) ||
-      (part.type === "data-tiptap" && part.data.content.length > 0),
-  );
-}
-
-function ThinkingMarker({ hasPriorText }: { hasPriorText: boolean }) {
+function ThinkingLine() {
   return (
-    <Marker role="status" className={cn("text-xs", hasPriorText && "mt-2")}>
-      <MarkerIcon>
+    <TraceLine role="status" status="running">
+      <TraceIcon>
         <Spinner />
-      </MarkerIcon>
-      <MarkerContent className="shimmer">Thinking…</MarkerContent>
-    </Marker>
+      </TraceIcon>
+      <TraceTitle>Thinking…</TraceTitle>
+    </TraceLine>
   );
+}
+
+const ReasoningRow = React.memo(function ReasoningRow({
+  running,
+  text,
+}: {
+  running: boolean;
+  text: string;
+}) {
+  // Follows the stream (open while thinking, closed after) until the user toggles it.
+  const [open, setOpen] = React.useState<boolean>();
+
+  if (text.length === 0) {
+    return <ThinkingLine />;
+  }
+
+  return (
+    <TraceCollapsible open={open ?? running} onOpenChange={setOpen}>
+      <TraceCollapsibleTrigger>
+        <TraceLine status={running ? "running" : undefined}>
+          <TraceIcon>{running ? <Spinner /> : <HugeiconsIcon icon={AiBrain01Icon} />}</TraceIcon>
+          <TraceTitle>{running ? "Thinking…" : "Thought"}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="text-xs whitespace-pre-wrap">
+        {text}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+});
+
+type AssistantPart = HanokiUiMessage["parts"][number];
+type AssistantRun = { kind: "trace" | "content"; startIndex: number; parts: AssistantPart[] };
+
+function isTracePart(part: AssistantPart): boolean {
+  return part.type === "reasoning" || isToolUIPart(part);
+}
+
+/** Groups neighbouring steps into one Trace, with reply text between the lists. */
+function groupAssistantParts(parts: AssistantPart[], isAnimating: boolean): AssistantRun[] {
+  const runs: AssistantRun[] = [];
+
+  parts.forEach((part, index) => {
+    const isReply = part.type === "text" || part.type === "data-tiptap";
+    if (!isReply && !isTracePart(part)) return;
+    // Providers can emit redacted reasoning: nothing to show once it has finished.
+    if (
+      part.type === "reasoning" &&
+      part.text.length === 0 &&
+      !(isAnimating && part.state === "streaming")
+    ) {
+      return;
+    }
+
+    const kind = isReply ? "content" : "trace";
+    const last = runs.at(-1);
+    if (last?.kind === kind) {
+      last.parts.push(part);
+    } else {
+      runs.push({ kind, startIndex: index, parts: [part] });
+    }
+  });
+
+  return runs;
 }
 
 // --- Role-specific tools components ---
@@ -873,7 +935,8 @@ const AssistantMessage = React.memo(function AssistantMessage({
     () => (isAnimating ? "" : getTiptapMessageDisplayText(message)),
     [isAnimating, message],
   );
-  const isThinking = isAnimating && (message.parts.length === 0 || hasStreamingReasoning(message));
+  const runs = groupAssistantParts(message.parts, isAnimating);
+  const isThinking = isAnimating && runs.length === 0;
   const { draft, messageDocument, setDraft } = useMessageDraft(message, isEditing);
 
   return (
@@ -900,27 +963,49 @@ const AssistantMessage = React.memo(function AssistantMessage({
             />
           ) : (
             <>
-              {message.parts.map((part, i) => {
-                if (part.type === "text") {
-                  return (
-                    <AssistantMessageTextPart key={i} text={part.text} isAnimating={isAnimating} />
-                  );
-                }
-                if (part.type === "data-tiptap") {
-                  return (
-                    <AssistantMessageTextPart
-                      key={i}
-                      text={serializeTiptapToMarkdown(part.data)}
-                      isAnimating={isAnimating}
-                    />
-                  );
-                }
-                if (isToolUIPart(part)) {
-                  return <ToolCallMarker key={part.toolCallId} part={part} />;
-                }
-                return null;
-              })}
-              {isThinking ? <ThinkingMarker hasPriorText={hasRenderedText(message)} /> : null}
+              {runs.map((run) =>
+                run.kind === "trace" ? (
+                  <Trace key={run.startIndex} className="my-2 first:mt-0 last:mb-0">
+                    {groupTraceParts(run.parts, isAnimating).map((entry) =>
+                      entry.kind === "reasoning" ? (
+                        <ReasoningRow key={entry.key} running={entry.running} text={entry.text} />
+                      ) : (
+                        <ToolCallMarker
+                          key={entry.key}
+                          isAnimating={isAnimating}
+                          parts={entry.parts}
+                          toolName={entry.toolName}
+                        />
+                      ),
+                    )}
+                  </Trace>
+                ) : (
+                  run.parts.map((part, i) => {
+                    const key = run.startIndex + i;
+                    if (part.type === "text") {
+                      return (
+                        <AssistantMessageTextPart
+                          key={key}
+                          text={part.text}
+                          isAnimating={isAnimating}
+                        />
+                      );
+                    }
+                    return part.type === "data-tiptap" ? (
+                      <AssistantMessageTextPart
+                        key={key}
+                        text={serializeTiptapToMarkdown(part.data)}
+                        isAnimating={isAnimating}
+                      />
+                    ) : null;
+                  })
+                ),
+              )}
+              {isThinking ? (
+                <Trace>
+                  <ThinkingLine />
+                </Trace>
+              ) : null}
             </>
           )}
         </div>
