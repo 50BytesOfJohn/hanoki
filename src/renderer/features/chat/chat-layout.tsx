@@ -67,7 +67,7 @@ import {
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { useOpenChatView } from "@/features/chat/use-chat-view";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 import type {
   ItemInfo,

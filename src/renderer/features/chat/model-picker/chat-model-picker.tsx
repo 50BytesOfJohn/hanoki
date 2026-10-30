@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useIsActiveChatPane } from "@/features/chat/chat-pane-context";
 import { listEnabledModelsQueryOptions, listRecentModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 import { getModelLabel, getPinnedModels, getRecentRows } from "./model-picker-data";
 import { ModelPickerCommand } from "./model-picker-command";

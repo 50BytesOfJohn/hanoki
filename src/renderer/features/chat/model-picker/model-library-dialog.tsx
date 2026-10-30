@@ -34,7 +34,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStableCallback } from "@/hooks/use-stable-callback";
 import { getProviderIconById } from "@/lib/provider-icons";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { useSetProviderModelsEnabled } from "@/mutations/models";
 import { listModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
@@ -287,6 +287,7 @@ function ModelLibrary({
         <ToggleGroup
           size="sm"
           variant="outline"
+          spacing={0}
           value={[filter]}
           onValueChange={(value: string[]) => {
             const next = FILTERS.find((item) => item.value === value[0])?.value;

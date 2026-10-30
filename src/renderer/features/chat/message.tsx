@@ -44,7 +44,7 @@ import {
   Refresh04Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { isToolUIPart, ToolCallMarker } from "@/features/chat/tool-call-marker";
 import { Spinner } from "@/components/ui/spinner";

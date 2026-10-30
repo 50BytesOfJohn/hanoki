@@ -8,7 +8,7 @@ import {
   type ReactNodeViewProps,
 } from "@tiptap/react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import type { MentionOptions } from "@tiptap/extension-mention";
 
 import { isAttachedItemKind } from "@shared/chat/attached-items";

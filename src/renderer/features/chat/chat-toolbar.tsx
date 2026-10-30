@@ -5,7 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import {
   DropdownMenu,
   DropdownMenuContent,

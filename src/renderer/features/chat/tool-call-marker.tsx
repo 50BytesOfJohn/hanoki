@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { queryClient } from "@/lib/query-client";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { queryKeys } from "@/queries/keys";
 import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { requestSidebarFolderReveal } from "@/features/chat/sidebar-reveal";

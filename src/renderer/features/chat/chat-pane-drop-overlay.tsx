@@ -4,7 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { IconSvgElement } from "@hugeicons/react";
 import { CheckmarkCircle02Icon, FolderOffIcon } from "@hugeicons/core-free-icons";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import type { PaneDropPosition } from "@/features/workspace/store/layout-tree";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 

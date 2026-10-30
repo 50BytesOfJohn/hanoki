@@ -6,7 +6,7 @@ import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getProviderIconById } from "@/lib/provider-icons";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 import type { ModelPickerSection } from "./model-picker-data";
 

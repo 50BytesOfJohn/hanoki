@@ -47,7 +47,7 @@ import { ChatScrollToBottomProvider } from "@/features/chat/chat-scroll-context"
 import { useChatScrollActions } from "@/features/chat/chat-scroll-actions-context";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { useUpdateChatSettings } from "@/mutations/chats";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";

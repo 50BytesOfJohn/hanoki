@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { WINDOW_TOOLBAR_HEIGHT, WINDOW_TRAFFIC_LIGHTS_SPACER } from "@shared/window-chrome";
 
 const windowToolbarInteractiveSelectors = cn(

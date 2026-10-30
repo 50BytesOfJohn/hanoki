@@ -24,7 +24,7 @@ import {
 import { getItemQueryOptions } from "@/queries/items";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useChatStatus } from "@/stores/chat-store";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import type { ChatTabsPosition, ItemType } from "@shared/ipc";
 import type { Tab } from "../workspace/store/types";
 import { useWorkspaceStore } from "../workspace/store";
@@ -139,7 +139,7 @@ export function ChatTabsBar() {
           }}
           className={cn(
             "flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            isChatDropTarget && "bg-hover ring-1 ring-muted/30 ring-dashed",
+            isChatDropTarget && "bg-hover ring-1 ring-muted-foreground/30 ring-dashed",
           )}
         >
           {tabs.map((tab, index) => (

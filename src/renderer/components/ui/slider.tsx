@@ -1,7 +1,5 @@
-import * as React from "react";
 import { Slider as SliderPrimitive } from "@base-ui/react/slider";
-
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 function Slider({
   className,
@@ -21,10 +19,11 @@ function Slider({
   /** Merged over the thumb classes, e.g. a larger thumb. */
   thumbClassName?: string;
 }) {
-  const _values = React.useMemo(
-    () => (Array.isArray(value) ? value : Array.isArray(defaultValue) ? defaultValue : [min, max]),
-    [value, defaultValue, min, max],
-  );
+  const _values = Array.isArray(value)
+    ? value
+    : Array.isArray(defaultValue)
+      ? defaultValue
+      : [min, max];
 
   return (
     <SliderPrimitive.Root
@@ -41,7 +40,7 @@ function Slider({
         <SliderPrimitive.Track
           data-slot="slider-track"
           className={cn(
-            "relative grow overflow-hidden rounded-full bg-hover select-none data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1",
+            "relative grow overflow-hidden rounded-full bg-muted select-none data-horizontal:h-1 data-horizontal:w-full data-vertical:h-full data-vertical:w-1",
             trackClassName,
           )}
         >

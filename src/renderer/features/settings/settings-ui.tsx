@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 /*
  * Settings primitives — the one layout every settings page composes:

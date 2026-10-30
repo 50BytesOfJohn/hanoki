@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BrandIcon } from "@/lib/provider-icons/brand-icon";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import type { IconSvgElement } from "@hugeicons/react";
 import type { ProviderModelInfo } from "@shared/ipc";
 import {

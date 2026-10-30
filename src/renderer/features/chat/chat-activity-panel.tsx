@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useUpdateGlobalChatSettings } from "@/mutations/settings";
 import { getChatQueryOptions } from "@/queries/chats";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import {
   useChatActivityStore,
   useWorkspaceChatActivity,

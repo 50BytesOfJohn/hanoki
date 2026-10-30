@@ -42,7 +42,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Popover } from "@/components/ui/popover";
 import { useStableCallback } from "@/hooks/use-stable-callback";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { listEnabledModelsQueryOptions, listRecentModelsQueryOptions } from "@/queries/models";
 import { listProvidersQueryOptions } from "@/queries/providers";
 

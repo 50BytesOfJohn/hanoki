@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 import { EFFORT_LEVEL_HOTKEYS, MODEL_PICKER_HOTKEYS } from "./model-picker-hotkeys";
 import { CURRENT_ITEM_CLASS, EffortBars, EffortLabel, HotkeyKbd } from "./model-picker-parts";

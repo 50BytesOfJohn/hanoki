@@ -81,7 +81,7 @@ import {
 
 import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { queryKeys } from "@/queries/keys";
 import {
@@ -1560,7 +1560,7 @@ function ChatTreeItemRow({
         "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
         "text-foreground/75 data-[active=true]:bg-surface-tertiary data-[active=true]:text-foreground",
         "data-[focused=true]:ring-1 data-[focused=true]:ring-focus/60",
-        "data-[drop-target=true]:bg-hover data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted/30 data-[drop-target=true]:ring-dashed",
+        "data-[drop-target=true]:bg-hover data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted-foreground/30 data-[drop-target=true]:ring-dashed",
         "hover:bg-hover",
         className,
       )}

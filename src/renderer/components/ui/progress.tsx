@@ -1,8 +1,5 @@
-"use client";
-
 import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
-
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 function Progress({ className, children, value, ...props }: ProgressPrimitive.Root.Props) {
   return (
@@ -24,7 +21,7 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
   return (
     <ProgressPrimitive.Track
       className={cn(
-        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-hover",
+        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
         className,
       )}
       data-slot="progress-track"

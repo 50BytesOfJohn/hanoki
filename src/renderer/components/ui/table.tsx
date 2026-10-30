@@ -1,6 +1,7 @@
-import * as React from "react";
+"use client";
 
-import { cn } from "@/lib/utils";
+import * as React from "react";
+import { cn } from "cn";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -32,7 +33,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   return (
     <tfoot
       data-slot="table-footer"
-      className={cn("border-t bg-hover/50 font-medium [&>tr]:last:border-b-0", className)}
+      className={cn("border-t bg-muted/50 font-medium [&>tr]:last:border-b-0", className)}
       {...props}
     />
   );
@@ -43,7 +44,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-hover/50 data-[state=selected]:bg-hover",
+        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
         className,
       )}
       {...props}

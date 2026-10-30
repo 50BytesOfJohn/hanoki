@@ -15,7 +15,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { chatTreeApi } from "@/api/chat-tree";
 import { itemsApi } from "@/api/items";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { AttachedItemKind } from "@shared/chat/attached-items";

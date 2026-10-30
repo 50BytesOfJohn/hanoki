@@ -1,7 +1,7 @@
 import * as React from "react";
 import { renderToReactElement } from "@tiptap/static-renderer/pm/react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { isAttachedItemKind } from "@shared/chat/attached-items";
 import type { TiptapDocument } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";

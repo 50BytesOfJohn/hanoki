@@ -8,7 +8,7 @@ import { PluginKey } from "@tiptap/pm/state";
 import { EditorContent, ReactRenderer, useEditor } from "@tiptap/react";
 import type { SuggestionOptions, SuggestionProps } from "@tiptap/suggestion";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
 import { createMessageTiptapExtensions } from "@shared/tiptap/extensions";
 import { TIPTAP_MESSAGE_PROSE_CLASS } from "./tiptap-message-content";

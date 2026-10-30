@@ -5,7 +5,7 @@ import { formatReasoningEffort, type ReasoningEffort } from "@shared/models/reas
 import { Kbd } from "@/components/ui/kbd";
 import { getProviderIconById } from "@/lib/provider-icons";
 import { BrandIcon } from "@/lib/provider-icons/brand-icon";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 import { getModelLabel } from "./model-picker-data";
 

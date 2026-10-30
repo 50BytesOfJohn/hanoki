@@ -9,7 +9,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Meter, MeterIndicator, MeterTrack } from "@/components/ui/meter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 const WARNING_RATIO = 0.8;
 const CRITICAL_RATIO = 0.95;

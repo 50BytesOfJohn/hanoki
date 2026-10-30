@@ -18,7 +18,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { useCreateChat } from "@/mutations/chats";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { modShortcut } from "@/lib/platform";
 import type { NativeChatDrag } from "./chat-layout";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";

@@ -24,7 +24,7 @@ import { toastManager } from "@/components/ui/toast";
 import { subscribeToItemTitleUpdates } from "@/features/items/item-title-events";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { queryClient } from "@/lib/query-client";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { queryKeys } from "@/queries/keys";
 
 import { Wikilink } from "./wikilink-extension";

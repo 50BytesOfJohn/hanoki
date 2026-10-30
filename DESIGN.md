@@ -37,10 +37,35 @@ Tailwind utilities in the `@theme inline` block — token semantics:
 
 - `primary` = `--accent` = the brand moss.
 - `accent` in utilities means _hover fill_ (`--hover`), not brand.
-- `--color-muted` is a **foreground** gray. Never use `bg-muted`; use
-  `bg-hover` for fills and `text-muted-foreground` for dim text.
+- `muted` utilities are the _hover fill_ too (`--color-muted` = `--hover`), so
+  upstream `bg-muted` works unchanged. Dim text is `text-muted-foreground`
+  (`--muted`, a text gray).
 - The layering vars are exposed directly too (`bg-surface`,
   `bg-surface-secondary`, `border-separator`, `text-danger`, …).
+
+### Upstream overrides
+
+Most `components/ui/*` files match their registry (`@shadcn`, or `@coss` for
+autocomplete, checkbox-group, fieldset, form, frame, group, menu, meter,
+number-field, preview-card, toast, toolbar). `tree` and `workspace-orb` are
+ours. When upgrading, preview with `shadcn add --diff`, install coss items
+before shadcn ones (coss pulls its own `button`, `input`, `label`, …), and
+keep these:
+
+| Component      | Override                                             | Why                                                       |
+| -------------- | ---------------------------------------------------- | --------------------------------------------------------- |
+| `button`       | Soft `default` variant, `rounded-md`, svg edge nudge | Buttons never shout; most icons don't set `data-icon`     |
+| `command`      | `isPending` on `CommandInput`, `p-1` wrapper         | Model search spinner; gap above results                   |
+| `context-menu` | No `select-none` on the trigger                      | `TextContextMenu` wraps selectable chat text              |
+| `input-group`  | `!` on the combobox focus-within resets              | `has-[…:focus-visible]` otherwise out-specifies them      |
+| `popover`      | `anchor` on `PopoverContent`                         | Anchoring to message and composer elements                |
+| `separator`    | Vertical uses `self-center` + `min-h-4`              | `self-stretch` top-aligns once a caller sets a height     |
+| `sidebar`      | `13.5rem` width, `h-7` / 13px rows                   | Compact settings navigation                               |
+| `slider`       | `thumbProps`, `trackClassName`, `thumbClassName`     | Effort control's named steps and larger hit area          |
+| `spinner`      | Props typed from `HugeiconsIcon`                     | Upstream's svg props don't type-check against it          |
+| `autocomplete` | Plain `Input` and `ScrollArea`, no `cursor-pointer`  | We use shadcn's versions; default cursor in a desktop app |
+| `number-field` | No `cursor-pointer`                                  | Default cursor in a desktop app                           |
+| `menu`         | `select-none` on checkbox, radio and submenu items   | Menu labels shouldn't be selectable                       |
 
 ## Layout
 

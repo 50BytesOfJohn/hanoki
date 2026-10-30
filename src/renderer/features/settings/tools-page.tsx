@@ -12,7 +12,7 @@ import type { TerminalToolMode } from "@shared/ipc";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { useUpdateTerminalToolSettings } from "@/mutations/settings";
 import { settingsApi } from "@/api/settings";
 import { toolSettingsQueryOptions } from "@/queries/settings";

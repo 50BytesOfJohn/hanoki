@@ -17,6 +17,8 @@ import {
 
 const APP_NAME = "Hanoki";
 const APP_IDENTIFIER = getDefaultAppIdentifier();
+// A stuck terminal must not keep the app alive after the user quit it.
+const SHUTDOWN_TIMEOUT_MS = 3_000;
 
 app.setName(APP_NAME);
 app.setPath("userData", path.join(app.getPath("appData"), APP_IDENTIFIER));
@@ -45,7 +47,6 @@ if (!app.requestSingleInstanceLock()) {
   let backend: ReturnType<typeof bootstrapBackend> | null = null;
   let aiServer: { port: number; close: () => void } | null = null;
   let shutdownStarted = false;
-  let readyToQuit = false;
   let aiServerState: SystemState["aiServer"] = { status: "idle", port: null, error: null };
 
   function broadcastSystemEvent(event: SystemEvent) {
@@ -204,27 +205,35 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // Close the SQLite connection before the process exits so WAL is
-  // checkpointed and no data is left in a partial write state.
+  // Nothing is torn down here: a window can still cancel the quit, and it needs
+  // the database while it closes. Failing to save cancels the quit.
   app.on("before-quit", (event) => {
-    if (readyToQuit) return;
+    if (!flushPendingMarkdown()) event.preventDefault();
+  });
+
+  // Every window has closed and the quit can no longer be cancelled. Close the
+  // SQLite connection before the process exits so WAL is checkpointed and no
+  // data is left in a partial write state.
+  app.on("will-quit", (event) => {
     event.preventDefault();
     if (shutdownStarted) return;
     shutdownStarted = true;
-    if (!flushPendingMarkdown()) {
-      shutdownStarted = false;
-      return;
-    }
     aiServer?.close();
     void (async () => {
       try {
-        await backend?.services.terminals.disposeAll();
+        await Promise.race([
+          backend?.services.terminals.disposeAll(),
+          new Promise((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS)),
+        ]);
       } catch (error) {
         console.error("[terminal] Failed to finish terminal shutdown.", error);
       } finally {
-        closeAppDatabase();
-        readyToQuit = true;
-        app.quit();
+        try {
+          closeAppDatabase();
+        } finally {
+          // Not app.quit(): that would emit will-quit again.
+          app.exit(0);
+        }
       }
     })();
   });

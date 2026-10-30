@@ -3,7 +3,7 @@ import { useState } from "react";
 import { FileExportIcon, FileImportIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

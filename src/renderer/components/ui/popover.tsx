@@ -1,7 +1,8 @@
+"use client";
+
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -15,9 +16,9 @@ function PopoverContent({
   className,
   align = "center",
   alignOffset = 0,
-  anchor,
   side = "bottom",
   sideOffset = 4,
+  anchor,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
@@ -28,10 +29,10 @@ function PopoverContent({
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
-        anchor={anchor}
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        anchor={anchor}
         className="isolate z-50"
       >
         <PopoverPrimitive.Popup
@@ -61,7 +62,7 @@ function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
   return (
     <PopoverPrimitive.Title
       data-slot="popover-title"
-      className={cn("font-heading font-medium", className)}
+      className={cn("font-medium", className)}
       {...props}
     />
   );

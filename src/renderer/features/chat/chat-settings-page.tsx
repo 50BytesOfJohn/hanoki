@@ -30,7 +30,7 @@ import { useUpdateChatSettings } from "@/mutations/chats";
 import { getChatQueryOptions } from "@/queries/chats";
 import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import { cn } from "@/lib/utils";
+import { cn } from "cn";
 import {
   CHAT_EXPORT_FORMATS,
   DEFAULT_CHAT_EXPORT_FORMAT,
