@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { sdkProviderRegistry } from "./sdk-provider-registry";
 
 describe("featherless model sync", () => {
-  it("requests the most popular models only", () => {
+  it("requests the full unpaginated catalog", () => {
     const request = sdkProviderRegistry.featherless.buildModelsRequest("key");
-    expect(request.url).toBe("https://api.featherless.ai/v1/models?sort=-popularity&per_page=200");
+    expect(request.url).toBe("https://api.featherless.ai/v1/models");
+    expect(request.timeoutMs).toBe(60_000);
   });
 
   it("overrides Node's default user agent, which Featherless rejects with a 404", () => {

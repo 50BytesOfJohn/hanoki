@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { createSearchIndex } from "@/lib/fuzzy-search";
 import { getProviderIconById } from "@/lib/provider-icons";
 import { listProviderModelsQueryOptions, listProvidersQueryOptions } from "@/queries/providers";
 
@@ -35,6 +36,9 @@ interface ModelPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   onConfirm: (value: ModelPickerValue) => void;
 }
+
+/** Rows rendered for a search; the best matches are all anyone reads. */
+const MAX_SEARCH_ROWS = 200;
 
 export function ModelPickerDialog({
   open,
@@ -64,12 +68,25 @@ export function ModelPickerDialog({
   const SelectedProviderIcon = selectedProvider
     ? getProviderIconById(selectedProvider.catalogId)
     : null;
-  const visibleModels = React.useMemo(
+  const searchIndex = React.useMemo(
     () =>
-      (modelsQuery.data ?? []).filter(
-        (model) => model.status === "active" && (includeDisabledModels || model.isEnabled),
+      createSearchIndex(
+        (modelsQuery.data ?? []).filter(
+          (model) => model.status === "active" && (includeDisabledModels || model.isEnabled),
+        ),
+        (model) => [{ text: model.displayName }, { text: model.providerModelId, weight: 0.9 }],
       ),
     [includeDisabledModels, modelsQuery.data],
+  );
+  // Typing stays responsive while results for a long list catch up.
+  const deferredSearch = React.useDeferredValue(selectedProvider ? search : "");
+  const isSearchPending = selectedProvider !== null && deferredSearch !== search;
+  const visibleModels = React.useMemo(
+    () =>
+      deferredSearch.trim()
+        ? searchIndex.search(deferredSearch).slice(0, MAX_SEARCH_ROWS)
+        : searchIndex.items,
+    [deferredSearch, searchIndex],
   );
 
   function showProviders() {
@@ -105,6 +122,8 @@ export function ModelPickerDialog({
 
         <Command
           className="h-[min(32rem,calc(100vh-8rem))] rounded-none! bg-transparent"
+          // Models are ranked by fuzzySearch; cmdk still filters the providers.
+          shouldFilter={!selectedProvider}
           onKeyDown={(event) => {
             if (event.key === "Backspace" && !search && selectedProvider) {
               event.preventDefault();
@@ -116,6 +135,7 @@ export function ModelPickerDialog({
             autoFocus
             value={search}
             onValueChange={setSearch}
+            isPending={isSearchPending}
             placeholder={selectedProvider ? "Search models…" : "Search providers…"}
           />
           <CommandList className="max-h-none flex-1 scroll-py-2">

@@ -4,6 +4,14 @@ import {
   parseReasoningEffortAlias,
   type ReasoningEffort,
 } from "@shared/models/reasoning";
+import {
+  compareSearchSummaries,
+  createSearchIndex,
+  type SearchIndex,
+  type SearchSummary,
+  summarizeSearchTokens,
+  tokenizeSearchQuery,
+} from "@/lib/fuzzy-search";
 
 /** One selectable line in the picker. */
 export interface ModelPickerRow {
@@ -192,71 +200,65 @@ export function getSectionSearchRows(
   }
 }
 
-function normalize(value: string) {
-  return value.toLowerCase();
-}
+export type ModelSearchIndex = SearchIndex<ProviderModelInfo>;
 
-/** "claude-opus-4.5" and "Opus 4.5" both become comparable with "opus45". */
-function compact(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-const WORD_SEPARATOR = /[\s\-_./:]+/;
-
-function scoreToken(token: string, label: string, haystack: string, compactHaystack: string) {
-  if (label.startsWith(token)) return 4;
-  if (label.split(WORD_SEPARATOR).some((word) => word.startsWith(token))) return 3;
-  if (label.includes(token)) return 2;
-  if (haystack.includes(token)) return 1.5;
-  const compactToken = compact(token);
-  if (compactToken && compactHaystack.includes(compactToken)) return 1;
-  return 0;
+/** Built once per model list; searching it is cheap enough for every keystroke. */
+export function createModelSearchIndex(
+  models: readonly ProviderModelInfo[],
+  providers: readonly ProviderInfo[],
+): ModelSearchIndex {
+  const providerNames = new Map(providers.map((provider) => [provider.id, provider.displayName]));
+  return createSearchIndex(models, (model) => [
+    { text: getModelLabel(model) },
+    { text: model.providerModelId, weight: 0.9 },
+    { text: providerNames.get(model.providerId), weight: 0.7 },
+    { text: model.creator, weight: 0.7 },
+  ]);
 }
 
 /**
- * Ranks models against a free-text query. Every word has to match the name,
- * id, provider or creator — except a trailing effort word ("high", "max", …),
- * which instead preselects that level on models that reason.
+ * Ranks models against a free-text query, forgiving typos and loose version
+ * numbers ("deepseek 4"). Models matching every word come first, then ones
+ * matching most of the query. An effort word ("high", "max", …) instead
+ * preselects that level on models that reason.
  */
 export function searchModelPickerRows({
-  models,
-  providers,
+  index,
   query,
 }: {
-  models: readonly ProviderModelInfo[];
-  providers: readonly ProviderInfo[];
+  index: ModelSearchIndex;
   query: string;
 }): ModelPickerRow[] {
-  const tokens = normalize(query).split(/\s+/).filter(Boolean);
+  const tokens = tokenizeSearchQuery(query);
   if (tokens.length === 0) {
     return [];
   }
 
-  const providerNames = new Map(providers.map((provider) => [provider.id, provider.displayName]));
-  const results: { row: ModelPickerRow; score: number; label: string }[] = [];
+  // Effort words are matched literally, so "high" never reads as a typo.
+  const efforts = tokens.map((token) => parseReasoningEffortAlias(token));
+  const tokenScores = tokens.map((token, position) =>
+    index.scoreToken(token, { allowTypos: !efforts[position] }),
+  );
+  const results: { row: ModelPickerRow; summary: SearchSummary; label: string }[] = [];
 
-  for (const model of models) {
-    const label = normalize(getModelLabel(model));
-    const haystack = normalize(
-      [label, model.providerModelId, providerNames.get(model.providerId), model.creator]
-        .filter(Boolean)
-        .join(" "),
-    );
-    const compactHaystack = compact(haystack);
+  for (const [position, model] of index.items.entries()) {
     const offered = model.reasoningEfforts ?? [];
-    let score = 0;
+    // The query words left once an effort word is set aside, and their scores.
+    const searched: string[] = [];
+    const scores: number[] = [];
     let effort: ReasoningEffort | null | undefined;
     let matched = true;
 
-    for (const token of tokens) {
-      const tokenScore = scoreToken(token, label, haystack, compactHaystack);
-      if (tokenScore > 0) {
-        score += tokenScore;
+    for (const [tokenIndex, token] of tokens.entries()) {
+      const tokenScore = tokenScores[tokenIndex]![position]!;
+      const requested = efforts[tokenIndex];
+      if (tokenScore > 0 || !requested) {
+        searched.push(token);
+        scores.push(tokenScore);
         continue;
       }
 
-      const requested = parseReasoningEffortAlias(token);
-      const clamped = requested ? clampReasoningEffort(requested, offered) : null;
+      const clamped = clampReasoningEffort(requested, offered);
       if (clamped && effort === undefined) {
         effort = clamped;
         continue;
@@ -267,12 +269,13 @@ export function searchModelPickerRows({
     }
 
     // A query made only of an effort word should not list every reasoning model.
-    if (!matched || score === 0) {
+    const summary = matched ? summarizeSearchTokens(searched, scores) : null;
+    if (!summary) {
       continue;
     }
 
     if (isModelPinned(model)) {
-      score += 0.5;
+      summary.score += 0.5;
     }
 
     results.push({
@@ -282,15 +285,17 @@ export function searchModelPickerRows({
         ...(effort !== undefined ? { effort } : {}),
         showProvider: true,
       },
-      score,
-      label,
+      summary,
+      label: getModelLabel(model),
     });
   }
 
   return results
     .sort(
       (a, b) =>
-        b.score - a.score || a.label.length - b.label.length || collator.compare(a.label, b.label),
+        compareSearchSummaries(a.summary, b.summary) ||
+        a.label.length - b.label.length ||
+        collator.compare(a.label, b.label),
     )
     .map((result) => result.row);
 }

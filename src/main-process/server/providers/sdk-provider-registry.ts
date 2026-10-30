@@ -248,13 +248,15 @@ export const sdkProviderRegistry = {
       }).chatModel(providerModelId);
     },
     buildModelsRequest(apiKey) {
-      // The full catalog is 20k+ models; sync only the most used ones.
+      // Without paging params Featherless returns the whole catalog (20k+ models, ~7 MB)
+      // in one response, so allow longer than the default timeout.
       // Featherless answers 404 to Node's default `User-Agent: node`, so send our own.
-      return buildBearerRequest(
-        "https://api.featherless.ai/v1/models?sort=-popularity&per_page=200",
-        apiKey,
-        { "User-Agent": "Hanoki" },
-      );
+      return {
+        ...buildBearerRequest("https://api.featherless.ai/v1/models", apiKey, {
+          "User-Agent": "Hanoki",
+        }),
+        timeoutMs: 60_000,
+      };
     },
     parseModels(body) {
       return normalizeModelList(

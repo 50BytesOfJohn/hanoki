@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SearchIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 
@@ -60,8 +61,12 @@ function CommandDialog({
 
 function CommandInput({
   className,
+  isPending = false,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & {
+  /** Results are still catching up with what was typed. */
+  isPending?: boolean;
+}) {
   return (
     // upstream uses `p-1 pb-0`; keep a small gap between the search field and results
     <div data-slot="command-input-wrapper" className="p-1">
@@ -75,7 +80,15 @@ function CommandInput({
           {...props}
         />
         <InputGroupAddon>
-          <HugeiconsIcon icon={SearchIcon} strokeWidth={2} className="size-4 shrink-0 opacity-50" />
+          {isPending ? (
+            <Spinner className="shrink-0 opacity-50" />
+          ) : (
+            <HugeiconsIcon
+              icon={SearchIcon}
+              strokeWidth={2}
+              className="size-4 shrink-0 opacity-50"
+            />
+          )}
         </InputGroupAddon>
       </InputGroup>
     </div>

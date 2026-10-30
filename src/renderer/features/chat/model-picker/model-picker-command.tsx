@@ -49,6 +49,7 @@ import { listProvidersQueryOptions } from "@/queries/providers";
 import {
   ALL_SECTION,
   buildModelPickerSections,
+  createModelSearchIndex,
   getModelLabel,
   getSectionSearchRows,
   isModelPinned,
@@ -83,6 +84,9 @@ interface ModelPickerCommandProps {
   onOpenLibrary: () => void;
 }
 
+/** Rows rendered for a search; the rail still counts every match. */
+const MAX_SEARCH_ROWS = 200;
+
 export function ModelPickerCommand({ selection, onDone, onOpenLibrary }: ModelPickerCommandProps) {
   const { data: models = [] } = useQuery(listEnabledModelsQueryOptions);
   const { data: providers = [] } = useQuery(listProvidersQueryOptions);
@@ -106,14 +110,21 @@ export function ModelPickerCommand({ selection, onDone, onOpenLibrary }: ModelPi
   const pickerRootRef = React.useRef<HTMLDivElement>(null);
 
   const currentModelId = selection.model?.id ?? null;
-  const isSearching = search.trim().length > 0;
+  // Typing stays responsive while results for a long list catch up.
+  const deferredSearch = React.useDeferredValue(search);
+  const isSearchPending = deferredSearch !== search;
+  const isSearching = deferredSearch.trim().length > 0;
+  const searchIndex = React.useMemo(
+    () => createModelSearchIndex(models, providers),
+    [models, providers],
+  );
   const sections = React.useMemo(
     () => buildModelPickerSections({ models, providers, recents }),
     [models, providers, recents],
   );
   const ranked = React.useMemo(
-    () => (isSearching ? searchModelPickerRows({ models, providers, query: search }) : []),
-    [isSearching, models, providers, search],
+    () => (isSearching ? searchModelPickerRows({ index: searchIndex, query: deferredSearch }) : []),
+    [deferredSearch, isSearching, searchIndex],
   );
   const railSections = React.useMemo(
     () => (isSearching ? [ALL_SECTION, ...sections] : sections),
@@ -132,7 +143,10 @@ export function ModelPickerCommand({ selection, onDone, onOpenLibrary }: ModelPi
     ? (railSections.find((section) => section.id === searchSectionId) ?? ALL_SECTION)
     : resolveModelPickerSection(sections, rememberedSectionId, currentModelId);
   const rows = React.useMemo(
-    () => (isSearching ? getSectionSearchRows(activeSection, ranked) : activeSection.rows),
+    () =>
+      isSearching
+        ? getSectionSearchRows(activeSection, ranked).slice(0, MAX_SEARCH_ROWS)
+        : activeSection.rows,
     [activeSection, isSearching, ranked],
   );
   const rowsByKey = React.useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows]);
@@ -329,8 +343,9 @@ export function ModelPickerCommand({ selection, onDone, onOpenLibrary }: ModelPi
             autoFocus
             value={search}
             placeholder="Search models…"
+            isPending={isSearchPending}
             onValueChange={(value) => {
-              if (!isSearching && value.trim()) {
+              if (!search.trim() && value.trim()) {
                 setSearchSectionId(ALL_SECTION.id);
               }
               setSearch(value);

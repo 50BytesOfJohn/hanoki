@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { createSearchIndex } from "@/lib/fuzzy-search";
 import { useSetProviderModelsEnabled, useUpdateModel } from "@/mutations/models";
 import { useSyncProviderModels } from "@/mutations/providers";
 import { listProviderModelsQueryOptions } from "@/queries/providers";
@@ -72,24 +73,21 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
     [models, fallbackCreator],
   );
 
-  const normalizedSearchQuery = deferredModelSearchQuery.trim().toLocaleLowerCase();
+  const searchIndex = useMemo(
+    () =>
+      createSearchIndex(decoratedModels, (entry) => [
+        { text: entry.name },
+        { text: entry.model.providerModelId, weight: 0.9 },
+        { text: entry.details.creator, weight: 0.7 },
+      ]),
+    [decoratedModels],
+  );
+  const isSearchPending = deferredModelSearchQuery !== modelSearchQuery;
   const visibleModels = useMemo(() => {
-    const filtered = decoratedModels.filter((entry) => {
-      if (showEnabledOnly && !entry.model.isEnabled) {
-        return false;
-      }
-
-      if (normalizedSearchQuery.length === 0) {
-        return true;
-      }
-
-      return [entry.name, entry.model.providerModelId, entry.details.creator ?? ""].some((field) =>
-        field.toLocaleLowerCase().includes(normalizedSearchQuery),
-      );
-    });
-
-    return filtered.sort(compareBy(sortOrder));
-  }, [decoratedModels, normalizedSearchQuery, showEnabledOnly, sortOrder]);
+    // While searching, the best matches lead and the chosen order breaks ties.
+    const ranked = searchIndex.search(deferredModelSearchQuery, compareBy(sortOrder));
+    return showEnabledOnly ? ranked.filter((entry) => entry.model.isEnabled) : ranked;
+  }, [deferredModelSearchQuery, searchIndex, showEnabledOnly, sortOrder]);
 
   const areAllModelsEnabled = models.length > 0 && models.every((model) => model.isEnabled);
   const areAllModelsDisabled = models.length > 0 && models.every((model) => !model.isEnabled);
@@ -128,8 +126,17 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
             <AlertDescription>This provider has no synced models yet.</AlertDescription>
           </Alert>
           {syncErrorAlert}
-          <Button className="self-start" variant="outline" disabled={isSyncing} onClick={syncModels}>
-            {isSyncing ? <Spinner /> : <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />}
+          <Button
+            className="self-start"
+            variant="outline"
+            disabled={isSyncing}
+            onClick={syncModels}
+          >
+            {isSyncing ? (
+              <Spinner />
+            ) : (
+              <HugeiconsIcon icon={RefreshIcon} data-icon="inline-start" />
+            )}
             Sync models
           </Button>
         </div>
@@ -138,7 +145,7 @@ export function ProviderModelsTab({ providerId, catalogId }: ProviderModelsTabPr
           <div className="flex items-center gap-2">
             <InputGroup>
               <InputGroupAddon>
-                <HugeiconsIcon icon={Search01Icon} />
+                {isSearchPending ? <Spinner /> : <HugeiconsIcon icon={Search01Icon} />}
               </InputGroupAddon>
               <InputGroupInput
                 type="search"

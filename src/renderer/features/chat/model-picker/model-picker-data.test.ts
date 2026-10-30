@@ -4,6 +4,7 @@ import type { ProviderInfo, ProviderModelInfo } from "@shared/ipc";
 import {
   ALL_SECTION,
   buildModelPickerSections,
+  createModelSearchIndex,
   getRecentRows,
   getSectionSearchRows,
   resolveModelPickerSection,
@@ -111,16 +112,20 @@ describe("getRecentRows", () => {
 describe("searchModelPickerRows", () => {
   const models = [opus, sonnet, haiku, gpt, legacy];
   const search = (query: string) =>
-    searchModelPickerRows({ models, providers, query }).map((row) => row.model.id);
+    searchModelPickerRows({ index: createModelSearchIndex(models, providers), query }).map(
+      (row) => row.model.id,
+    );
 
   it("ranks name prefixes above word starts above loose matches", () => {
     const ranked = searchModelPickerRows({
-      models: [
-        model({ id: "inside", displayName: "Imagine" }),
-        model({ id: "word", displayName: "Claude Mag" }),
-        model({ id: "prefix", displayName: "Mag Large" }),
-      ],
-      providers,
+      index: createModelSearchIndex(
+        [
+          model({ id: "inside", displayName: "Imagine" }),
+          model({ id: "word", displayName: "Claude Mag" }),
+          model({ id: "prefix", displayName: "Mag Large" }),
+        ],
+        providers,
+      ),
       query: "mag",
     });
 
@@ -128,7 +133,8 @@ describe("searchModelPickerRows", () => {
   });
 
   it("matches ids and provider names", () => {
-    expect(search("openai/gpt-4")).toEqual(["legacy"]);
+    // The exact id leads; the sibling that only misses the version follows.
+    expect(search("openai/gpt-4")).toEqual(["legacy", "gpt"]);
     expect(search("openrouter").sort()).toEqual(["gpt", "legacy"]);
   });
 
@@ -136,8 +142,17 @@ describe("searchModelPickerRows", () => {
     expect(search("gpt56")).toEqual(["gpt"]);
   });
 
+  it("forgives typos and loose version numbers", () => {
+    expect(search("sonet")).toEqual(["sonnet"]);
+    expect(search("opus 5")).toEqual(["opus"]);
+    expect(search("claude opsu 5.5")[0]).toBe("opus");
+  });
+
   it("reads an effort word as the level to select", () => {
-    const [row] = searchModelPickerRows({ models, providers, query: "opus max" });
+    const [row] = searchModelPickerRows({
+      index: createModelSearchIndex(models, providers),
+      query: "opus max",
+    });
 
     expect(row?.model.id).toBe("opus");
     // Opus tops out at High, so Max lands on the closest level.
@@ -187,8 +202,7 @@ describe("getSectionSearchRows", () => {
     ],
   });
   const ranked = searchModelPickerRows({
-    models: [opus, sonnet, haiku, gpt],
-    providers,
+    index: createModelSearchIndex([opus, sonnet, haiku, gpt], providers),
     query: "claude",
   });
   const section = (id: string) => sections.find((candidate) => candidate.id === id)!;

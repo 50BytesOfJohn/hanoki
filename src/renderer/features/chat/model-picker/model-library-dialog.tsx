@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -41,10 +42,12 @@ import { listProvidersQueryOptions } from "@/queries/providers";
 import {
   ALL_SECTION,
   compareModelsByLabel,
+  createModelSearchIndex,
   getModelLabel,
   getPinnedModels,
   isModelPinned,
   searchModelPickerRows,
+  type ModelSearchIndex,
   type ModelPickerSection,
 } from "./model-picker-data";
 import { MODEL_PICKER_HOTKEYS } from "./model-picker-hotkeys";
@@ -139,10 +142,17 @@ function ModelLibrary({
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const listId = React.useId();
 
-  const isSearching = search.trim().length > 0;
+  // Typing stays responsive while results for a long list catch up.
+  const deferredSearch = React.useDeferredValue(search);
+  const isSearchPending = deferredSearch !== search;
+  const isSearching = deferredSearch.trim().length > 0;
+  const searchIndex = React.useMemo(
+    () => createModelSearchIndex(models, providers),
+    [models, providers],
+  );
   const visibleModels = React.useMemo(
-    () => filterLibraryModels({ models, providers, search, filter }),
-    [filter, models, providers, search],
+    () => filterLibraryModels({ models, index: searchIndex, search: deferredSearch, filter }),
+    [deferredSearch, filter, models, searchIndex],
   );
   const sections = React.useMemo(
     () => buildLibrarySections(models, providers),
@@ -161,8 +171,14 @@ function ModelLibrary({
       (section) => section.id === (isSearching ? searchSectionId : rememberedSectionId),
     ) ?? ALL_SECTION;
   const entries = React.useMemo(
-    () => buildLibraryEntries({ models: visibleModels, providers, section: activeSection }),
-    [activeSection, providers, visibleModels],
+    () =>
+      buildLibraryEntries({
+        models: visibleModels,
+        providers,
+        section: activeSection,
+        isRanked: isSearching,
+      }),
+    [activeSection, isSearching, providers, visibleModels],
   );
   const modelEntries = React.useMemo(
     () => entries.filter((entry) => entry.kind === "model"),
@@ -247,7 +263,7 @@ function ModelLibrary({
       <div className="flex items-center gap-2 border-b border-separator p-2">
         <InputGroup className="h-8 flex-1 border-transparent bg-transparent shadow-none dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0">
           <InputGroupAddon>
-            <HugeiconsIcon icon={SearchIcon} />
+            {isSearchPending ? <Spinner /> : <HugeiconsIcon icon={SearchIcon} />}
           </InputGroupAddon>
           <InputGroupInput
             autoFocus
@@ -258,7 +274,7 @@ function ModelLibrary({
             aria-controls={listId}
             aria-activedescendant={activeEntry ? `${listId}-${activeEntry.key}` : undefined}
             onChange={(event) => {
-              if (!isSearching && event.target.value.trim()) {
+              if (!search.trim() && event.target.value.trim()) {
                 setSearchSectionId(ALL_SECTION.id);
               }
               setSearch(event.target.value);
@@ -384,16 +400,16 @@ function ModelLibrary({
 
 function filterLibraryModels({
   models,
-  providers,
+  index,
   search,
   filter,
 }: {
   models: readonly ProviderModelInfo[];
-  providers: readonly ProviderInfo[];
+  index: ModelSearchIndex;
   search: string;
   filter: LibraryFilter;
 }): ProviderModelInfo[] {
-  const filtered = models.filter((model) => {
+  const isShown = (model: ProviderModelInfo) => {
     switch (filter) {
       case "enabled":
         return model.isEnabled;
@@ -402,17 +418,15 @@ function filterLibraryModels({
       case "all":
         return true;
     }
-  });
+  };
   if (!search.trim()) {
-    return filtered;
+    return models.filter(isShown);
   }
 
-  const matches = new Set(
-    searchModelPickerRows({ models: filtered, providers, query: search }).map(
-      (row) => row.model.id,
-    ),
-  );
-  return filtered.filter((model) => matches.has(model.id));
+  // Best matches first; the entries keep this order while searching.
+  return searchModelPickerRows({ index, query: search })
+    .map((row) => row.model)
+    .filter(isShown);
 }
 
 type LibrarySection = Pick<ModelPickerSection, "id" | "kind" | "label" | "provider">;
@@ -455,10 +469,13 @@ function buildLibraryEntries({
   models,
   providers,
   section,
+  isRanked,
 }: {
   models: readonly ProviderModelInfo[];
   providers: readonly ProviderInfo[];
   section: LibrarySection;
+  /** Search results: keep their order, and list All flat instead of by provider. */
+  isRanked: boolean;
 }): LibraryEntry[] {
   const providersById = new Map(providers.map((provider) => [provider.id, provider]));
   const toEntry = (model: ProviderModelInfo, showProvider: boolean): LibraryEntry[] => {
@@ -471,10 +488,14 @@ function buildLibraryEntries({
   }
 
   if (section.kind === "provider") {
-    return models
-      .filter((model) => model.providerId === section.provider?.id)
-      .sort(compareModelsByLabel)
-      .flatMap((model) => toEntry(model, false));
+    const providerModels = models.filter((model) => model.providerId === section.provider?.id);
+    return (isRanked ? providerModels : providerModels.sort(compareModelsByLabel)).flatMap(
+      (model) => toEntry(model, false),
+    );
+  }
+
+  if (isRanked) {
+    return models.flatMap((model) => toEntry(model, true));
   }
 
   const entries: LibraryEntry[] = [];
