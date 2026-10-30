@@ -91,6 +91,13 @@ keep these:
 - Code: Geist Mono. Section labels: 10px uppercase, `tracking-wider`,
   `text-muted-foreground/80`.
 
+## Code blocks
+
+Syntax colors are the `--code-*` tokens in `index.css`, mapped to grammar scopes
+by `hanokiCodeTheme` (`features/chat/code-theme.ts`) and handed to Streamdown via
+`createCodePlugin`. Moss marks keywords; the other hues are low-chroma so a block
+reads as ink with a few warm notes rather than a second accent.
+
 ## Buttons
 
 Buttons never shout. The `default` Button variant uses a **soft**

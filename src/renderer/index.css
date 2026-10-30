@@ -84,6 +84,18 @@
   --warning: oklch(78% 0.13 75);
   --warning-foreground: oklch(20% 0.05 75);
 
+  /* ── Code: muted syntax hues at matching lightness, so moss stays the lead ── */
+  --code-foreground: oklch(86% 0.005 140);
+  --code-comment: oklch(60% 0.012 140);
+  --code-punctuation: oklch(66% 0.01 140);
+  --code-keyword: var(--accent);
+  --code-string: oklch(78% 0.075 85);
+  --code-constant: oklch(76% 0.085 50);
+  --code-function: oklch(84% 0.05 110);
+  --code-type: oklch(78% 0.055 195);
+  --code-inserted: var(--success);
+  --code-deleted: oklch(70% 0.14 20);
+
   /* ── Fields ── */
   --field-background: oklch(15% 0.004 140);
   --field-foreground: var(--foreground);

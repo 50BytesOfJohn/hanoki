@@ -1,5 +1,5 @@
 import * as React from "react";
-import { code } from "@streamdown/code";
+import { createCodePlugin } from "@streamdown/code";
 import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 
@@ -58,12 +58,16 @@ import {
   parseMarkdownToTiptap,
   serializeTiptapToMarkdown,
 } from "@shared/tiptap/extensions";
+import { hanokiCodeTheme } from "./code-theme";
 import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 import { MessageRevisionBadge, RegenerateWithNotePopover } from "./message-revision";
 
-const STREAMDOWN_PLUGINS = { code };
+// Hanoki is dark-only, so one theme fills both the light and dark slots.
+const STREAMDOWN_PLUGINS = {
+  code: createCodePlugin({ themes: [hanokiCodeTheme, hanokiCodeTheme] }),
+};
 const USER_MESSAGE_CARD_CLASS_NAME =
   "max-w-[85%] rounded-xl bg-surface-secondary px-4 py-3 text-sm";
 const ASSISTANT_MESSAGE_CARD_CLASS_NAME = "w-full max-w-full text-sm";
