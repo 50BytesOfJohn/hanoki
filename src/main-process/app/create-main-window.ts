@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { isTrustedRendererUrl, type TrustedSenderRegistry } from "../ipc/trusted-senders";
 import { WINDOW_TOOLBAR_HEIGHT, WINDOW_TRAFFIC_LIGHTS_POSITION } from "@shared/window-chrome";
-import { createPersistentWindowState } from "../lib/persistent-window-state";
 
 export interface CreateMainWindowOptions {
   trustedSenders: TrustedSenderRegistry;
@@ -27,16 +26,13 @@ function getMainWindowIconPath(): string | undefined {
 export function createMainWindow(options: CreateMainWindowOptions): BrowserWindow {
   const isMac = process.platform === "darwin";
   const windowIconPath = getMainWindowIconPath();
-  const windowState = createPersistentWindowState({
-    windowId: "main",
-    defaultSize: {
-      width: 800,
-      height: 600,
-    },
-  });
 
   const mainWindow = new BrowserWindow({
-    ...windowState.browserWindowOptions,
+    // Electron restores the saved bounds and display mode over these defaults.
+    name: "main",
+    windowStatePersistence: true,
+    width: 800,
+    height: 600,
     autoHideMenuBar: process.platform === "linux",
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     ...(isMac
@@ -60,8 +56,6 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
   });
 
   options.trustedSenders.registerTrustedWebContents(mainWindow.webContents);
-
-  windowState.attach(mainWindow);
 
   mainWindow.on("closed", () => {
     options.onClosed?.();
