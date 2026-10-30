@@ -8,7 +8,7 @@ import { messagesApi } from "@/api/messages";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 
-import { createChatTransport, useChatStore } from "@/stores/chat-store";
+import { createChatTransport, loadChatHistory, useChatStore } from "@/stores/chat-store";
 import {
   getBranchCost,
   getLatestContextUsage,
@@ -29,6 +29,7 @@ type RevisionComposerState = { messageId: string; note: string };
 type ChatContextState = {
   chatId: string;
   modelId: string | null;
+  isHistoryLoading: boolean;
   historyError: string | null;
   editingMessageId: string | null;
   continuingMessageId: string | null;
@@ -95,16 +96,19 @@ function createChatContextStore({
   apiUrl,
   chatId,
   initialModelId,
+  isHistoryLoading,
   transportRefs,
 }: {
   apiUrl: string;
   chatId: string;
   initialModelId: string | null;
+  isHistoryLoading: boolean;
   transportRefs: ChatTransportRefs;
 }): ChatContextStoreApi {
   return createStore<ChatContextState>()((set, get) => ({
     chatId,
     modelId: initialModelId,
+    isHistoryLoading,
     historyError: null,
     editingMessageId: null,
     continuingMessageId: null,
@@ -519,7 +523,8 @@ export function ChatContextProvider({
   const chat = useChatStore((state) => state.chatEntries.get(chatId) ?? null);
   const getOrCreateChat = useChatStore((state) => state.getOrCreateChat);
 
-  React.useEffect(() => {
+  // Before paint: the `null` render below must never reach the screen as an empty pane.
+  React.useLayoutEffect(() => {
     getOrCreateChat(chatId, apiUrl);
   }, [apiUrl, chatId, getOrCreateChat]);
 
@@ -569,6 +574,7 @@ function InitializedChatContextProvider({
       chatId,
       apiUrl,
       initialModelId: resolveModelId(enabledModelIds, initialModelId),
+      isHistoryLoading: chat.messages.length === 0,
       transportRefs: transportRefs.current,
     });
   }
@@ -653,6 +659,9 @@ function InitializedChatContextProvider({
     // If the Chat already has messages (e.g. returning to a tab that was
     // already loaded), skip re-loading so we don't lose streaming state.
     if (chat.messages.length > 0) {
+      store.setState((current) =>
+        current.isHistoryLoading ? { ...current, isHistoryLoading: false } : current,
+      );
       return;
     }
 
@@ -664,14 +673,13 @@ function InitializedChatContextProvider({
       return { ...current, historyError: null };
     });
 
-    void messagesApi
-      .listMessages(chatId)
-      .then((persistedMessages) => {
+    void loadChatHistory(chat)
+      .then(() => {
         if (isDisposed) {
           return;
         }
 
-        transportRefs.current.setMessages?.(persistedMessages);
+        store.setState((current) => ({ ...current, isHistoryLoading: false }));
       })
       .catch((loadError) => {
         if (isDisposed) {
@@ -683,19 +691,17 @@ function InitializedChatContextProvider({
             ? loadError.message
             : "Failed to load chat messages.";
 
-        store.setState((current) => {
-          if (current.historyError === message) {
-            return current;
-          }
-
-          return { ...current, historyError: message };
-        });
+        store.setState((current) => ({
+          ...current,
+          isHistoryLoading: false,
+          historyError: message,
+        }));
       });
 
     return () => {
       isDisposed = true;
     };
-  }, [chat, chatId, store]);
+  }, [chat, store]);
 
   return (
     <ChatSessionContext.Provider value={chat}>
@@ -934,6 +940,10 @@ export function useChatError() {
 
     return chatError;
   }, [chatError, continuationError]);
+}
+
+export function useChatIsHistoryLoading() {
+  return useChatContext((state) => state.isHistoryLoading);
 }
 
 export function useChatHistoryError() {

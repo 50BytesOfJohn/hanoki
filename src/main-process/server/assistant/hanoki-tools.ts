@@ -1360,14 +1360,14 @@ export function createHanokiTools({
           throw new Error("Markdown content must be a string no larger than 5 MiB.");
         }
         const updated = updateMarkdownContent(noteId, next);
-        return {
+        return treeChanged({
           kind: "markdown" as const,
           id: updated.id,
           title: updated.title,
           mode,
           beforeLength: before.length,
           afterLength: next.length,
-        };
+        });
       },
     }),
 

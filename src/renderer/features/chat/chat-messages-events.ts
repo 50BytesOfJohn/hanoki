@@ -4,11 +4,21 @@ import { messagesApi } from "@/api/messages";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 import { useSystemStore } from "@/stores/system-store";
-import { useChatStore } from "@/stores/chat-store";
+import { loadChatHistory, useChatStore } from "@/stores/chat-store";
 
 function isChatBusy(chatId: string) {
   const status = useChatStore.getState().chatEntries.get(chatId)?.status;
   return status === "streaming" || status === "submitted";
+}
+
+/** Loads a chat's transcript ahead of opening it, so its first paint already has the messages. */
+export function preloadChatHistory(chatId: string): void {
+  const port = useSystemStore.getState().aiServer.port;
+  if (!port) return;
+
+  const chat = useChatStore.getState().getOrCreateChat(chatId, `http://127.0.0.1:${port}/api/chat`);
+  // Opening the chat retries and reports a failure, so there is nothing to surface here.
+  void loadChatHistory(chat).catch(() => {});
 }
 
 /** Refresh cached transcripts after a draft is saved in main. */

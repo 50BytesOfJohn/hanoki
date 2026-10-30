@@ -66,7 +66,7 @@ import {
 } from "@/features/markdown/markdown-pane";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { useOpenChatView } from "@/features/chat/use-chat-view";
-import { useWorkspaceStore } from "@/features/workspace/store";
+import { useIsWorkspaceHydrated, useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "cn";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
 import type {
@@ -132,8 +132,8 @@ export function ChatLayout() {
 function ChatLayoutFrame() {
   const tabs = useWorkspaceStore((state) => state.tabs);
   const activeTabId = useWorkspaceStore((state) => state.activeTabId);
-  const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const movePane = useWorkspaceStore((state) => state.movePane);
+  const isHydrated = useIsWorkspaceHydrated();
   const [draggedPaneId, setDraggedPaneId] = React.useState<string | null>(null);
   const [nativeDrag, setNativeDrag] = React.useState<NativeChatDrag | null>(null);
   const sensors = useSensors(
@@ -164,10 +164,10 @@ function ChatLayoutFrame() {
       const sourcePaneId = String(event.active.id).replace(/^pane:/, "");
       const target = event.over ? parseDropId(String(event.over.id)) : null;
       setDraggedPaneId(null);
-      if (!activeTab || !target || target.paneId === sourcePaneId) return;
-      movePane(activeTab.id, sourcePaneId, target.paneId, target.position);
+      if (!activeTabId || !target || target.paneId === sourcePaneId) return;
+      movePane(activeTabId, sourcePaneId, target.paneId, target.position);
     },
-    [activeTab, movePane],
+    [activeTabId, movePane],
   );
 
   return (
@@ -189,24 +189,19 @@ function ChatLayoutFrame() {
               {tabs.map((tab) => {
                 const isActive = tab.id === activeTabId;
                 return (
-                  <div
+                  <TabPanel
                     key={tab.id}
-                    aria-hidden={!isActive}
-                    className={cn("h-full min-h-0 w-full min-w-0", !isActive && "hidden")}
-                  >
-                    <PaneTree
-                      tab={tab}
-                      node={tab.layout}
-                      draggedPaneId={isActive ? draggedPaneId : null}
-                      nativeDrag={isActive ? nativeDrag : null}
-                    />
-                  </div>
+                    tab={tab}
+                    isActive={isActive}
+                    draggedPaneId={isActive ? draggedPaneId : null}
+                    nativeDrag={isActive ? nativeDrag : null}
+                  />
                 );
               })}
             </div>
-          ) : (
+          ) : isHydrated ? (
             <ChatNewTabPage drag={nativeDrag} />
-          )}
+          ) : null}
         </main>
       </div>
       <DragOverlay dropAnimation={null}>
@@ -223,6 +218,28 @@ function ChatLayoutFrame() {
     </DndContext>
   );
 }
+
+// Every open tab stays mounted, so without the memo each switch re-renders all of their chats.
+const TabPanel = React.memo(function TabPanel({
+  tab,
+  isActive,
+  draggedPaneId,
+  nativeDrag,
+}: {
+  tab: TabStateItem;
+  isActive: boolean;
+  draggedPaneId: string | null;
+  nativeDrag: NativeChatDrag | null;
+}) {
+  return (
+    <div
+      aria-hidden={!isActive}
+      className={cn("h-full min-h-0 w-full min-w-0", !isActive && "hidden")}
+    >
+      <PaneTree tab={tab} node={tab.layout} draggedPaneId={draggedPaneId} nativeDrag={nativeDrag} />
+    </div>
+  );
+});
 
 function PaneTree({
   tab,
@@ -354,7 +371,10 @@ function ItemPane({
           isDragging && "opacity-50",
         )}
         onPointerDownCapture={() => focusPane(tab.id, pane.id)}
-        onFocusCapture={() => focusPane(tab.id, pane.id)}
+        onFocusCapture={() => {
+          // A late autofocus from a tab just left must not pull the user back to it.
+          if (useWorkspaceStore.getState().activeTabId === tab.id) focusPane(tab.id, pane.id);
+        }}
       >
         <ItemPanelHeader
           pane={pane}

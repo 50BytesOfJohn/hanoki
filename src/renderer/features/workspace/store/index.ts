@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { devtools, persist, subscribeWithSelector } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer"; // v5 immer middleware
@@ -39,3 +40,12 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     ),
   ),
 );
+
+function subscribeToHydration(onChange: () => void) {
+  return useWorkspaceStore.persist.onFinishHydration(onChange);
+}
+
+/** False until the persisted workspace has loaded, when empty tabs don't yet mean "no tabs". */
+export function useIsWorkspaceHydrated(): boolean {
+  return useSyncExternalStore(subscribeToHydration, useWorkspaceStore.persist.hasHydrated);
+}

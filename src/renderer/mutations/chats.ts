@@ -4,6 +4,7 @@ import type { ChatInfo, ChatSettingsUpdateInput } from "@shared/ipc";
 
 import { chatsApi } from "../api/chats";
 import { useWorkspaceStore } from "../features/workspace/store";
+import { seedItemCache } from "../queries/items";
 import { queryKeys } from "../queries/keys";
 
 export function useCreateChat() {
@@ -22,6 +23,7 @@ export function useCreateChat() {
       newTab?: boolean;
     }) => chatsApi.create(workspaceId, title, folderId),
     onSuccess: (chat, { newTab }) => {
+      seedItemCache(chat);
       openItem(chat.id, "chat", { newTab });
       void navigate({ to: "/chat" });
     },

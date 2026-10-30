@@ -1272,9 +1272,11 @@ describe("Hanoki getItem, edit, delete, terminals, and tool search", () => {
       folderId: null,
     });
     updateMarkdownContent(note.id, "old");
+    const onTreeChanged = vi.fn();
     const tools = createHanokiTools({
       workspaceId: "edit-note-workspace",
       chatId: host.id,
+      onTreeChanged,
       flushMarkdownEditors: async () => undefined,
     });
     const replaced = unwrapToolResult(
@@ -1290,6 +1292,7 @@ describe("Hanoki getItem, edit, delete, terminals, and tool search", () => {
       toolExecuteOptions,
     );
     expect(markdownOf(note.id)).toBe("new body +more");
+    expect(onTreeChanged).toHaveBeenCalledTimes(2);
     expect(isApprovalToolName("hanokiEditNote")).toBe(true);
   });
 

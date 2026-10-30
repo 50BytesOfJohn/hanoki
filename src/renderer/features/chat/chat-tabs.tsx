@@ -52,9 +52,10 @@ function readDraggedItems(event: React.DragEvent): Array<{ id: string; type: Ite
   });
 }
 
-export function useChatTabsPosition(): ChatTabsPosition {
-  const { data } = useQuery(globalChatSettingsQueryOptions);
-  return data?.tabsPosition ?? "top";
+/** Null until the setting has loaded, so a sidebar strip doesn't first render in the toolbar. */
+export function useChatTabsPosition(): ChatTabsPosition | null {
+  const { data, isPending } = useQuery(globalChatSettingsQueryOptions);
+  return isPending ? null : (data?.tabsPosition ?? "top");
 }
 
 function useTabStrip() {
@@ -184,7 +185,8 @@ export function ChatTabsSidebarList() {
 
 /* ── Tab item ── */
 
-function ChatTabItem({
+// Memoized so switching tabs re-renders the two tabs involved, not the whole strip.
+const ChatTabItem = React.memo(function ChatTabItem({
   tab,
   orientation,
   isActive,
@@ -210,7 +212,7 @@ function ChatTabItem({
   const focusedPane = getFocusedPane(tab);
   const paneCount = getPanes(tab.layout).length;
   const { data: item } = useQuery(getItemQueryOptions(focusedPane.itemId));
-  const title = item?.title ?? "Loading…";
+  const title = item?.title ?? "";
   const isHorizontal = orientation === "horizontal";
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -226,8 +228,9 @@ function ChatTabItem({
     [setNodeRef],
   );
 
-  // Keep the active tab visible when it changes via shortcut or sidebar click.
-  React.useEffect(() => {
+  // Keep the active tab visible when it changes via shortcut or sidebar click. Before paint,
+  // so the strip doesn't show a frame with the newly active tab still out of view.
+  React.useLayoutEffect(() => {
     if (isActive) {
       elementRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
@@ -262,9 +265,13 @@ function ChatTabItem({
               }
             }}
             className={cn(
-              "group/tab relative flex h-7 items-center gap-1.5 rounded-md pl-2 pr-1 text-[13px] outline-hidden select-none transition-colors duration-100",
-              "hover:bg-hover focus-visible:ring-1 focus-visible:ring-focus/60",
-              isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
+              "group/tab relative flex h-7 items-center gap-1.5 rounded-md pl-2 pr-1 text-[13px] outline-hidden select-none",
+              "focus-visible:ring-1 focus-visible:ring-focus/60",
+              // Only hovering fades. Selection is instant: a fade here shows two half-lit
+              // tabs on every switch, and a hover color would hide the tab just selected.
+              isActive
+                ? "bg-surface-tertiary text-foreground"
+                : "text-foreground/75 hover:bg-hover hover:transition-colors hover:duration-100",
               // Chrome's model: tabs shrink evenly from 11rem down to a 7rem floor,
               // then the strip scrolls. Below the floor a title is unreadable, and a
               // strip of identical stubs is worse than scrolling.
@@ -295,7 +302,7 @@ function ChatTabItem({
               variant="ghost"
               className={cn(
                 "size-5 min-w-0 shrink-0 rounded p-0 text-muted-foreground [&_svg:not([class*='size-'])]:size-3",
-                "opacity-0 transition-opacity group-hover/tab:opacity-100 focus-visible:opacity-100",
+                "opacity-0 group-hover/tab:opacity-100 group-hover/tab:transition-opacity focus-visible:opacity-100",
                 isActive && "opacity-50 group-hover/tab:opacity-100",
               )}
               aria-label={`Close ${title} tab`}
@@ -329,7 +336,7 @@ function ChatTabItem({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
 /*
  * Streaming marker. A slot that widens from nothing to the indicator's width, so

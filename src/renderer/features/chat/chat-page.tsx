@@ -97,7 +97,9 @@ export function ActiveChatView({ chatId }: { chatId: string }) {
   const port = useSystemStore(selectAiServerPort);
   const isReady = useSystemStore(selectAiServerReady);
 
-  const { data: enabledModels = [] } = useQuery(listEnabledModelsQueryOptions);
+  const { data: enabledModels = [], isPending: isModelsPending } = useQuery(
+    listEnabledModelsQueryOptions,
+  );
   const enabledModelIds = React.useMemo(
     () => enabledModels.map((model) => model.id),
     [enabledModels],
@@ -132,7 +134,9 @@ export function ActiveChatView({ chatId }: { chatId: string }) {
     return (
       <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col px-6 py-6">
         <p className="text-sm text-muted-foreground">
-          {enabledModels.length === 0 ? "Enable a model in Settings to start chatting." : ""}
+          {!isModelsPending && enabledModels.length === 0
+            ? "Enable a model in Settings to start chatting."
+            : ""}
         </p>
       </div>
     );
@@ -146,12 +150,9 @@ export function ActiveChatView({ chatId }: { chatId: string }) {
     );
   }
 
+  // A local read that takes milliseconds: a "Loading…" line would only ever register as a flash.
   if (!chat) {
-    return (
-      <div className="flex-1 mx-auto flex w-full max-w-4xl flex-col gap-4 px-6 py-6">
-        <p className="text-sm text-muted-foreground">Loading chat…</p>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -285,7 +286,8 @@ function ActiveChatContent() {
   }, [containerRef]);
   const { registerScrollActions } = useChatScrollActions();
 
-  React.useEffect(() => {
+  // Before paint, or the pane header's buttons pop in a frame after the chat does.
+  React.useLayoutEffect(() => {
     registerScrollActions({ scrollToTop, scrollToBottom });
     return () => registerScrollActions(null);
   }, [registerScrollActions, scrollToTop, scrollToBottom]);

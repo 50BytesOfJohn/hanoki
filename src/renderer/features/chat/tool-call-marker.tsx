@@ -65,7 +65,6 @@ import {
 } from "@/components/ui/trace";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
-import { notifyChatTreeChanged } from "@/features/items/item-title-events";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import type { ChatTreeSnapshot } from "@shared/ipc";
 import { APPROVAL_TOOLS, isApprovalToolName } from "@shared/chat/tool-approval";
@@ -1176,34 +1175,8 @@ function DeniedToolLine() {
   );
 }
 
-const TREE_CHANGING_TOOLS = new Set([
-  "hanokiCreateFolder",
-  "hanokiCreateChat",
-  "hanokiCreateMarkdown",
-  "hanokiCreateTerminal",
-  "hanokiMoveItems",
-  "hanokiRenameItem",
-  "hanokiEditNote",
-  "hanokiDeleteItems",
-]);
-
 function getPartToolName(part: ToolUIPart | DynamicToolUIPart): string {
   return part.type === "dynamic-tool" ? part.toolName : getToolName(part);
-}
-
-/** Lives on the row, not the result, because a collapsed result isn't mounted. */
-function useNotifyTreeChanges(parts: (ToolUIPart | DynamicToolUIPart)[]) {
-  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
-  const finishedCalls = parts
-    .filter(
-      (part) => part.state === "output-available" && TREE_CHANGING_TOOLS.has(getPartToolName(part)),
-    )
-    .map((part) => part.toolCallId)
-    .join();
-
-  React.useEffect(() => {
-    if (workspaceId && finishedCalls) notifyChatTreeChanged(workspaceId);
-  }, [finishedCalls, workspaceId]);
 }
 
 function ToolCallRow({
@@ -1411,7 +1384,6 @@ export const ToolCallMarker = React.memo(function ToolCallMarker({
   parts: (ToolUIPart | DynamicToolUIPart)[];
   toolName: string;
 }) {
-  useNotifyTreeChanges(parts);
   const [only] = parts;
 
   if (only && parts.length === 1) return <ToolCallRow isAnimating={isAnimating} part={only} />;

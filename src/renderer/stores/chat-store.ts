@@ -7,6 +7,7 @@ import {
 } from "ai";
 import { create } from "zustand";
 
+import { messagesApi } from "@/api/messages";
 import { chatMessageMetadataSchema, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import { normalizeAssistantTiptapParts } from "@shared/tiptap/extensions";
@@ -79,14 +80,33 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
  */
 export function useChatStatus(chatId: string): ChatStatus | null {
   const chat = useChatStore((s) => s.chatEntries.get(chatId) ?? null);
-  const [status, setStatus] = React.useState<ChatStatus>(() => chat?.status ?? "ready");
+  const subscribe = React.useCallback(
+    (onChange: () => void) => chat?.["~registerStatusCallback"](onChange) ?? (() => {}),
+    [chat],
+  );
 
-  React.useEffect(() => {
-    if (!chat) return;
-    // Sync in case the status changed between render and effect.
-    setStatus(chat.status);
-    return chat["~registerStatusCallback"](() => setStatus(chat.status));
-  }, [chat]);
+  return React.useSyncExternalStore(subscribe, () => chat?.status ?? null);
+}
 
-  return chat ? status : null;
+const pendingHistoryLoads = new WeakMap<Chat<HanokiUiMessage>, Promise<void>>();
+
+/**
+ * Fills an empty chat with its saved messages. Shared by the mounted chat and the sidebar's
+ * press-time preload, so a chat opened mid-load neither fetches twice nor renders empty.
+ */
+export function loadChatHistory(chat: Chat<HanokiUiMessage>): Promise<void> {
+  if (chat.messages.length > 0) return Promise.resolve();
+
+  const pending = pendingHistoryLoads.get(chat);
+  if (pending) return pending;
+
+  const load = messagesApi
+    .listMessages(chat.id)
+    .then((messages) => {
+      // A message sent while this was loading is newer than what was read.
+      if (chat.messages.length === 0) chat.messages = messages;
+    })
+    .finally(() => pendingHistoryLoads.delete(chat));
+  pendingHistoryLoads.set(chat, load);
+  return load;
 }

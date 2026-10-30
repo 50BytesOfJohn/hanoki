@@ -8,6 +8,7 @@ import {
   useChatHistoryError,
   useChatId,
   useChatIsBusy,
+  useChatIsHistoryLoading,
   useChatIsInteractionLocked,
   useChatMessages,
   useChatModelId,
@@ -24,6 +25,7 @@ export function Conversation() {
   const continuingMessageId = useChatContinuingMessageId();
   const isBusy = useChatIsBusy();
   const isInteractionLocked = useChatIsInteractionLocked();
+  const isHistoryLoading = useChatIsHistoryLoading();
   const historyError = useChatHistoryError();
   const error = useChatError();
   const lastMessage = messages.at(-1) ?? null;
@@ -38,7 +40,10 @@ export function Conversation() {
       className="min-h-0 flex flex-col gap-8 w-full max-w-3xl mx-auto px-6 pt-8"
     >
       {messages.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Send a message to start chatting.</p>
+        // Saying the chat is empty while its history is on the way would flash on every open.
+        isHistoryLoading ? null : (
+          <p className="text-sm text-muted-foreground">Send a message to start chatting.</p>
+        )
       ) : (
         messages.map((message) => (
           <MessageErrorBoundary

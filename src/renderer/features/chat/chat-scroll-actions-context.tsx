@@ -22,10 +22,13 @@ export function ChatScrollActionsProvider({ children }: { children: React.ReactN
     setScrollActions(actions ? { ...actions } : null);
   }, []);
 
+  const value = React.useMemo(
+    () => ({ scrollActions, registerScrollActions }),
+    [scrollActions, registerScrollActions],
+  );
+
   return (
-    <ChatScrollActionsContext.Provider value={{ scrollActions, registerScrollActions }}>
-      {children}
-    </ChatScrollActionsContext.Provider>
+    <ChatScrollActionsContext.Provider value={value}>{children}</ChatScrollActionsContext.Provider>
   );
 }
 

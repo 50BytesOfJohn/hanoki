@@ -5,6 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { DynamicToolUIPart } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { useWorkspaceStore } from "@/features/workspace/store";
+import { subscribeToChatTreeChanges } from "../items/item-title-events";
 import { ToolCallMarker } from "./tool-call-marker";
 
 const { moveItem, updateTitle } = vi.hoisted(() => ({
@@ -31,6 +33,29 @@ function renderPart(part: DynamicToolUIPart, isAnimating = true) {
 afterEach(cleanup);
 
 describe("ToolCallMarker", () => {
+  it("doesn't refresh the sidebar for a tree change already in the transcript", () => {
+    // Rows mount on every chat open and their effects re-run on every tab switch, so
+    // announcing from here blanked the sidebar each time. Main reports the change instead.
+    useWorkspaceStore.setState({ workspace: { id: "workspace-1" } as never });
+    const onTreeChanged = vi.fn();
+    const unsubscribe = subscribeToChatTreeChanges(onTreeChanged);
+
+    renderPart(
+      {
+        type: "dynamic-tool",
+        toolName: "hanokiRenameItem",
+        toolCallId: "call-1",
+        state: "output-available",
+        input: {},
+        output: {},
+      },
+      false,
+    );
+
+    expect(onTreeChanged).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
   it("marks a call in progress as a running line", () => {
     renderPart({ ...base, state: "input-available", input });
 

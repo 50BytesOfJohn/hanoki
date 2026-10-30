@@ -1,5 +1,6 @@
 import { workspaceApi } from "@/api/workspaces";
 import { itemsApi } from "@/api/items";
+import { seedItemCache } from "@/queries/items";
 import type { PersistStorage } from "zustand/middleware";
 import type { WorkspaceStoreValues } from "../types";
 import { AsyncDebouncer } from "@tanstack/react-pacer";
@@ -21,6 +22,12 @@ export async function normalizePersistedTabs(
       return result.status === "rejected" || result.value.workspaceId !== workspaceId;
     }),
   );
+  // These items are about to back the restored tabs, so don't fetch them a second time.
+  for (const result of itemResults) {
+    if (result.status === "fulfilled" && result.value.workspaceId === workspaceId) {
+      seedItemCache(result.value);
+    }
+  }
   return normalized
     .flatMap((tab) => {
       const layout = removeItems(tab.layout, unavailableItemIds);

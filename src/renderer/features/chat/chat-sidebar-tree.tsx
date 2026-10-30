@@ -83,6 +83,7 @@ import { chatTreeApi } from "@/api/chat-tree";
 import { useChatStatus } from "@/stores/chat-store";
 import { cn } from "cn";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
+import { seedItemCache } from "@/queries/items";
 import { queryKeys } from "@/queries/keys";
 import {
   useDeleteChatTreeItems,
@@ -126,13 +127,15 @@ import {
   ChatSidebarBlockContent,
   ChatSidebarPanel,
 } from "./chat-sidebar";
+import { preloadChatHistory } from "./chat-messages-events";
 import { useChatTreeSort } from "./use-chat-tree-sort";
 import { ChatSearchDialog } from "./chat-search-dialog";
 import { CHAT_DRAG_FORMAT, ChatTabsSidebarList, useChatTabsPosition } from "./chat-tabs";
 import { subscribeToChatTreeChanges } from "../items/item-title-events";
 import { clearSidebarFolderReveal, subscribeSidebarFolderReveal } from "./sidebar-reveal";
-import { useWorkspaceStore } from "../workspace/store";
+import { useIsWorkspaceHydrated, useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane } from "../workspace/store/layout-tree";
+import type { WorkspaceStoreState } from "../workspace/store/types";
 
 type ChatTreeNodeData =
   | { kind: "folder"; folder: ChatTreeFolderListItem }
@@ -276,7 +279,10 @@ export function ChatSidebarTree() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const expandedTreeNodes = useWorkspaceStore((s) => s.expandedTreeNodes);
   const workspaceViewMode = useWorkspaceStore((s) => s.sidebarViewMode);
-  const { data: globalChatSettings } = useQuery(globalChatSettingsQueryOptions);
+  const isHydrated = useIsWorkspaceHydrated();
+  const { data: globalChatSettings, isPending: isSettingsPending } = useQuery(
+    globalChatSettingsQueryOptions,
+  );
 
   const viewMode: ChatSidebarViewMode =
     workspaceViewMode ?? globalChatSettings?.sidebarViewMode ?? "tree";
@@ -287,9 +293,10 @@ export function ChatSidebarTree() {
   return (
     <ChatSidebar>
       <ChatSidebarPanel>
-        {!workspaceId ? (
+        {!isHydrated ? null : !workspaceId ? (
           <p className="px-3 py-3 text-xs text-muted-foreground">Select a workspace.</p>
-        ) : workspaceState === "loading" ? null : viewMode === "activity" ? (
+        ) : workspaceState === "loading" ||
+          (!workspaceViewMode && isSettingsPending) ? null : viewMode === "activity" ? (
           <ChatSidebarActivity key={`activity:${workspaceId}`} workspaceId={workspaceId} />
         ) : isSortPending ? null : (
           <ChatSidebarTreeInner
@@ -453,8 +460,6 @@ function ChatSidebarTreeInner({
   const openItem = useWorkspaceStore((s) => s.openItem);
   const openItemInFocusedPane = useWorkspaceStore((s) => s.openItemInFocusedPane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
-  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
-  const tabs = useWorkspaceStore((s) => s.tabs);
 
   const [expandedItems, setExpandedItems] = React.useState<string[]>(() =>
     initialExpandedFolderIds.map((id) => `folder:${id}`),
@@ -466,11 +471,41 @@ function ChatSidebarTreeInner({
     null,
   );
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [isRootLoaded, setIsRootLoaded] = React.useState(false);
   const selectedItemIdSet = React.useMemo(() => new Set(selectedItems), [selectedItems]);
 
   const { sortOrder, folderPlacement } = useChatTreeSort(workspaceId);
   const sortRef = React.useRef({ sortOrder, folderPlacement });
   const pendingReloadRef = React.useRef(false);
+  const latestReloadRef = React.useRef(0);
+
+  const loadChildren = React.useCallback(
+    async (itemId: string) => {
+      const parentFolderId = itemId === ROOT_ITEM_ID ? null : itemId.slice("folder:".length);
+      const slice = await chatTreeApi.getChildren(workspaceId, parentFolderId);
+      slice.items.forEach(seedItemCache);
+      const entries: ChatTreeSortEntry<{ id: string; data: ChatTreeNodeData }>[] = [
+        ...slice.folders.map((folder) => ({
+          isFolder: true,
+          key: folder,
+          value: { id: `folder:${folder.id}`, data: { kind: "folder" as const, folder } },
+        })),
+        ...slice.items.map((item) => ({
+          isFolder: false,
+          key: { ...item, name: item.title },
+          value: { id: `item:${item.id}`, data: { kind: "item" as const, item } },
+        })),
+      ];
+
+      // Read through a ref: the loader is memoized by the tree, sort changes rebuild it below.
+      return sortChatTreeEntries(
+        entries,
+        sortRef.current.sortOrder,
+        sortRef.current.folderPlacement,
+      );
+    },
+    [workspaceId],
+  );
 
   useHotkey("Mod+K", () => {
     setSearchOpen(true);
@@ -588,23 +623,11 @@ function ChatSidebarTreeInner({
         }
       }
 
-      // Invalidate caches for old parents and new target
-      for (const item of items) {
-        item.getParent()?.invalidateChildrenIds();
-      }
-      target.item.invalidateChildrenIds();
-      tree.rebuildTree();
+      void reloadTree();
     },
     onRename: (item, value) => {
       const itemId = item.getId();
-      renameChatTreeItem.mutate(
-        { itemId, name: value },
-        {
-          onSuccess: () => {
-            void item.getParent()?.invalidateChildrenIds();
-          },
-        },
-      );
+      renameChatTreeItem.mutate({ itemId, name: value }, { onSuccess: () => void reloadTree() });
     },
     isItemFolder: (item) => {
       const id = item.getId();
@@ -619,48 +642,57 @@ function ChatSidebarTreeInner({
       return "";
     },
     createLoadingItemData: () => ({ kind: "loading" as const }),
+    onLoadedChildren: (itemId) => {
+      if (itemId === ROOT_ITEM_ID) setIsRootLoaded(true);
+    },
     dataLoader: {
       getItem: (itemId) => {
         if (itemId === ROOT_ITEM_ID) return { kind: "root" as const };
         return { kind: "loading" as const };
       },
-      getChildrenWithData: async (itemId) => {
-        const parentFolderId = itemId === ROOT_ITEM_ID ? null : itemId.slice("folder:".length);
-        const slice = await chatTreeApi.getChildren(workspaceId, parentFolderId);
-        const entries: ChatTreeSortEntry<{ id: string; data: ChatTreeNodeData }>[] = [
-          ...slice.folders.map((folder) => ({
-            isFolder: true,
-            key: folder,
-            value: { id: `folder:${folder.id}`, data: { kind: "folder" as const, folder } },
-          })),
-          ...slice.items.map((item) => ({
-            isFolder: false,
-            key: { ...item, name: item.title },
-            value: { id: `item:${item.id}`, data: { kind: "item" as const, item } },
-          })),
-        ];
-
-        // Read through a ref: the loader is memoized by the tree, sort changes rebuild it below.
-        return sortChatTreeEntries(
-          entries,
-          sortRef.current.sortOrder,
-          sortRef.current.folderPlacement,
-        );
-      },
+      getChildrenWithData: loadChildren,
     },
   });
 
   const items = tree.getItems();
   const visibleItems = items.filter((item) => item.getId() !== ROOT_ITEM_ID);
 
-  const invalidateTree = React.useCallback(() => {
-    void tree.getRootItem().invalidateChildrenIds();
-    for (const item of tree.getItems()) {
-      if (item.isFolder()) {
-        void item.invalidateChildrenIds();
-      }
+  /**
+   * Refreshes every loaded level in place. The tree's own `invalidateChildrenIds` empties a level
+   * until its reload lands, which blanks the sidebar for a moment on each change. Here the old
+   * rows stay up and all levels swap in one rebuild, so a moved item is never in both places.
+   */
+  const reloadTree = React.useCallback(async () => {
+    latestReloadRef.current += 1;
+    const reload = latestReloadRef.current;
+    const parents = [
+      tree.getRootItem(),
+      ...tree.getItems().filter((item) => item.getId() !== ROOT_ITEM_ID && item.isFolder()),
+    ];
+    // A folder deleted since its row rendered fails its read, and its parent drops it anyway.
+    const levels = await Promise.all(
+      parents.map((parent) => loadChildren(parent.getId()).catch(() => null)),
+    );
+    if (reload !== latestReloadRef.current) {
+      return;
     }
-  }, [tree]);
+
+    parents.forEach((parent, index) => {
+      const children = levels[index];
+      if (!children) {
+        return;
+      }
+
+      for (const { id, data } of children) {
+        tree.getItemInstance(id).updateCachedData(data, true);
+      }
+      parent.updateCachedChildrenIds(
+        children.map(({ id }) => id),
+        true,
+      );
+    });
+    tree.rebuildTree();
+  }, [loadChildren, tree]);
 
   React.useEffect(
     () =>
@@ -674,10 +706,9 @@ function ChatSidebarTreeInner({
           return;
         }
 
-        invalidateTree();
-        tree.rebuildTree();
+        void reloadTree();
       }),
-    [invalidateTree, tree, workspaceId],
+    [reloadTree, tree, workspaceId],
   );
 
   React.useEffect(() => {
@@ -686,9 +717,8 @@ function ChatSidebarTreeInner({
     }
 
     pendingReloadRef.current = false;
-    invalidateTree();
-    tree.rebuildTree();
-  }, [invalidateTree, renamingItem, tree]);
+    void reloadTree();
+  }, [reloadTree, renamingItem]);
 
   // Children are ordered as they load, so a sort change has to reload the loaded levels.
   React.useEffect(() => {
@@ -698,9 +728,8 @@ function ChatSidebarTreeInner({
       return;
     }
 
-    invalidateTree();
-    tree.rebuildTree();
-  }, [folderPlacement, invalidateTree, sortOrder, tree]);
+    void reloadTree();
+  }, [folderPlacement, reloadTree, sortOrder]);
 
   const openDeleteDialog = React.useCallback((itemIds: readonly string[]) => {
     const itemRefs = itemIds
@@ -720,9 +749,9 @@ function ChatSidebarTreeInner({
         title: "New chat",
         folderId,
       });
-      invalidateTree();
+      void reloadTree();
     },
-    [createChatMutation, invalidateTree, workspaceId],
+    [createChatMutation, reloadTree, workspaceId],
   );
 
   const createFolder = React.useCallback(
@@ -734,9 +763,9 @@ function ChatSidebarTreeInner({
       });
       setRenamingItem(`folder:${folder.id}`);
       setRenamingValue("New Folder");
-      invalidateTree();
+      void reloadTree();
     },
-    [createFolderMutation, invalidateTree, setRenamingItem, setRenamingValue, workspaceId],
+    [createFolderMutation, reloadTree, setRenamingItem, setRenamingValue, workspaceId],
   );
 
   const createTerminal = React.useCallback(
@@ -746,10 +775,10 @@ function ChatSidebarTreeInner({
         title: "New terminal",
         folderId,
       });
-      invalidateTree();
+      void reloadTree();
       openTab({ type: "terminal", itemId: terminal.id });
     },
-    [createTerminalMutation, invalidateTree, openTab, workspaceId],
+    [createTerminalMutation, openTab, reloadTree, workspaceId],
   );
 
   const createMarkdown = React.useCallback(
@@ -759,9 +788,9 @@ function ChatSidebarTreeInner({
         title: DEFAULT_MARKDOWN_TITLE,
         folderId,
       });
-      invalidateTree();
+      void reloadTree();
     },
-    [createMarkdownMutation, invalidateTree, workspaceId],
+    [createMarkdownMutation, reloadTree, workspaceId],
   );
 
   const openItemInTab = React.useCallback(
@@ -780,6 +809,7 @@ function ChatSidebarTreeInner({
 
   const openItemBeside = React.useCallback(
     (item: ItemInfo, direction: "left" | "right" | "top" | "bottom") => {
+      const { tabs, activeTabId } = useWorkspaceStore.getState();
       const tab = tabs.find((candidate) => candidate.id === activeTabId);
       if (!tab) {
         openTab({ type: item.type, itemId: item.id });
@@ -787,7 +817,7 @@ function ChatSidebarTreeInner({
       }
       splitPane(tab.id, tab.focusedPaneId, item.id, item.type, direction);
     },
-    [activeTabId, openTab, splitPane, tabs],
+    [openTab, splitPane],
   );
 
   const handleDeleteConfirm = React.useCallback(() => {
@@ -803,15 +833,14 @@ function ChatSidebarTreeInner({
       {
         onSuccess: () => {
           setSelectedItems([]);
-          invalidateTree();
-          tree.rebuildTree();
+          void reloadTree();
         },
         onSettled: () => {
           setPendingDeleteItems(null);
         },
       },
     );
-  }, [deleteItemsMutation, invalidateTree, pendingDeleteItems, tree, workspaceId]);
+  }, [deleteItemsMutation, pendingDeleteItems, reloadTree, workspaceId]);
 
   const handleTreeKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -902,7 +931,9 @@ function ChatSidebarTreeInner({
         </ChatSidebarSectionHeader>
 
         {visibleItems.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted-foreground">No items or folders yet.</p>
+          isRootLoaded ? (
+            <p className="px-3 py-3 text-xs text-muted-foreground">No items or folders yet.</p>
+          ) : null
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <ChatTreeView
@@ -967,9 +998,7 @@ function ChatSidebarTreeInner({
                     data.kind === "item" &&
                     data.item.type === "chat"
                   ) {
-                    void cloneChatMutation.mutateAsync({ id: data.item.id }).then(() => {
-                      invalidateTree();
-                    });
+                    void cloneChatMutation.mutateAsync({ id: data.item.id }).then(reloadTree);
                   } else if (action === "rename") {
                     afterContextMenuClose(() => {
                       item.startRenaming();
@@ -1005,11 +1034,13 @@ function ChatSidebarTreeInner({
                 }
 
                 if (data.kind === "item") {
-                  const activeTab = tabs.find((candidate) => candidate.id === activeTabId);
-                  const isActiveItem = activeTab
-                    ? getFocusedPane(activeTab).itemId === data.item.id
-                    : false;
                   const chatItemProps = mergeProps<"div">(item.getProps(), {
+                    onPointerDown: (event) => {
+                      // A head start on the read, so the click opens a chat that's already filled.
+                      if (event.button === 0 && data.item.type === "chat") {
+                        preloadChatHistory(data.item.id);
+                      }
+                    },
                     onClick: (event) => {
                       if (event.defaultPrevented || isSelectionModifierEvent(event)) {
                         return;
@@ -1051,15 +1082,15 @@ function ChatSidebarTreeInner({
                       itemKind={data.item.type}
                       onAction={handleContextMenuAction}
                     >
-                      <ChatTreeItemRow
+                      <ChatTreeOpenableItemRow
+                        itemId={data.item.id}
                         level={depth}
                         {...chatItemProps}
-                        data-active={isActiveItem || undefined}
                         data-drop-target={item.isDragTarget() || undefined}
                       >
                         <ChatTreeItemIcon item={data.item} />
                         <ChatTreeItemLabel>{data.item.title}</ChatTreeItemLabel>
-                      </ChatTreeItemRow>
+                      </ChatTreeOpenableItemRow>
                     </ChatTreeItemContextMenu>
                   );
                 }
@@ -1171,8 +1202,6 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
   const openItem = useWorkspaceStore((s) => s.openItem);
   const openItemInFocusedPane = useWorkspaceStore((s) => s.openItemInFocusedPane);
   const splitPane = useWorkspaceStore((s) => s.splitPane);
-  const activeTabId = useWorkspaceStore((s) => s.activeTabId);
-  const tabs = useWorkspaceStore((s) => s.tabs);
   const currentChatId = useWorkspaceStore((s) => s.currentChatId);
 
   const createChatMutation = useCreateChat();
@@ -1194,7 +1223,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
     setSearchOpen(true);
   });
 
-  const { data: chats = [] } = useQuery({
+  const { data: chats = [], isPending: isChatsPending } = useQuery({
     queryKey: queryKeys.chatTree.snapshot(workspaceId),
     queryFn: () => chatTreeApi.getTree(workspaceId),
     select: flattenSnapshotChats,
@@ -1238,6 +1267,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
 
   const handleContextMenuAction = React.useCallback(
     (chat: ChatInfo) => (action: ChatTreeContextMenuAction) => {
+      const { tabs, activeTabId } = useWorkspaceStore.getState();
       const activeTab = tabs.find((tab) => tab.id === activeTabId);
       const openBeside = (direction: "left" | "right" | "top" | "bottom") => {
         if (activeTab) splitPane(activeTab.id, activeTab.focusedPaneId, chat.id, "chat", direction);
@@ -1267,15 +1297,7 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         setPendingDeleteItems([{ kind: "item", id: chat.id }]);
       }
     },
-    [
-      activeTabId,
-      cloneChatMutation,
-      invalidateSnapshot,
-      openItemInFocusedPane,
-      openTab,
-      splitPane,
-      tabs,
-    ],
+    [cloneChatMutation, invalidateSnapshot, openItemInFocusedPane, openTab, splitPane],
   );
 
   const handleDeleteConfirm = React.useCallback(() => {
@@ -1327,7 +1349,9 @@ function ChatSidebarActivity({ workspaceId }: { workspaceId: string }) {
         </ChatSidebarSectionHeader>
 
         {sections.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-muted-foreground">No chats yet.</p>
+          isChatsPending ? null : (
+            <p className="px-3 py-3 text-xs text-muted-foreground">No chats yet.</p>
+          )
         ) : (
           <ChatSidebarBlockContent className="px-1 py-1">
             <div className="flex flex-col gap-2 pb-8">
@@ -1439,6 +1463,12 @@ function ChatActivityListItem({
           );
           event.dataTransfer.setData("text/plain", chat.title);
         }}
+        onPointerDown={(event) => {
+          // A head start on the read, so the click opens a chat that's already filled.
+          if (event.button === 0) {
+            preloadChatHistory(chat.id);
+          }
+        }}
         onClick={onSelect}
         onDoubleClick={(event) => {
           event.preventDefault();
@@ -1465,9 +1495,10 @@ function ChatActivityListItem({
           }
         }}
         className={cn(
-          "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
-          "hover:bg-hover",
-          isActive ? "bg-surface-tertiary text-foreground" : "text-foreground/75",
+          "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none",
+          isActive
+            ? "bg-surface-tertiary text-foreground"
+            : "text-foreground/75 hover:bg-hover hover:transition-colors hover:duration-100",
         )}
       >
         <ChatTreeItemIcon item={chat} />
@@ -1566,11 +1597,13 @@ function ChatTreeItemRow({
   return (
     <div
       className={cn(
-        "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none transition-colors duration-100",
+        "group/tree-item relative flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] outline-hidden select-none",
         "text-foreground/75 data-[active=true]:bg-surface-tertiary data-[active=true]:text-foreground",
         "data-[focused=true]:ring-1 data-[focused=true]:ring-focus/60",
         "data-[drop-target=true]:bg-hover data-[drop-target=true]:ring-1 data-[drop-target=true]:ring-muted-foreground/30 data-[drop-target=true]:ring-dashed",
-        "hover:bg-hover",
+        // Only hovering fades. Selection is instant: a fade here shows two half-lit rows
+        // on every switch, and a hover color would hide the row just selected.
+        "not-data-[active=true]:hover:bg-hover not-data-[active=true]:hover:transition-colors not-data-[active=true]:hover:duration-100",
         className,
       )}
       role="treeitem"
@@ -1578,6 +1611,21 @@ function ChatTreeItemRow({
       {...props}
     />
   );
+}
+
+function selectActiveItemId(state: WorkspaceStoreState): string | null {
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
+  return activeTab ? getFocusedPane(activeTab).itemId : null;
+}
+
+/** Subscribes per row so switching tabs re-renders the two rows involved, not the whole tree. */
+function ChatTreeOpenableItemRow({
+  itemId,
+  ...props
+}: React.ComponentProps<typeof ChatTreeItemRow> & { itemId: string }) {
+  const isActive = useWorkspaceStore((state) => selectActiveItemId(state) === itemId);
+
+  return <ChatTreeItemRow {...props} data-active={isActive || undefined} />;
 }
 
 function ChatTreeDisclosureButton({
