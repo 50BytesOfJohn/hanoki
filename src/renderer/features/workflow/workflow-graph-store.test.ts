@@ -94,4 +94,13 @@ describe("workflow graph store", () => {
     await flushPendingWorkflowSaves();
     expect(updateGraph).not.toHaveBeenCalled();
   });
+
+  it("settles when a refetch brings the same graph as the unsaved edit", () => {
+    seed(createDefaultWorkflowGraph(), 100);
+    updateWorkflowGraph(WORKFLOW_ID, (graph) => rename(graph, "Edited"));
+    // Structural sharing folds equal content back into the cached object, so
+    // restoring the edit over it again used to recurse without end.
+    expect(() => seed(rename(createDefaultWorkflowGraph(), "Edited"), 150)).not.toThrow();
+    expect(aiNames(cachedGraph()).every((name) => name === "Edited")).toBe(true);
+  });
 });

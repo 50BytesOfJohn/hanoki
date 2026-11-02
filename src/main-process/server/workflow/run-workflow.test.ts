@@ -205,6 +205,79 @@ describe("runWorkflow", () => {
       output: states.get("merge")?.output,
     });
   });
+
+  it("fails a step that replies with no text and runs nothing after it", async () => {
+    const states = await runWorkflow({
+      graph: resolvedGraph(),
+      input: "x",
+      context: { messages: [{ role: "user", content: "x" }], instructions: undefined },
+      signal: new AbortController().signal,
+      callModel: async (call) => {
+        if (!call.system?.includes("editor")) call.onText("draft");
+        return { modelId: call.model.modelId, tokens: { input: 3, output: 0 } };
+      },
+      onStep: () => {},
+    });
+    expect(states.get("review")).toMatchObject({
+      status: "error",
+      error: "The model replied with no text.",
+      tokens: { input: 3, output: 0 },
+    });
+    expect(states.get("review")?.continued).toBeUndefined();
+    expect(states.get("merge")?.status).toBe("pending");
+    expect(states.get("rewrite")?.status).toBe("pending");
+  });
+
+  it("stops parallel branches when a step fails", async () => {
+    const graph = resolvedGraph();
+    graph.edges = graph.edges.map((edge) =>
+      edge.target === "rewrite" ? { ...edge, id: "draft->rewrite", source: "draft" } : edge,
+    );
+    const states = await runWorkflow({
+      graph,
+      input: "x",
+      context: { messages: [{ role: "user", content: "x" }], instructions: undefined },
+      signal: new AbortController().signal,
+      callModel: async (call) => {
+        if (call.system?.includes("editor")) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          throw new Error("Provider broke");
+        }
+        if (allText(call).includes("Rewrite")) {
+          call.onText("half");
+          // Writes until the run is stopped.
+          await new Promise((_resolve, reject) =>
+            call.signal.addEventListener("abort", () => reject(call.signal.reason)),
+          );
+        }
+        call.onText("draft");
+        return { modelId: call.model.modelId };
+      },
+      onStep: () => {},
+    });
+    expect(states.get("review")).toMatchObject({ status: "error", error: "Provider broke" });
+    expect(states.get("rewrite")).toMatchObject({ status: "stopped", partial: true });
+  });
+
+  it("goes on past a failed step set to continue", async () => {
+    const graph = resolvedGraph();
+    aiNode(graph, "review").onFailure = "continue";
+    const states = await runWorkflow({
+      graph,
+      input: "x",
+      context: { messages: [{ role: "user", content: "x" }], instructions: undefined },
+      signal: new AbortController().signal,
+      callModel: async (call) => {
+        if (call.system?.includes("editor")) throw new Error("Provider broke");
+        call.onText(allText(call).includes("<draft>") ? "rewrite" : "draft");
+        return { modelId: call.model.modelId };
+      },
+      onStep: () => {},
+    });
+    expect(states.get("review")).toMatchObject({ status: "error", continued: true });
+    expect(states.get("merge")?.output).toBe("<draft>\ndraft\n</draft>\n\n<review>\n\n</review>");
+    expect(states.get("rewrite")).toMatchObject({ status: "done", output: "rewrite" });
+  });
 });
 
 describe("buildStepRequest", () => {

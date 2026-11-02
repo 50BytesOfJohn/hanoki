@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Add01Icon,
   AiMagicIcon,
-  Cancel01Icon,
+  ArrowDown01Icon,
+  Delete02Icon,
   FlowConnectionIcon,
   MergeIcon,
   PencilEdit01Icon,
+  SidebarRightIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -50,6 +52,7 @@ import {
 } from "./workflow-model-availability";
 import { WorkflowModelPicker } from "./workflow-model-picker";
 import { formatInputRole } from "./workflow-labels";
+import { useWorkflowSidebarPreferences } from "./workflow-sidebar-store";
 
 const NO_WORKFLOW = "none";
 
@@ -182,26 +185,39 @@ export function ChatWorkflowMenu() {
   );
 }
 
+const FLOATING_BUTTON_CLASS_NAME =
+  "bg-surface/80 text-muted-foreground backdrop-blur data-popup-open:bg-hover data-popup-open:text-foreground";
+
 /**
  * The chat's workflow at a glance, as one floating card beside the conversation:
  * each step with its model (switchable for this chat only) and context
- * setting. Hidden when the chat pane is narrow; a button then shows it above
- * the conversation.
+ * setting. The card can fold to its header, or be hidden to a button, which is
+ * also all a narrow chat pane shows; there the button opens the card above the
+ * conversation.
  */
 export function ChatWorkflowSidebar() {
   const chatId = useChatId();
   const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const hidden = useWorkflowSidebarPreferences((state) => state.hidden);
+  const setHidden = useWorkflowSidebarPreferences((state) => state.setHidden);
   const workflowId = chat?.data.settings.workflowId ?? null;
   if (!chat || !workflowId) return null;
 
   return (
     <>
-      <aside
-        aria-label="Workflow"
-        className="hidden w-64 shrink-0 flex-col gap-2 overflow-y-auto py-3 pr-3 scrollbar @4xl/chat:flex"
-      >
-        <WorkflowCard chat={chat} workflowId={workflowId} />
-      </aside>
+      {hidden ? null : (
+        <aside
+          aria-label="Workflow"
+          className="hidden w-64 shrink-0 flex-col gap-2 overflow-y-auto py-3 pr-3 scrollbar @4xl/chat:flex"
+        >
+          <WorkflowCard
+            chat={chat}
+            workflowId={workflowId}
+            placement="sidebar"
+            onHide={() => setHidden(true)}
+          />
+        </aside>
+      )}
       <div className="absolute top-2 right-3 z-20 @4xl/chat:hidden">
         <Popover>
           <Tooltip>
@@ -213,7 +229,7 @@ export function ChatWorkflowSidebar() {
                       variant="ghost"
                       size="icon-sm"
                       aria-label="Show workflow"
-                      className="bg-surface/80 text-muted-foreground backdrop-blur data-popup-open:bg-hover data-popup-open:text-foreground"
+                      className={FLOATING_BUTTON_CLASS_NAME}
                     />
                   }
                 />
@@ -228,19 +244,53 @@ export function ChatWorkflowSidebar() {
             align="end"
             className="max-h-[min(36rem,var(--available-height))] w-64 gap-2 overflow-y-auto border-0 bg-transparent p-0 shadow-none ring-0 scrollbar"
           >
-            <WorkflowCard chat={chat} workflowId={workflowId} />
+            <WorkflowCard chat={chat} workflowId={workflowId} placement="popover" />
           </PopoverContent>
         </Popover>
       </div>
+      {hidden ? (
+        <div className="absolute top-2 right-3 z-20 hidden @4xl/chat:block">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Show workflow sidebar"
+                  className={FLOATING_BUTTON_CLASS_NAME}
+                  onClick={() => setHidden(false)}
+                />
+              }
+            >
+              <HugeiconsIcon icon={FlowConnectionIcon} />
+            </TooltipTrigger>
+            <TooltipContent side="left">Show workflow</TooltipContent>
+          </Tooltip>
+        </div>
+      ) : null}
     </>
   );
 }
 
-function WorkflowCard({ chat, workflowId }: { chat: ChatInfo; workflowId: string }) {
+function WorkflowCard({
+  chat,
+  workflowId,
+  placement,
+  onHide,
+}: {
+  chat: ChatInfo;
+  workflowId: string;
+  /** Only the sidebar card folds; the popover is opened to be read. */
+  placement: "sidebar" | "popover";
+  onHide?: () => void;
+}) {
   const status = useChatWorkflowStatus(chat.id);
   const workflow = status.load.workflow;
   const updateChatSettings = useUpdateChatSettings();
   const openWorkflowBeside = useOpenWorkflowBeside();
+  const storedCollapsed = useWorkflowSidebarPreferences((state) => state.collapsed);
+  const setCollapsed = useWorkflowSidebarPreferences((state) => state.setCollapsed);
+  const collapsed = placement === "sidebar" && storedCollapsed;
   const steps = React.useMemo(
     () => (workflow ? getOrderedSteps(workflow.data.graph) : []),
     [workflow],
@@ -248,6 +298,12 @@ function WorkflowCard({ chat, workflowId }: { chat: ChatInfo; workflowId: string
   const overrides = status.overrides;
   const chatModelId = useChatModelId();
   const unavailableStepsMessage = useChatWorkflowUnavailableStepsMessage(status);
+  const problem = workflow?.data.graphError
+    ? status.blockReason
+    : (unavailableStepsMessage ??
+      (status.load.status === "missing"
+        ? "This workflow was deleted. Remove it or pick another one."
+        : null));
   const remove = () => updateChatSettings.mutate({ id: chat.id, input: { workflowId: null } });
 
   return (
@@ -255,11 +311,31 @@ function WorkflowCard({ chat, workflowId }: { chat: ChatInfo; workflowId: string
       aria-label={workflow?.title ?? "Workflow"}
       className="flex flex-col divide-y divide-separator rounded-lg border border-border bg-surface-secondary/95 shadow-lg shadow-black/20 backdrop-blur-sm"
     >
-      <header className="flex items-center gap-1 py-1 pr-1 pl-2.5">
-        <HugeiconsIcon
-          icon={FlowConnectionIcon}
-          className="size-3.5 shrink-0 text-muted-foreground"
-        />
+      <header className="flex items-center gap-0.5 py-1 pr-1 pl-1">
+        {placement === "sidebar" ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className={cn("text-muted-foreground", collapsed && problem && "text-warning")}
+            aria-label={collapsed ? "Expand workflow" : "Collapse workflow"}
+            aria-expanded={!collapsed}
+            title={collapsed && problem ? problem : undefined}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              className={cn(
+                "size-3.5! transition-transform duration-150",
+                collapsed && "-rotate-90",
+              )}
+            />
+          </Button>
+        ) : (
+          <HugeiconsIcon
+            icon={FlowConnectionIcon}
+            className="mx-1.5 size-3.5 shrink-0 text-muted-foreground"
+          />
+        )}
         <button
           type="button"
           className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-[13px] font-medium transition-colors duration-100 hover:text-foreground/80"
@@ -268,47 +344,68 @@ function WorkflowCard({ chat, workflowId }: { chat: ChatInfo; workflowId: string
         >
           {workflow?.title ?? (status.load.status === "missing" ? "Workflow not found" : "")}
         </button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="text-muted-foreground"
-          aria-label="Remove workflow from chat"
-          onClick={remove}
-        >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3.5!" />
-        </Button>
-      </header>
-      {workflow?.data.graphError ? (
-        <p role="status" className="px-2.5 py-2 text-xs text-warning">
-          {status.blockReason}
-        </p>
-      ) : unavailableStepsMessage ? (
-        <p role="status" className="px-2.5 py-2 text-xs text-warning">
-          {unavailableStepsMessage}
-        </p>
-      ) : null}
-      {workflow ? (
-        <ol className="flex flex-col divide-y divide-separator">
-          {steps.map((step) => (
-            <WorkflowStepRow
-              key={step.id}
-              step={step}
-              chatModelId={chatModelId}
-              override={overrides?.[step.id] ?? null}
-              onOverride={(model) =>
-                updateChatSettings.mutate({
-                  id: chat.id,
-                  input: { workflowModelOverride: { workflowId, nodeId: step.id, model } },
-                })
+        {onHide ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-muted-foreground"
+                  aria-label="Hide workflow sidebar"
+                  onClick={onHide}
+                />
               }
-            />
-          ))}
-        </ol>
-      ) : status.load.status === "missing" ? (
-        <p role="status" className="px-3 py-2.5 text-xs text-warning">
-          This workflow was deleted. Remove it or pick another one.
-        </p>
-      ) : null}
+            >
+              <HugeiconsIcon icon={SidebarRightIcon} className="size-3.5!" />
+            </TooltipTrigger>
+            <TooltipContent>Hide sidebar</TooltipContent>
+          </Tooltip>
+        ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-destructive"
+                aria-label="Remove workflow from chat"
+                onClick={remove}
+              />
+            }
+          >
+            <HugeiconsIcon icon={Delete02Icon} className="size-3.5!" />
+          </TooltipTrigger>
+          <TooltipContent>Remove from chat</TooltipContent>
+        </Tooltip>
+      </header>
+      {collapsed ? null : (
+        <>
+          {problem ? (
+            <p role="status" className="px-2.5 py-2 text-xs text-warning">
+              {problem}
+            </p>
+          ) : null}
+          {workflow ? (
+            <ol className="flex flex-col divide-y divide-separator">
+              {steps.map((step) => (
+                <WorkflowStepRow
+                  key={step.id}
+                  step={step}
+                  chatModelId={chatModelId}
+                  override={overrides?.[step.id] ?? null}
+                  onOverride={(model) =>
+                    updateChatSettings.mutate({
+                      id: chat.id,
+                      input: { workflowModelOverride: { workflowId, nodeId: step.id, model } },
+                    })
+                  }
+                />
+              ))}
+            </ol>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
@@ -363,7 +460,13 @@ function WorkflowStepRow({
           <span className="text-xs text-muted-foreground">
             {step.disabled
               ? "Disabled"
-              : `${step.includeContext ? "Chat context" : "No context"} · ${formatInputRole(step.role)}`}
+              : [
+                  step.includeContext ? "Chat context" : "No context",
+                  formatInputRole(step.role),
+                  step.onFailure === "continue" ? "Continues on failure" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
           </span>
         </>
       ) : (

@@ -18,6 +18,12 @@ export type WorkflowNodeType = "input" | "output" | "ai" | "merge";
  */
 export type WorkflowInputRole = "natural" | "user" | "assistant";
 
+/**
+ * What an AI step that fails (an error, or a reply with no text) does to its
+ * run: `stop` ends the whole run, `continue` hands on whatever it wrote.
+ */
+export type WorkflowFailureMode = "stop" | "continue";
+
 export interface WorkflowModelRef {
   modelId: string;
   /** Null is the provider default. */
@@ -58,6 +64,8 @@ export interface WorkflowAiNode extends WorkflowNodeBase {
   role: WorkflowInputRole;
   /** A disabled step passes its input through unchanged. */
   disabled: boolean;
+  /** Absent is `stop`; graphs saved before the setting existed have none. */
+  onFailure?: WorkflowFailureMode;
 }
 
 export interface WorkflowMergeNode extends WorkflowNodeBase {
@@ -127,6 +135,7 @@ const nodeSchema = type({
     includeContext: "boolean",
     role: "'natural'|'user'|'assistant'",
     disabled: "boolean",
+    "onFailure?": "'stop'|'continue'",
   })
   .or({
     "+": "delete",
@@ -232,6 +241,10 @@ function getStructuralError(graph: WorkflowGraph): string | null {
   }
 
   return topologicalOrder(graph) ? null : "Workflows cannot contain loops.";
+}
+
+export function getFailureMode(node: WorkflowAiNode): WorkflowFailureMode {
+  return node.onFailure ?? "stop";
 }
 
 export function isStepNode(node: WorkflowNode): node is WorkflowStepNode {

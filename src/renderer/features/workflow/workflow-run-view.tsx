@@ -3,6 +3,7 @@ import { Streamdown } from "streamdown";
 import {
   AiMagicIcon,
   Alert02Icon,
+  ArrowUp01Icon,
   Clock01Icon,
   FlowConnectionIcon,
   MergeIcon,
@@ -16,6 +17,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  collapseTrace,
   Trace,
   TraceCollapsible,
   TraceCollapsibleContent,
@@ -155,20 +157,20 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
         ) : !state?.error ? (
           <p className="text-xs">{status === "pending" ? "Not run." : "No output yet."}</p>
         ) : null}
-        {canAct ? (
-          // Row actions show on hover (or keyboard focus), so the output reads first.
-          <div className="-ml-2 flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/step:opacity-100 focus-within:opacity-100">
-            {output.trim() && !isMessage ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="text-muted-foreground"
-                onClick={() => void applyStep(messageId, node.id)}
-              >
-                <HugeiconsIcon icon={Tick02Icon} data-icon="inline-start" />
-                Use as message
-              </Button>
-            ) : null}
+        {/* Row actions show on hover (or keyboard focus), so the output reads first. */}
+        <div className="-ml-2 flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/step:opacity-100 focus-within:opacity-100">
+          {canAct && output.trim() && !isMessage ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-muted-foreground"
+              onClick={() => void applyStep(messageId, node.id)}
+            >
+              <HugeiconsIcon icon={Tick02Icon} data-icon="inline-start" />
+              Use as message
+            </Button>
+          ) : null}
+          {canAct ? (
             <Button
               variant="ghost"
               size="xs"
@@ -181,8 +183,18 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
               <HugeiconsIcon icon={RepeatIcon} data-icon="inline-start" />
               Rerun from here
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+          {/* At the end of a long output, so it closes without scrolling back up. */}
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-muted-foreground"
+            onClick={(event) => collapseTrace(event.currentTarget)}
+          >
+            <HugeiconsIcon icon={ArrowUp01Icon} data-icon="inline-start" />
+            Collapse
+          </Button>
+        </div>
       </TraceCollapsibleContent>
     </TraceCollapsible>
   );
@@ -225,7 +237,13 @@ function StepDescription({
   const parts: string[] = [];
   if (state?.status === "skipped") parts.push("disabled");
   if (state?.status === "stopped") parts.push(state.partial ? "stopped · partial" : "stopped");
-  if (state?.status === "error") parts.push(state.partial ? "failed · partial" : "failed");
+  if (state?.status === "error") {
+    parts.push(
+      ["failed", state.partial ? "partial" : null, state.continued ? "continued" : null]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  }
   if (state?.reused) parts.push("kept");
   else if (state?.status === "done" && state.startedAt && state.endedAt && node.type === "ai") {
     parts.push(formatDuration(state.endedAt - state.startedAt));

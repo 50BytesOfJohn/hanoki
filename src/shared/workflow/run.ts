@@ -31,6 +31,8 @@ export interface WorkflowStepState {
   output: string;
   /** The text was cut short by a stop or an error. */
   partial?: boolean;
+  /** Failed, but the step is set to continue: later steps read `output` as it is. */
+  continued?: boolean;
   /** Copied from an earlier run by "rerun from step". */
   reused?: boolean;
   /** The model that ran the step; absent for Merge and skipped steps. */

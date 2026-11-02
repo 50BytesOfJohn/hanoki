@@ -15,6 +15,7 @@ import { HotkeyKbd } from "@/features/chat/model-picker/model-picker-parts";
 import {
   createUniqueStepKey,
   getAncestorIds,
+  getFailureMode,
   getMainPath,
   getTemplateReferences,
   isStepNode,
@@ -22,6 +23,7 @@ import {
   WORKFLOW_KEY_PATTERN,
   WORKFLOW_MAX_TEXT_LENGTH,
   type WorkflowAiNode,
+  type WorkflowFailureMode,
   type WorkflowGraph,
   type WorkflowInputRole,
   type WorkflowMergeNode,
@@ -42,6 +44,12 @@ const INPUT_ROLE_DESCRIPTIONS = {
   user: "A text to work on, e.g. a draft to review.",
   assistant: "The model's own words, e.g. a draft to continue or rewrite.",
 } satisfies Record<WorkflowInputRole, string>;
+
+const FAILURE_MODE_DESCRIPTIONS = {
+  stop: "An error or a reply with no text stops the whole run, including steps still writing.",
+  continue:
+    "The run goes on; the steps after this one get whatever it wrote, which may be nothing.",
+} satisfies Record<WorkflowFailureMode, string>;
 
 type UpdateNode = (
   patch: Partial<WorkflowAiNode> | Partial<WorkflowMergeNode>,
@@ -150,8 +158,8 @@ export function WorkflowInspector({
             </InspectorNote>
           ) : node.type === "output" ? (
             <InspectorNote>
-              What reaches Output becomes the chat message. If a run is stopped, the message uses
-              the last finished step on the way here.
+              What reaches Output becomes the chat message. If a run is stopped or a step fails, the
+              message uses the last finished step on the way here.
             </InspectorNote>
           ) : (
             <StepFields
@@ -358,6 +366,31 @@ function StepFields({
           </p>
         ) : null}
       </InspectorField>
+
+      {node.type === "ai" ? (
+        <InspectorField
+          label="If this step fails"
+          description={FAILURE_MODE_DESCRIPTIONS[getFailureMode(node)]}
+        >
+          <ToggleGroup
+            size="sm"
+            variant="outline"
+            spacing={0}
+            value={[getFailureMode(node)]}
+            onValueChange={(value: string[]) => {
+              const mode = value[0];
+              if (mode === "stop" || mode === "continue") updateNode({ onFailure: mode });
+            }}
+          >
+            <ToggleGroupItem value="stop" className="h-7 px-3 text-xs">
+              Stop workflow
+            </ToggleGroupItem>
+            <ToggleGroupItem value="continue" className="h-7 px-3 text-xs">
+              Continue
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </InspectorField>
+      ) : null}
 
       <SwitchRow
         label="Disabled"

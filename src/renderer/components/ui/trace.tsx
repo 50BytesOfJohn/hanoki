@@ -72,24 +72,87 @@ function TraceDescription({ className, ...props }: React.ComponentProps<"span">)
   );
 }
 
+const OPEN_TRACE_SELECTOR = "[data-slot=trace-collapsible][data-trace-open]";
+
+/** How to close each mounted row, by its `data-trace-id`. */
+const traceClosers = new Map<string, () => void>();
+
+/**
+ * Controlled (`open` + `onOpenChange`) or not, a row can be closed from
+ * outside with `collapseTrace` / `collapseTraces`, e.g. from a context menu.
+ */
 function TraceCollapsible({
   className,
+  open: openProp,
+  onOpenChange,
+  defaultOpen = false,
   ...props
-}: Omit<React.ComponentProps<typeof Collapsible>, "open"> &
-  (
-    | { open?: undefined }
-    | {
-        open: boolean;
-        onOpenChange: NonNullable<React.ComponentProps<typeof Collapsible>["onOpenChange"]>;
-      }
-  )) {
+}: Omit<React.ComponentProps<typeof Collapsible>, "open" | "onOpenChange" | "defaultOpen"> & {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  defaultOpen?: boolean;
+}) {
+  const [innerOpen, setInnerOpen] = React.useState(defaultOpen);
+  const open = openProp ?? innerOpen;
+  const setOpen = (next: boolean) => {
+    setInnerOpen(next);
+    onOpenChange?.(next);
+  };
+  const collapse = React.useEffectEvent(() => setOpen(false));
+  // Found through the DOM by id rather than a ref: the root's ref isn't
+  // reliably attached inside the chat's Activity boundary.
+  const id = React.useId();
+
+  React.useEffect(() => {
+    traceClosers.set(id, collapse);
+    return () => {
+      traceClosers.delete(id);
+    };
+  }, [id]);
+
   return (
     <Collapsible
       data-slot="trace-collapsible"
+      data-trace-id={id}
+      data-trace-open={open ? "" : undefined}
+      open={open}
+      onOpenChange={(next) => setOpen(next)}
       className={cn("flex w-full min-w-0 flex-col", className)}
       {...props}
     />
   );
+}
+
+function closeTrace(trace: Element) {
+  const id = trace.getAttribute("data-trace-id");
+  if (id) traceClosers.get(id)?.();
+}
+
+/** The open trace row `target` sits in, the innermost one first. */
+function findOpenTrace(target: EventTarget | null): HTMLElement | null {
+  return target instanceof Element ? target.closest<HTMLElement>(OPEN_TRACE_SELECTOR) : null;
+}
+
+/**
+ * Closes the open trace row around `target`, bringing its header into view:
+ * it is often above the screen after reading a long output.
+ */
+function collapseTrace(target: EventTarget | null) {
+  const trace = findOpenTrace(target);
+  if (!trace) return;
+  closeTrace(trace);
+  trace
+    .querySelector("[data-slot=trace-collapsible-trigger]")
+    ?.scrollIntoView({ block: "nearest" });
+}
+
+function hasOpenTraces(root: ParentNode): boolean {
+  return root.querySelector(OPEN_TRACE_SELECTOR) !== null;
+}
+
+/** Closes every open trace row inside `root`. */
+function collapseTraces(root: ParentNode) {
+  for (const trace of root.querySelectorAll(OPEN_TRACE_SELECTOR)) closeTrace(trace);
 }
 
 function TraceCollapsibleTrigger({
@@ -147,4 +210,8 @@ export {
   TraceCollapsible,
   TraceCollapsibleTrigger,
   TraceCollapsibleContent,
+  collapseTrace,
+  collapseTraces,
+  findOpenTrace,
+  hasOpenTraces,
 };

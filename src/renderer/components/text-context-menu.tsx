@@ -305,12 +305,15 @@ export function TextContextMenu({
   copyAllText,
   extraItems,
   forceOpen = false,
+  onOpen,
 }: {
   children: React.ReactElement;
   /** When there is no selection, Copy uses this full text instead of staying disabled. */
   copyAllText?: string | (() => string);
   extraItems?: React.ReactNode;
   forceOpen?: boolean;
+  /** Called as the menu opens, with what was right-clicked. */
+  onOpen?: (target: EventTarget | null) => void;
 }) {
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const selectionSnapshotRef = React.useRef<SelectionSnapshot | null>(null);
@@ -391,6 +394,7 @@ export function TextContextMenu({
           return;
         }
 
+        onOpen?.(details.event.target);
         selectionSnapshotRef.current = captureSelection(details.event.target);
         setMenuState(nextState ?? EMPTY_MENU_STATE);
       }}

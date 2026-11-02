@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TextContextMenu } from "@/components/text-context-menu";
+import { collapseTrace, collapseTraces, findOpenTrace, hasOpenTraces } from "@/components/ui/trace";
 import {
   ContextMenuGroup,
   ContextMenuItem,
@@ -285,6 +286,13 @@ export function MessageContextMenu({
   const scrollToBottom = useChatScrollToBottom();
   const pinMutation = usePinMessage(chatId);
   const [isDeleteOpen, setIsDeleteOpen] = React.useState(false);
+  const [traceTarget, setTraceTarget] = React.useState<{
+    target: EventTarget | null;
+    /** The conversation it was in, for "Collapse All". */
+    conversation: Element | null;
+    inOpenTrace: boolean;
+    anyOpen: boolean;
+  } | null>(null);
 
   const isAssistant = message.role === "assistant";
   const isPinned = Boolean(message.metadata?.pinned);
@@ -311,6 +319,16 @@ export function MessageContextMenu({
     <>
       <TextContextMenu
         forceOpen
+        onOpen={(target) => {
+          const conversation =
+            target instanceof Element ? target.closest("[data-chat-conversation]") : null;
+          setTraceTarget({
+            target,
+            conversation,
+            inOpenTrace: findOpenTrace(target) !== null,
+            anyOpen: conversation ? hasOpenTraces(conversation) : false,
+          });
+        }}
         copyAllText={hasCopyableText ? getCopyAllText : undefined}
         extraItems={
           <>
@@ -371,6 +389,25 @@ export function MessageContextMenu({
                 Delete Message
               </ContextMenuItem>
             </ContextMenuGroup>
+            {traceTarget?.anyOpen ? (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuGroup>
+                  {traceTarget.inOpenTrace ? (
+                    <ContextMenuItem onClick={() => collapseTrace(traceTarget.target)}>
+                      Collapse
+                    </ContextMenuItem>
+                  ) : null}
+                  <ContextMenuItem
+                    onClick={() => {
+                      if (traceTarget.conversation) collapseTraces(traceTarget.conversation);
+                    }}
+                  >
+                    Collapse All
+                  </ContextMenuItem>
+                </ContextMenuGroup>
+              </>
+            ) : null}
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem onClick={showInGraph}>Show in Graph</ContextMenuItem>

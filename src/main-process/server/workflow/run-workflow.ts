@@ -2,6 +2,7 @@ import type { ModelMessage } from "ai";
 
 import {
   getAncestorIds,
+  getFailureMode,
   getIncomingMap,
   isStepNode,
   renderTemplate,
@@ -56,11 +57,22 @@ export interface RunWorkflowOptions {
  * Runs every step as soon as the steps it reads from have finished, so
  * branches fanning out of one step run at the same time. A step whose input
  * failed or was stopped does not run and stays `pending`.
+ *
+ * An AI step fails when its call errors or its reply has no text. Unless the
+ * step is set to continue, that ends the run: steps still writing are stopped
+ * and nothing else starts. A step set to continue is `error` with `continued`,
+ * and the steps after it read whatever it wrote.
  */
 export async function runWorkflow(
   options: RunWorkflowOptions,
 ): Promise<Map<string, WorkflowStepState>> {
-  const { graph, signal } = options;
+  const { graph } = options;
+  // Aborted by the caller (the user stopped) or by a step that failed.
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const abortFromCaller = () => controller.abort(options.signal.reason);
+  if (options.signal.aborted) abortFromCaller();
+  else options.signal.addEventListener("abort", abortFromCaller, { once: true });
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? abortableSleep;
   const incoming = getIncomingMap(graph);
@@ -82,7 +94,9 @@ export async function runWorkflow(
   }
 
   const finished = (state: WorkflowStepState | null | undefined) =>
-    state?.status === "done" || state?.status === "skipped";
+    state?.status === "done" ||
+    state?.status === "skipped" ||
+    (state?.status === "error" && state.continued === true);
 
   const getStepOutputs = (nodeId: string) => {
     const outputs = new Map<string, string>();
@@ -145,6 +159,13 @@ export async function runWorkflow(
     parent: WorkflowNode | undefined,
   ): Promise<WorkflowStepState> => {
     const startedAt = now();
+    const fail = (failed: WorkflowStepState): WorkflowStepState => {
+      const continues = getFailureMode(node) === "continue";
+      const next = continues ? { ...failed, continued: true } : failed;
+      publish(next);
+      if (!continues) controller.abort(new Error(`Step "${node.name}" failed.`));
+      return next;
+    };
     if (node.disabled) {
       const state: WorkflowStepState = {
         nodeId: node.id,
@@ -159,16 +180,14 @@ export async function runWorkflow(
 
     const request = buildStepRequest(node, input, parent, options.context, getStepOutputs(node.id));
     if (!request) {
-      const state: WorkflowStepState = {
+      return fail({
         nodeId: node.id,
         status: "error",
         output: "",
         error: "This step has nothing to work on: give it an input, a prompt, or chat context.",
         startedAt,
         endedAt: startedAt,
-      };
-      publish(state);
-      return state;
+      });
     }
 
     const modelId = node.model?.modelId;
@@ -182,9 +201,7 @@ export async function runWorkflow(
     publish(state);
 
     if (!node.model) {
-      state = { ...state, status: "error", error: "No model is available.", endedAt: now() };
-      publish(state);
-      return state;
+      return fail({ ...state, status: "error", error: "No model is available.", endedAt: now() });
     }
 
     let generated = "";
@@ -211,6 +228,11 @@ export async function runWorkflow(
           ...(result.cost ? { cost: result.cost } : {}),
         };
         delete state.retry;
+        // Some providers end a call cleanly with no text (e.g. only reasoning);
+        // the steps after it would work on nothing.
+        if (!generated.trim()) {
+          return fail({ ...state, status: "error", error: "The model replied with no text." });
+        }
         publish(state);
         return state;
       } catch (error) {
@@ -260,13 +282,16 @@ export async function runWorkflow(
           endedAt: now(),
         };
         delete state.retry;
-        publish(state);
-        return state;
+        return fail(state);
       }
     }
   };
 
-  await Promise.all(graph.nodes.map(run));
+  try {
+    await Promise.all(graph.nodes.map(run));
+  } finally {
+    options.signal.removeEventListener("abort", abortFromCaller);
+  }
   return states;
 }
 

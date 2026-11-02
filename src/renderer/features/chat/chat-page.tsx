@@ -402,6 +402,7 @@ function ActiveChatContent() {
           ref={containerRef}
           role="region"
           aria-label="Conversation"
+          data-chat-conversation=""
           className="min-w-0 flex-1 overflow-auto scrollbar"
         >
           <ChatMessageHotkeys />
