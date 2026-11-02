@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { ChatTreeItemRef, ItemInfo } from "@shared/ipc";
+import { isItemType, type ChatTreeItemRef, type ItemInfo } from "@shared/ipc";
 
 import { chatTreeApi } from "../api/chat-tree";
 import { itemsApi } from "../api/items";
@@ -8,13 +8,16 @@ import { foldersApi } from "../api/folders";
 import { toastManager } from "../components/ui/toast";
 import { applyItemTitleUpdate } from "../features/items/item-title-events";
 import { flushOpenMarkdownEditors } from "../features/markdown/markdown-session";
+import {
+  flushPendingWorkflowSaves,
+  forgetWorkflows,
+} from "../features/workflow/workflow-graph-store";
 import { queryKeys } from "../queries/keys";
 import { useWorkspaceStore } from "../features/workspace/store";
 
 function isItemInfo(value: unknown): value is ItemInfo {
   if (!value || typeof value !== "object" || !("type" in value)) return false;
-  const type = value.type;
-  return type === "chat" || type === "markdown" || type === "terminal";
+  return isItemType(value.type);
 }
 
 export function useSetChatTreeUiState() {
@@ -95,13 +98,24 @@ export function useDeleteChatTreeItems() {
   const removeExpandedNodes = useWorkspaceStore((s) => s.removeExpandedNodes);
 
   return useMutation({
-    mutationFn: ({ workspaceId, items }: { workspaceId: string; items: ChatTreeItemRef[] }) =>
-      chatTreeApi.deleteItems(workspaceId, items),
+    mutationFn: async ({
+      workspaceId,
+      items,
+    }: {
+      workspaceId: string;
+      items: ChatTreeItemRef[];
+    }) => {
+      // A workflow save still waiting would land after the delete and fail.
+      await flushPendingWorkflowSaves();
+      return chatTreeApi.deleteItems(workspaceId, items);
+    },
     onSuccess: (result) => {
       const currentChatId = useWorkspaceStore.getState().currentChatId;
       const deletedCurrentChat =
         currentChatId !== null && result.deletedItemIds.includes(currentChatId);
 
+      // Before the tabs close: an editor flushes its pending save as it unmounts.
+      forgetWorkflows(result.deletedItemIds);
       removeTabsByItemIds(result.deletedItemIds);
       removeExpandedNodes(result.deletedFolderIds);
 

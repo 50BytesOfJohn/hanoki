@@ -94,7 +94,8 @@ function buildTemplate(): MenuItemConstructorOptions[] {
       // Electron's `viewMenu` role, plus Hanoki's own toggles below the fold.
       label: "View",
       submenu: [
-        { role: "reload" },
+        // Cmd/Ctrl+R belongs to "Regenerate response" in the chat view.
+        { role: "reload", accelerator: "CmdOrCtrl+Alt+R" },
         { role: "forceReload" },
         { role: "toggleDevTools" },
         { type: "separator" },

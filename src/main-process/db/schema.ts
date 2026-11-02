@@ -13,6 +13,7 @@ import type {
   ChatItemData,
   MarkdownItemData,
   TerminalItemData,
+  WorkflowItemData,
   WorkspaceSettings,
 } from "@shared/ipc";
 
@@ -78,16 +79,16 @@ export const items = sqliteTable(
     folderId: text("folder_id").references(() => folders.id, {
       onDelete: "set null",
     }),
-    type: text("type").$type<"chat" | "terminal" | "markdown">().notNull(),
+    type: text("type").$type<"chat" | "terminal" | "markdown" | "workflow">().notNull(),
     title: text("title").notNull(),
-    data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData>("data"),
+    data: jsonObject<ChatItemData | TerminalItemData | MarkdownItemData | WorkflowItemData>("data"),
     metadata: jsonObject("metadata"),
     extensions: jsonObject("extensions"),
     createdAt: timestampMs("created_at"),
     updatedAt: timestampMs("updated_at"),
   },
   (table) => [
-    check("items_type_check", sql`${table.type} in ('chat', 'terminal', 'markdown')`),
+    check("items_type_check", sql`${table.type} in ('chat', 'terminal', 'markdown', 'workflow')`),
     index("items_workspace_id_idx").on(table.workspaceId),
     index("items_folder_id_idx").on(table.folderId),
     index("items_type_idx").on(table.type),

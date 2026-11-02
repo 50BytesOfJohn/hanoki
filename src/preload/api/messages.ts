@@ -15,6 +15,7 @@ type MessagesApi = Pick<
   | "deleteMessage"
   | "setMessagePinned"
   | "listPinnedBranches"
+  | "applyWorkflowStepAsMessage"
 >;
 
 export function createMessagesApi(): MessagesApi {
@@ -31,5 +32,7 @@ export function createMessagesApi(): MessagesApi {
     setMessagePinned: (messageId, pinned) =>
       invokeIpc(IPC_CHANNELS.messages.setPinned, messageId, pinned),
     listPinnedBranches: () => invokeIpc(IPC_CHANNELS.messages.listPinned),
+    applyWorkflowStepAsMessage: (messageId, nodeId) =>
+      invokeIpc(IPC_CHANNELS.messages.applyWorkflowStep, messageId, nodeId),
   };
 }

@@ -8,6 +8,8 @@ import {
   type TiptapDocument,
 } from "@shared/tiptap/document";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
+import { buildWorkflowMessageParts } from "@shared/workflow/message-parts";
+import { getWorkflowRun, getWorkflowSteps } from "@shared/workflow/run";
 import { createUuidV7 } from "../db/uuidv7";
 import { getChatById, getChatCurrentBranchId, setChatCurrentBranch } from "../chat-tree/repository";
 import {
@@ -33,6 +35,7 @@ export interface ChatMessagesService {
   deleteMessage(messageId: string, scope: DeleteMessageScope): HanokiUiMessage[];
   setMessagePinned(messageId: string, pinned: boolean): void;
   listPinnedBranches(): PinnedBranchSummary[];
+  applyWorkflowStepAsMessage(messageId: string, nodeId: string): HanokiUiMessage[];
 }
 
 function toChatMessage(message: MessageRow, fallbackParentId: string | null): HanokiUiMessage {
@@ -198,6 +201,46 @@ export function createChatMessagesService(): ChatMessagesService {
       }
 
       return results;
+    },
+
+    applyWorkflowStepAsMessage(messageId: string, nodeId: string): HanokiUiMessage[] {
+      const source = getMessageById(messageId);
+      if (!source || source.role !== "assistant") {
+        throw new Error(`Message "${messageId}" does not exist.`);
+      }
+      // SAFETY: stored message parts are UI message parts; this only reads the workflow ones.
+      const message = { parts: source.parts as HanokiUiMessage["parts"] };
+      const run = getWorkflowRun(message);
+      const steps = getWorkflowSteps(message);
+      const step = steps.get(nodeId);
+      if (!run || !step?.output.trim()) {
+        throw new Error("That step has no output to use.");
+      }
+
+      // A new version beside the original, like a regeneration; nothing is overwritten.
+      const id = createUuidV7();
+      const metadata = normalizeChatMessageMetadata(source.metadata, source.parentId);
+      upsertMessage({
+        id,
+        chatId: source.chatId,
+        parentId: source.parentId,
+        role: "assistant",
+        // Picking a step settles the run: a stopped or failed status would no
+        // longer describe this version.
+        parts: buildWorkflowMessageParts(
+          { ...run, status: "done", outputNodeId: nodeId },
+          steps.values(),
+          step.output,
+        ),
+        metadata: {
+          parentId: source.parentId,
+          ...(metadata.provider ? { provider: metadata.provider } : {}),
+          ...(step.modelId ? { model: step.modelId } : {}),
+          finishReason: "stop",
+        },
+      });
+      setChatCurrentBranch(source.chatId, id);
+      return this.listChatMessages(source.chatId, id);
     },
   };
 }

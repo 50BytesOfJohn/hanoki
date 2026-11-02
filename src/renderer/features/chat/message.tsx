@@ -73,6 +73,7 @@ import { MessageTiptapEditor } from "./tiptap-editor";
 import { TiptapMessageContent } from "./tiptap-message-content";
 import { DeleteMessageDialog, MessageContextMenu, usePinMessage } from "./message-context-menu";
 import { MessageRevisionBadge, RegenerateWithNotePopover } from "./message-revision";
+import { getStreamingWorkflowText, WorkflowRunTrace } from "../workflow/workflow-run-view";
 
 // Hanoki is dark-only, so one theme fills both the light and dark slots.
 const STREAMDOWN_PLUGINS = {
@@ -940,7 +941,10 @@ const AssistantMessage = React.memo(function AssistantMessage({
     [isAnimating, message],
   );
   const runs = groupAssistantParts(message.parts, isAnimating);
-  const isThinking = isAnimating && runs.length === 0;
+  const hasWorkflowRun = message.parts.some((part) => part.type === "data-workflowRun");
+  const streamingWorkflowText =
+    hasWorkflowRun && isAnimating && runs.length === 0 ? getStreamingWorkflowText(message) : null;
+  const isThinking = isAnimating && runs.length === 0 && !hasWorkflowRun;
   const { draft, messageDocument, setDraft } = useMessageDraft(message, isEditing);
 
   return (
@@ -967,6 +971,12 @@ const AssistantMessage = React.memo(function AssistantMessage({
             />
           ) : (
             <>
+              {hasWorkflowRun ? (
+                <WorkflowRunTrace message={message} isInteractionLocked={isInteractionLocked} />
+              ) : null}
+              {streamingWorkflowText ? (
+                <AssistantMessageTextPart text={streamingWorkflowText} isAnimating />
+              ) : null}
               {runs.map((run) =>
                 run.kind === "trace" ? (
                   <Trace key={run.startIndex} className="my-2 first:mt-0 last:mb-0">

@@ -12,6 +12,7 @@ import { registerProvidersIpcModule } from "./modules/providers";
 import { registerSettingsIpcModule } from "./modules/settings";
 import { registerUpdatesIpcModule } from "./modules/updates";
 import { registerTerminalsIpcModule } from "./modules/terminals";
+import { registerWorkflowsIpcModule } from "./modules/workflows";
 import { registerWorkspaceIpcModule } from "./modules/workspaces";
 
 export function registerIpcHandlers(context: IpcHandlerContext): void {
@@ -24,6 +25,7 @@ export function registerIpcHandlers(context: IpcHandlerContext): void {
   registerFoldersIpcModule(context, registeredChannels);
   registerItemsIpcModule(context, registeredChannels);
   registerMarkdownIpcModule(context, registeredChannels);
+  registerWorkflowsIpcModule(context, registeredChannels);
   registerChatsIpcModule(context, registeredChannels);
   registerMessagesIpcModule(context, registeredChannels);
   registerTerminalsIpcModule(context, registeredChannels);

@@ -11,6 +11,7 @@ import { parseFolderId } from "@shared/folder/folder-id";
 import { parseWorkspaceId } from "@shared/workspace/workspace-id";
 import { isReasoningEffort } from "@shared/models/reasoning";
 import { isTemperature, MAX_TEMPERATURE } from "@shared/models/temperature";
+import { parseWorkflowModelOverride } from "@shared/workflow/graph";
 import type { IpcHandlerContext } from "../core/context";
 import { AppError } from "../core/errors";
 import { registerInvokeHandler } from "../core/register-invoke-handler";
@@ -92,6 +93,8 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     "terminalEnabled",
     "toolApprovalMode",
     "allowedTools",
+    "workflowId",
+    "workflowModelOverride",
   ]);
   for (const key of Object.keys(inputRecord)) {
     if (!allowedKeys.has(key)) {
@@ -199,6 +202,33 @@ function parseChatSettingsUpdateInput(args: unknown[]): [string, ChatSettingsUpd
     }
 
     parsedInput.allowedTools = inputRecord.allowedTools;
+  }
+
+  if (inputRecord.workflowId !== undefined) {
+    parsedInput.workflowId =
+      inputRecord.workflowId === null ? null : parseValidChatId(inputRecord.workflowId);
+  }
+
+  if (inputRecord.workflowModelOverride !== undefined) {
+    const override = inputRecord.workflowModelOverride;
+    if (!override || typeof override !== "object" || Array.isArray(override)) {
+      throw AppError.badRequest("workflowModelOverride must be an object.");
+    }
+    const { workflowId, nodeId, model } = override as Record<string, unknown>;
+    if (typeof nodeId !== "string" || nodeId.length === 0 || nodeId.length > 64) {
+      throw AppError.badRequest("workflowModelOverride.nodeId must be a step id.");
+    }
+    const parsedModel = model === null ? null : parseWorkflowModelOverride(model);
+    if (model !== null && !parsedModel) {
+      throw AppError.badRequest(
+        'workflowModelOverride.model must be a model reference, "chat", or null.',
+      );
+    }
+    parsedInput.workflowModelOverride = {
+      workflowId: parseValidChatId(workflowId),
+      nodeId,
+      model: parsedModel,
+    };
   }
 
   return [chatId, parsedInput];

@@ -22,7 +22,7 @@ import { useWorkspaceStore } from "@/features/workspace/store";
 import { useRenameChatTreeItem } from "@/mutations/chat-tree";
 import { queryKeys } from "@/queries/keys";
 
-type ItemKind = "chat" | "markdown" | "terminal" | "folder";
+type ItemKind = "chat" | "markdown" | "terminal" | "workflow" | "folder";
 
 export type OpenableItemType = Exclude<ItemKind, "folder">;
 
@@ -30,6 +30,7 @@ const KIND_NOUN: Record<ItemKind, string> = {
   chat: "chat",
   markdown: "note",
   terminal: "terminal",
+  workflow: "workflow",
   folder: "folder",
 };
 
@@ -60,7 +61,13 @@ function readItemSummary(value: unknown): ItemSummary | null {
   const id = readString(value, "id");
   const name = readString(value, "name") ?? readString(value, "title");
   if (!id || !name) return null;
-  if (kind !== "chat" && kind !== "markdown" && kind !== "terminal" && kind !== "folder") {
+  if (
+    kind !== "chat" &&
+    kind !== "markdown" &&
+    kind !== "terminal" &&
+    kind !== "workflow" &&
+    kind !== "folder"
+  ) {
     return null;
   }
   return { kind, id, name, path: readString(value, "path") };

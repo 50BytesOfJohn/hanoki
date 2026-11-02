@@ -3,7 +3,21 @@ import { homedir } from "node:os";
 
 import { addResponseCost, parseChatCost, type ChatCost } from "@shared/chat/chat-cost";
 import type { ChatMessageMetadata } from "@shared/chat/message-metadata";
-import type { ChatItemData, ChatSettings, MarkdownItemData, TerminalItemData } from "@shared/ipc";
+import type {
+  ChatItemData,
+  ChatSettings,
+  MarkdownItemData,
+  TerminalItemData,
+  WorkflowItemData,
+  WorkflowSummary,
+} from "@shared/ipc";
+import {
+  createDefaultWorkflowGraph,
+  parseWorkflowGraph,
+  type WorkflowGraph,
+  type WorkflowModelOverride,
+  type WorkflowModelRef,
+} from "@shared/workflow/graph";
 import { isReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 import { isTemperature } from "@shared/models/temperature";
 import {
@@ -26,6 +40,11 @@ type ChatSettingsPatch = Omit<Partial<ChatSettings>, "modelConfig"> & {
   modelConfig?: {
     temperature?: number | null;
     reasoningEffort?: ReasoningEffort | null;
+  };
+  workflowModelOverride?: {
+    workflowId: string;
+    nodeId: string;
+    model: WorkflowModelOverride | null;
   };
 };
 
@@ -77,7 +96,20 @@ export interface MarkdownRow {
   updatedAt: number;
 }
 
-export type ItemRow = ChatRow | TerminalRow | MarkdownRow;
+export interface WorkflowRow {
+  type: "workflow";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: WorkflowItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ItemRow = ChatRow | TerminalRow | MarkdownRow | WorkflowRow;
 
 export interface ChatTreeFolderNode {
   id: string;
@@ -186,6 +218,17 @@ function normalizeMarkdownData(value: unknown): MarkdownItemData {
   };
 }
 
+/**
+ * A stored graph that no longer parses is reported, not replaced: the row
+ * keeps its data, and editing or running it is refused until it is fixed.
+ */
+function normalizeWorkflowData(value: unknown): WorkflowItemData {
+  const data = normalizeJsonObject(value);
+  const graph = parseWorkflowGraph(data.graph);
+  if (graph.ok) return { ...data, graph: graph.value };
+  return { ...data, graph: { nodes: [], edges: [] }, graphError: graph.error };
+}
+
 function toItemRow(row: ItemTableRow): ItemRow {
   const common = {
     id: row.id,
@@ -206,6 +249,9 @@ function toItemRow(row: ItemTableRow): ItemRow {
   }
   if (row.type === "markdown") {
     return { ...common, type: "markdown", data: normalizeMarkdownData(row.data) };
+  }
+  if (row.type === "workflow") {
+    return { ...common, type: "workflow", data: normalizeWorkflowData(row.data) };
   }
   throw new Error(`Item "${row.id}" has unsupported type "${row.type}".`);
 }
@@ -281,7 +327,40 @@ function normalizeChatSettings(value: unknown): ChatSettings {
     normalizedSettings.allowedTools = allowedTools;
   }
 
+  if (typeof record.workflowId === "string") {
+    normalizedSettings.workflowId = record.workflowId;
+  }
+
+  const workflowModelOverrides = normalizeWorkflowModelOverrides(record.workflowModelOverrides);
+  if (workflowModelOverrides) {
+    normalizedSettings.workflowModelOverrides = workflowModelOverrides;
+  }
+
   return normalizedSettings;
+}
+
+function normalizeWorkflowModelRef(value: unknown): WorkflowModelRef | null {
+  const record = normalizeJsonObject(value);
+  if (typeof record.modelId !== "string" || record.modelId.length === 0) return null;
+  return {
+    modelId: record.modelId,
+    reasoningEffort: isReasoningEffort(record.reasoningEffort) ? record.reasoningEffort : null,
+  };
+}
+
+function normalizeWorkflowModelOverrides(
+  value: unknown,
+): ChatSettings["workflowModelOverrides"] | undefined {
+  const byWorkflow: NonNullable<ChatSettings["workflowModelOverrides"]> = {};
+  for (const [workflowId, rawSteps] of Object.entries(normalizeJsonObject(value))) {
+    const steps: Record<string, WorkflowModelOverride> = {};
+    for (const [nodeId, rawModel] of Object.entries(normalizeJsonObject(rawSteps))) {
+      const model = rawModel === "chat" ? "chat" : normalizeWorkflowModelRef(rawModel);
+      if (model) steps[nodeId] = model;
+    }
+    if (Object.keys(steps).length > 0) byWorkflow[workflowId] = steps;
+  }
+  return Object.keys(byWorkflow).length > 0 ? byWorkflow : undefined;
 }
 
 function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): ChatSettings {
@@ -348,6 +427,35 @@ function mergeChatSettings(value: unknown, settingsPatch?: ChatSettingsPatch): C
       nextSettings.allowedTools = allowedTools;
     } else {
       delete nextSettings.allowedTools;
+    }
+  }
+
+  if ("workflowId" in settingsPatch) {
+    if (settingsPatch.workflowId) {
+      nextSettings.workflowId = settingsPatch.workflowId;
+    } else {
+      delete nextSettings.workflowId;
+    }
+  }
+
+  if (settingsPatch.workflowModelOverride) {
+    const { workflowId, nodeId, model } = settingsPatch.workflowModelOverride;
+    const overrides = { ...nextSettings.workflowModelOverrides };
+    const steps = { ...overrides[workflowId] };
+    if (model) {
+      steps[nodeId] = model;
+    } else {
+      delete steps[nodeId];
+    }
+    if (Object.keys(steps).length > 0) {
+      overrides[workflowId] = steps;
+    } else {
+      delete overrides[workflowId];
+    }
+    if (Object.keys(overrides).length > 0) {
+      nextSettings.workflowModelOverrides = overrides;
+    } else {
+      delete nextSettings.workflowModelOverrides;
     }
   }
 
@@ -1237,6 +1345,88 @@ export function createMarkdown(input: {
   if (markdown.type !== "markdown") throw new Error(`Item "${id}" is not Markdown.`);
   resolveOpenNoteLinks(markdown.workspaceId);
   return markdown;
+}
+
+export function createWorkflow(input: {
+  workspaceId: string;
+  title: string;
+  folderId: string | null;
+}): WorkflowRow {
+  requireWorkspaceExists(input.workspaceId);
+  if (input.folderId !== null) {
+    const folder = requireFolderById(input.folderId);
+    if (folder.workspaceId !== input.workspaceId) {
+      throw new Error(`Folder "${input.folderId}" belongs to a different workspace.`);
+    }
+  }
+
+  const id = createUuidV7();
+  getAppDatabase()
+    .insert(items)
+    .values({
+      id,
+      workspaceId: input.workspaceId,
+      folderId: input.folderId,
+      type: "workflow",
+      title: input.title,
+      data: { graph: createDefaultWorkflowGraph() },
+    })
+    .run();
+  return requireWorkflowById(id);
+}
+
+export function getWorkflowById(id: string): WorkflowRow | null {
+  const item = getItemById(id);
+  return item?.type === "workflow" ? item : null;
+}
+
+function requireWorkflowById(id: string): WorkflowRow {
+  const workflow = getWorkflowById(id);
+  if (!workflow) throw new Error(`Workflow "${id}" does not exist.`);
+  return workflow;
+}
+
+export function updateWorkflowGraph(id: string, graph: WorkflowGraph): WorkflowRow {
+  const workflow = requireWorkflowById(id);
+  if (workflow.data.graphError) {
+    throw new Error(
+      `Workflow "${workflow.title}" can't be read, so it is left unchanged: ${workflow.data.graphError}`,
+    );
+  }
+  getAppDatabase()
+    .update(items)
+    .set({ data: { ...workflow.data, graph }, updatedAt: Date.now() })
+    .where(eq(items.id, id))
+    .run();
+  return requireWorkflowById(id);
+}
+
+export function listWorkflowSummaries(workspaceId: string): WorkflowSummary[] {
+  const database = getAppDatabase();
+  const folderRows = database
+    .select({ id: folders.id, parentId: folders.parentId, name: folders.name })
+    .from(folders)
+    .where(eq(folders.workspaceId, workspaceId))
+    .all();
+  const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
+  const getFolderPath = (folderId: string | null) => {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (let id = folderId; id && !seen.has(id); id = foldersById.get(id)?.parentId ?? null) {
+      seen.add(id);
+      const name = foldersById.get(id)?.name;
+      if (name) names.unshift(name);
+    }
+    return names.join("/");
+  };
+
+  return database
+    .select({ id: items.id, title: items.title, folderId: items.folderId })
+    .from(items)
+    .where(and(eq(items.workspaceId, workspaceId), eq(items.type, "workflow")))
+    .orderBy(asc(items.title))
+    .all()
+    .map((row) => ({ id: row.id, title: row.title, folderPath: getFolderPath(row.folderId) }));
 }
 
 export function updateMarkdownContent(id: string, markdown: string): MarkdownRow {

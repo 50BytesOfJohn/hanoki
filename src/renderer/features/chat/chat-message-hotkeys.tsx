@@ -16,6 +16,12 @@ export const BRANCH_SWITCH_HOTKEYS = {
   next: "Mod+]",
 } as const;
 
+/**
+ * Every chat pane (and every kept-alive tab) mounts its own copy of these
+ * bindings; `enabled: isActivePane` picks the one that fires. The registry keeps
+ * disabled registrations, so per-pane hotkeys opt out of the duplicate warning
+ * with `conflictBehavior: "allow"`.
+ */
 export function ChatMessageHotkeys() {
   const getMessages = useChatGetMessages();
   const regenerateMessage = useChatRegenerateMessage();
@@ -50,6 +56,7 @@ export function ChatMessageHotkeys() {
     },
     {
       enabled: isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -88,6 +95,7 @@ export function ChatMessageHotkeys() {
     ],
     {
       enabled: isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,

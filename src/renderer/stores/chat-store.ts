@@ -8,6 +8,7 @@ import {
 import { create } from "zustand";
 
 import { messagesApi } from "@/api/messages";
+import { flushPendingWorkflowSaves } from "@/features/workflow/workflow-graph-store";
 import { chatMessageMetadataSchema, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import { createUuidV7 } from "@shared/uuidv7";
 import { normalizeAssistantTiptapParts } from "@shared/tiptap/extensions";
@@ -21,10 +22,48 @@ interface ChatStoreState {
 export function createChatTransport(apiUrl: string, chatId: string) {
   return new DefaultChatTransport<HanokiUiMessage>({
     api: apiUrl,
-    prepareSendMessagesRequest: ({ body, trigger, messages, messageId }) => ({
-      body: { ...body, chatId, messages, trigger, messageId },
-    }),
+    prepareSendMessagesRequest: async ({ body, trigger, messages, messageId }) => {
+      // The server runs workflows as stored, so edits still waiting to save go first.
+      await flushPendingWorkflowSaves();
+      return {
+        body: { ...body, chatId, messages: stripWorkflowRuns(messages), trigger, messageId },
+      };
+    },
   });
+}
+
+/** Runs are for the user; the server reads them from storage when it needs one. */
+function stripWorkflowRuns(messages: HanokiUiMessage[]): HanokiUiMessage[] {
+  return messages.map((message) =>
+    message.parts.some(
+      (part) => part.type === "data-workflowRun" || part.type === "data-workflowStep",
+    )
+      ? {
+          ...message,
+          parts: message.parts.filter(
+            (part) => part.type !== "data-workflowRun" && part.type !== "data-workflowStep",
+          ),
+        }
+      : message,
+  );
+}
+
+/** Asks the server to stop the chat's workflow run; false when none is running. */
+export async function stopChatWorkflowRun(apiUrl: string, chatId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${apiUrl}/workflow/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+    });
+    if (!response.ok) return false;
+    const result: unknown = await response.json();
+    return typeof result === "object" && result !== null && "stopped" in result
+      ? result.stopped === true
+      : false;
+  } catch {
+    return false;
+  }
 }
 
 export const useChatStore = create<ChatStoreState>((set, get) => ({

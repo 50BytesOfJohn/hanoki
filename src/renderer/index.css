@@ -446,3 +446,25 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Workflow editor: ink edges that light up in moss when picked. */
+.workflow-canvas {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: color-mix(in oklch, var(--muted) 55%, transparent);
+  --xy-edge-stroke-selected: var(--focus);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--focus);
+}
+
+.workflow-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: color-mix(in oklch, var(--muted) 90%, transparent);
+}
+
+.workflow-canvas .react-flow__node {
+  border-radius: var(--radius);
+}
+
+.workflow-canvas .react-flow__node:focus-visible {
+  outline: 1.5px solid var(--focus);
+  outline-offset: 2px;
+}

@@ -121,6 +121,7 @@ export function ChatModelPicker() {
     },
     {
       enabled: isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -141,6 +142,7 @@ export function ChatModelPicker() {
     })),
     {
       enabled: isActivePane && offered.length > 0,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -158,6 +160,7 @@ export function ChatModelPicker() {
     },
     {
       enabled: isActivePane && offered.length > 0,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,

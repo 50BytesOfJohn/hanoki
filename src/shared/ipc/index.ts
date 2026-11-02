@@ -7,6 +7,7 @@ import type { NotesFolderExportResult, NotesFolderImportResult } from "../markdo
 import type { PinnedBranchSummary } from "../chat/pinned-branch";
 import type { TiptapDocument } from "../tiptap/document";
 import type { ApprovalToolName, ToolApprovalMode } from "../chat/tool-approval";
+import type { WorkflowGraph, WorkflowModelOverride } from "../workflow/graph";
 
 export const IPC_CHANNELS = {
   workspaces: {
@@ -79,6 +80,11 @@ export const IPC_CHANNELS = {
     exportFolder: "markdown:exportFolder",
     importFolder: "markdown:importFolder",
   },
+  workflows: {
+    create: "workflows:create",
+    updateGraph: "workflows:updateGraph",
+    list: "workflows:list",
+  },
   messages: {
     listByChat: "messages:listByChat",
     listAllByChat: "messages:listAllByChat",
@@ -87,6 +93,7 @@ export const IPC_CHANNELS = {
     delete: "messages:delete",
     setPinned: "messages:setPinned",
     listPinned: "messages:listPinned",
+    applyWorkflowStep: "messages:applyWorkflowStep",
   },
   providers: {
     list: "providers:list",
@@ -342,8 +349,47 @@ export interface MarkdownInfo {
   updatedAt: number;
 }
 
-export type ItemType = ChatInfo["type"] | TerminalInfo["type"] | MarkdownInfo["type"];
-export type ItemInfo = ChatInfo | TerminalInfo | MarkdownInfo;
+export interface WorkflowItemData extends Record<string, unknown> {
+  graph: WorkflowGraph;
+  /**
+   * Set when the stored graph can't be read. `graph` is then empty, the stored
+   * data is left as it is, and the workflow can't be edited or run.
+   */
+  graphError?: string;
+}
+
+export interface WorkflowInfo {
+  type: "workflow";
+  id: string;
+  workspaceId: string;
+  folderId: string | null;
+  title: string;
+  data: WorkflowItemData;
+  metadata: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A workflow as the chat's workflow picker lists it. */
+export interface WorkflowSummary {
+  id: string;
+  title: string;
+  folderPath: string;
+}
+
+export type ItemType =
+  | ChatInfo["type"]
+  | TerminalInfo["type"]
+  | MarkdownInfo["type"]
+  | WorkflowInfo["type"];
+export type ItemInfo = ChatInfo | TerminalInfo | MarkdownInfo | WorkflowInfo;
+
+export const ITEM_TYPES: readonly ItemType[] = ["chat", "terminal", "markdown", "workflow"];
+
+export function isItemType(value: unknown): value is ItemType {
+  return value === "chat" || value === "terminal" || value === "markdown" || value === "workflow";
+}
 
 export interface TerminalSessionSnapshot {
   itemId: string;
@@ -370,6 +416,13 @@ export interface ChatSettings {
   toolApprovalMode?: ToolApprovalMode;
   /** Tools the user chose "Allow for this chat" on; they stop asking here. */
   allowedTools?: ApprovalToolName[];
+  /** The workflow new replies run through; unset sends messages straight to the model. */
+  workflowId?: string | null;
+  /**
+   * Per-step model picks made from the chat's workflow sidebar, keyed by
+   * workflow id, then step node id. The workflow itself stays unchanged.
+   */
+  workflowModelOverrides?: Record<string, Record<string, WorkflowModelOverride>>;
 }
 
 export interface ChatModelConfig {
@@ -392,6 +445,13 @@ export interface ChatSettingsUpdateInput {
   toolApprovalMode?: ToolApprovalMode;
   /** Replaces the whole list; an empty list forgets every allowance. */
   allowedTools?: ApprovalToolName[];
+  workflowId?: string | null;
+  /** Sets one step's model override; a null `model` removes it. */
+  workflowModelOverride?: {
+    workflowId: string;
+    nodeId: string;
+    model: WorkflowModelOverride | null;
+  };
 }
 
 export interface ChatTreeFolderNode extends FolderInfo {
@@ -461,7 +521,19 @@ export interface MarkdownItemPaneState {
   view: "/markdown";
 }
 
-export type ItemPaneState = ChatItemPaneState | TerminalItemPaneState | MarkdownItemPaneState;
+export interface WorkflowItemPaneState {
+  id: string;
+  type: "pane";
+  itemId: string;
+  itemType: "workflow";
+  view: "/workflow";
+}
+
+export type ItemPaneState =
+  | ChatItemPaneState
+  | TerminalItemPaneState
+  | MarkdownItemPaneState
+  | WorkflowItemPaneState;
 
 export interface ItemSplitState {
   id: string;
@@ -667,6 +739,8 @@ export interface IpcApi {
   deleteMessage: (messageId: string, scope: DeleteMessageScope) => Promise<HanokiUiMessage[]>;
   setMessagePinned: (messageId: string, pinned: boolean) => Promise<void>;
   listPinnedBranches: () => Promise<PinnedBranchSummary[]>;
+  /** Adds a new version of a workflow message that uses `nodeId`'s output as its text. */
+  applyWorkflowStepAsMessage: (messageId: string, nodeId: string) => Promise<HanokiUiMessage[]>;
   createFolder: (
     workspaceId: string,
     name: string,
@@ -701,6 +775,13 @@ export interface IpcApi {
   listNoteBacklinks: (itemId: string) => Promise<NoteBacklink[]>;
   exportMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderExportResult>;
   importMarkdownNotesFolder: (workspaceId: string) => Promise<NotesFolderImportResult>;
+  createWorkflow: (
+    workspaceId: string,
+    title: string,
+    folderId?: string | null,
+  ) => Promise<WorkflowInfo>;
+  updateWorkflowGraph: (id: string, graph: WorkflowGraph) => Promise<WorkflowInfo>;
+  listWorkflows: (workspaceId: string) => Promise<WorkflowSummary[]>;
   listProviders: () => Promise<ProviderInfo[]>;
   listProviderModels: (providerId: string) => Promise<ProviderModelInfo[]>;
   /** Re-fetches the provider's model list; rejects with the sync error on failure. */

@@ -1,9 +1,10 @@
-const KIND_ORDER = ["chat", "markdown", "terminal", "folder"] as const;
+const KIND_ORDER = ["chat", "markdown", "terminal", "workflow", "folder"] as const;
 
 const KIND_NOUN = {
   chat: { one: "chat", many: "chats", title: "chat" },
   markdown: { one: "note", many: "notes", title: "note" },
   terminal: { one: "terminal", many: "terminals", title: "terminal" },
+  workflow: { one: "workflow", many: "workflows", title: "workflow" },
   folder: { one: "folder", many: "folders", title: "folder" },
 } as const;
 
@@ -16,7 +17,7 @@ function readString(value: unknown): string | null {
 }
 
 function isKnownKind(kind: string): kind is (typeof KIND_ORDER)[number] {
-  return kind === "chat" || kind === "markdown" || kind === "terminal" || kind === "folder";
+  return (KIND_ORDER as readonly string[]).includes(kind);
 }
 
 function joinList(parts: string[]): string {
@@ -27,7 +28,7 @@ function joinList(parts: string[]): string {
 }
 
 export function formatHanokiKindCounts(kinds: readonly string[]): string {
-  const counts = { chat: 0, markdown: 0, terminal: 0, folder: 0 };
+  const counts = { chat: 0, markdown: 0, terminal: 0, workflow: 0, folder: 0 };
   for (const kind of kinds) {
     if (isKnownKind(kind)) counts[kind] += 1;
   }

@@ -17,6 +17,7 @@ import {
   ArrowRight01Icon,
   ChatAdd01Icon,
   ComputerTerminal01Icon,
+  FlowConnectionIcon,
   Copy01Icon,
   Delete02Icon,
   Folder01Icon,
@@ -28,7 +29,6 @@ import {
   LayoutLeftIcon,
   LayoutRightIcon,
   LayoutTopIcon,
-  MessagesSquare,
   MoreHorizontalIcon,
   PencilEdit01Icon,
   Search01Icon,
@@ -95,6 +95,8 @@ import {
 import { useCreateChat, useCloneChat } from "@/mutations/chats";
 import { useCreateFolder } from "@/mutations/folders";
 import { useCreateTerminal } from "@/mutations/terminals";
+import { useCreateWorkflow } from "@/mutations/workflows";
+import { ITEM_TYPE_ICONS } from "@/features/items/item-type-icon";
 import {
   useCreateMarkdown,
   useExportMarkdownNotesFolder,
@@ -121,6 +123,7 @@ import {
 } from "@shared/chat/chat-tree-sort";
 import type { ChatTreeSortEntry } from "@shared/chat/chat-tree-sort";
 import { DEFAULT_MARKDOWN_TITLE } from "@shared/markdown/title-source";
+import { DEFAULT_WORKFLOW_TITLE } from "@shared/workflow/graph";
 import {
   ChatSidebar,
   ChatSidebarBlock,
@@ -152,6 +155,7 @@ type ChatTreeContextMenuAction =
   | "add-chat"
   | "add-terminal"
   | "add-markdown"
+  | "add-workflow"
   | "export-markdown-notes"
   | "import-markdown-notes"
   | "open-in-focused-pane"
@@ -204,6 +208,10 @@ function ChatTreeItemContextMenu({
             <ContextMenuItem onClick={() => onAction("add-markdown")}>
               <HugeiconsIcon icon={FileScriptIcon} />
               Add Markdown
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onAction("add-workflow")}>
+              <HugeiconsIcon icon={FlowConnectionIcon} />
+              Add Workflow
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onAction("export-markdown-notes")}>
               <HugeiconsIcon icon={FileExportIcon} />
@@ -453,6 +461,7 @@ function ChatSidebarTreeInner({
   const createFolderMutation = useCreateFolder();
   const createTerminalMutation = useCreateTerminal();
   const createMarkdownMutation = useCreateMarkdown();
+  const createWorkflowMutation = useCreateWorkflow();
   const exportMarkdownNotes = useExportMarkdownNotesFolder();
   const importMarkdownNotes = useImportMarkdownNotesFolder();
 
@@ -793,6 +802,19 @@ function ChatSidebarTreeInner({
     [createMarkdownMutation, reloadTree, workspaceId],
   );
 
+  const createWorkflow = React.useCallback(
+    async (folderId: string | null) => {
+      const workflow = await createWorkflowMutation.mutateAsync({
+        workspaceId,
+        title: DEFAULT_WORKFLOW_TITLE,
+        folderId,
+      });
+      openTab({ type: "workflow", itemId: workflow.id });
+      void reloadTree();
+    },
+    [createWorkflowMutation, openTab, reloadTree, workspaceId],
+  );
+
   const openItemInTab = React.useCallback(
     (item: ItemInfo, options?: { activate?: boolean }) => {
       openTab({ type: item.type, itemId: item.id }, options);
@@ -911,6 +933,15 @@ function ChatSidebarTreeInner({
             size="icon-xs"
             variant="ghost"
             className={SIDEBAR_ICON_BUTTON_CLASS}
+            aria-label="Add workflow to root"
+            onClick={() => void createWorkflow(null)}
+          >
+            <HugeiconsIcon icon={FlowConnectionIcon} />
+          </Button>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={SIDEBAR_ICON_BUTTON_CLASS}
             aria-label="Add folder to root"
             onClick={() => {
               void createFolder(null);
@@ -977,6 +1008,9 @@ function ChatSidebarTreeInner({
                   } else if (action === "add-markdown" && itemKind === "folder") {
                     ensureFolderExpanded();
                     void createMarkdown(item.getId().slice("folder:".length));
+                  } else if (action === "add-workflow" && itemKind === "folder") {
+                    ensureFolderExpanded();
+                    void createWorkflow(item.getId().slice("folder:".length));
                   } else if (action === "export-markdown-notes") {
                     void exportMarkdownNotes.mutateAsync({ workspaceId });
                   } else if (action === "import-markdown-notes") {
@@ -1514,15 +1548,7 @@ function ChatTreeItemIcon({ item }: { item: ItemInfo }) {
 
   return (
     <ChatTreeItemIconFrame className="text-muted-foreground">
-      {item.type === "terminal" ? (
-        <HugeiconsIcon icon={ComputerTerminal01Icon} />
-      ) : item.type === "markdown" ? (
-        <HugeiconsIcon icon={FileScriptIcon} />
-      ) : isActive ? (
-        <ChatActivityIndicator />
-      ) : (
-        <HugeiconsIcon icon={MessagesSquare} />
-      )}
+      {isActive ? <ChatActivityIndicator /> : <HugeiconsIcon icon={ITEM_TYPE_ICONS[item.type]} />}
     </ChatTreeItemIconFrame>
   );
 }

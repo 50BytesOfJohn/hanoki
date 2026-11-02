@@ -5,10 +5,17 @@ import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 import { messagesApi } from "@/api/messages";
+import { toastManager } from "@/components/ui/toast";
+import { getChatRequestWorkflowBlockReason } from "@/features/workflow/workflow-model-availability";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 
-import { createChatTransport, loadChatHistory, useChatStore } from "@/stores/chat-store";
+import {
+  createChatTransport,
+  loadChatHistory,
+  stopChatWorkflowRun,
+  useChatStore,
+} from "@/stores/chat-store";
 import {
   getBranchCost,
   getLatestContextUsage,
@@ -50,6 +57,12 @@ type ChatContextState = {
     sourceMessageId: string;
     note: string;
   }) => Promise<void>;
+  /** Regenerates through `workflowId`, or without any workflow when it is null. */
+  regenerateWithWorkflow: (messageId: string, workflowId: string | null) => Promise<void>;
+  /** Reruns a workflow message from `nodeId`, keeping the steps before it. */
+  rerunWorkflowFrom: (messageId: string, nodeId: string) => Promise<void>;
+  /** Adds a new version of the message with `nodeId`'s output as its text. */
+  applyWorkflowStep: (messageId: string, nodeId: string) => Promise<void>;
   switchBranch: (branchId: string) => Promise<void>;
   startEditingMessage: (messageId: string) => void;
   stopEditingMessage: () => void;
@@ -131,6 +144,16 @@ function createChatContextStore({
         return;
       }
 
+      // A workflow run is stopped on the server, which keeps finished steps and
+      // writes the message from them; the stream then ends on its own.
+      const status = transportRefs.getStatus?.();
+      if (
+        (status === "streaming" || status === "submitted") &&
+        (await stopChatWorkflowRun(apiUrl, chatId))
+      ) {
+        return;
+      }
+
       transportRefs.markStopped?.();
       await transportRefs.stopChat?.();
     },
@@ -182,26 +205,37 @@ function createChatContextStore({
         options: { body: { modelId: currentModelId } },
       });
     },
-    regenerateMessage: (options) => {
-      const {
-        editingMessageId,
-        continuingMessageId,
-        modelId: currentModelId,
-        continuationError,
-      } = get();
+    regenerateMessage: async (options) => {
+      const { editingMessageId, continuingMessageId, modelId: currentModelId } = get();
       if (editingMessageId !== null) {
-        return Promise.resolve();
+        return;
       }
 
       if (continuingMessageId !== null) {
-        return Promise.resolve();
+        return;
       }
 
       if (!transportRefs.regenerate || !currentModelId) {
-        return Promise.resolve();
+        return;
       }
 
-      if (continuationError !== null) {
+      // Regenerating removes the old reply before the server answers, so a
+      // workflow that can't run is caught here, with the reason, first.
+      const workflowBlockReason = await getChatRequestWorkflowBlockReason({
+        chatId,
+        body: options?.body as Record<string, unknown> | undefined,
+        messages: transportRefs.getMessages?.() ?? [],
+      });
+      if (workflowBlockReason) {
+        toastManager.add({
+          type: "error",
+          title: "The workflow can't run",
+          description: workflowBlockReason,
+        });
+        return;
+      }
+
+      if (get().continuationError !== null) {
         set((current) => ({ ...current, continuationError: null }));
       }
 
@@ -261,6 +295,33 @@ function createChatContextStore({
       // the note survives if it bails.
       const revision: ChatRevisionRequest = { sourceMessageId, note: trimmedNote };
       await get().regenerateMessage({ messageId, body: { revision } });
+    },
+    regenerateWithWorkflow: async (messageId, workflowId) => {
+      await get().regenerateMessage({
+        messageId,
+        body: workflowId ? { workflow: { workflowId } } : { noWorkflow: true },
+      });
+    },
+    rerunWorkflowFrom: async (messageId, nodeId) => {
+      await get().regenerateMessage({
+        messageId,
+        body: { workflow: { rerun: { sourceMessageId: messageId, nodeId } } },
+      });
+    },
+    applyWorkflowStep: async (messageId, nodeId) => {
+      const { editingMessageId, continuingMessageId } = get();
+      const status = transportRefs.getStatus?.() ?? "ready";
+      if (
+        editingMessageId !== null ||
+        continuingMessageId !== null ||
+        status === "streaming" ||
+        status === "submitted" ||
+        !transportRefs.setMessages
+      ) {
+        return;
+      }
+      transportRefs.markTabTouched?.();
+      transportRefs.setMessages(await messagesApi.applyWorkflowStepAsMessage(messageId, nodeId));
     },
     continueMessage: async (messageId) => {
       const {
@@ -883,6 +944,18 @@ export function useChatRevisionComposer(messageId: string) {
 
 export function useChatIsRevisionComposerOpen() {
   return useChatContext((state) => state.isRevisionComposerOpen);
+}
+
+export function useChatRegenerateWithWorkflow() {
+  return useChatContext((state) => state.regenerateWithWorkflow);
+}
+
+export function useChatRerunWorkflowFrom() {
+  return useChatContext((state) => state.rerunWorkflowFrom);
+}
+
+export function useChatApplyWorkflowStep() {
+  return useChatContext((state) => state.applyWorkflowStep);
 }
 
 export function useChatContinueMessage() {

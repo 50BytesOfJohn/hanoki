@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import {
   consumeStream,
-  convertToModelMessages,
   isStepCount,
   smoothStream,
   ToolLoopAgent,
@@ -10,7 +9,6 @@ import {
 } from "ai";
 import { parseChatId } from "@shared/chat/chat-id";
 import { appendContinuationParts, getContinuationParts } from "@shared/chat/continuation";
-import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
 import { insertRevisionTurn } from "@shared/chat/revision";
 import { decideToolApproval } from "@shared/chat/tool-approval";
 import type {
@@ -57,7 +55,6 @@ import {
   isHanokiToolEnabledForRequest,
   isTerminalToolEnabledForRequest,
   isWebToolEnabledForRequest,
-  parseTiptapDocument,
   validateTiptapMessageParts,
 } from "@shared/tiptap/document";
 import {
@@ -71,6 +68,11 @@ import {
 import { getChatStreamErrorMessage } from "../chat-stream-error";
 import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
 import { resolveRevisionContext } from "../chat-revision";
+import { toModelMessages } from "../chat-model-messages";
+import { workflowRequestSchema } from "@shared/workflow/run";
+import { handleWorkflowChatRequest, resolveWorkflowSetup } from "../workflow/chat-workflow";
+import { stopWorkflowRun } from "../workflow/workflow-runs";
+import { type } from "arktype";
 
 const CONTINUATION_PROMPT =
   "Continue directly from where you left off. Do not repeat any previous content, do not add any introduction or summary. Just pick up exactly at the end of your last sentence.";
@@ -92,6 +94,15 @@ interface CreateChatRouteOptions {
 
 export function createChatRoute(options?: CreateChatRouteOptions) {
   const app = new Hono();
+
+  app.post("/api/chat/workflow/stop", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsedChatId = parseChatId(body?.chatId);
+    if (!parsedChatId.ok) {
+      return c.json({ error: "chatId is required" }, 400);
+    }
+    return c.json({ stopped: stopWorkflowRun(parsedChatId.value) });
+  });
 
   app.post("/api/chat", async (c) => {
     const body = await c.req.json();
@@ -224,6 +235,37 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     }
     const revisionMetadata = revisionContext.revision;
 
+    // A fresh reply (send, regenerate, or an explicit workflow pick) goes
+    // through the chat's workflow. Continuations, tool-approval resumes and
+    // notes stay plain model calls.
+    const parsedWorkflowRequest =
+      body.workflow === undefined || body.workflow === null
+        ? {}
+        : workflowRequestSchema(body.workflow);
+    if (parsedWorkflowRequest instanceof type.errors) {
+      return c.json({ error: "Workflow request is invalid." }, 400);
+    }
+    const isFreshReply =
+      mode === "default" && lastRequestMessage?.role === "user" && !revisionMetadata;
+    const wantsWorkflow =
+      body.noWorkflow !== true &&
+      Boolean(
+        parsedWorkflowRequest.rerun ??
+        parsedWorkflowRequest.workflowId ??
+        chat.data.settings.workflowId,
+      );
+    let workflowSetup: ReturnType<typeof resolveWorkflowSetup> | null = null;
+    if (isFreshReply && wantsWorkflow) {
+      workflowSetup = resolveWorkflowSetup({
+        chat,
+        request: parsedWorkflowRequest,
+        responseParentId,
+      });
+      if (!workflowSetup.ok) {
+        return c.json({ error: workflowSetup.error }, 400);
+      }
+    }
+
     const shouldAutoGenerateTitle =
       mode !== "continue-message" &&
       lastRequestMessage?.role === "user" &&
@@ -242,6 +284,31 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
           console.error("[sumi-title] Automatic title generation failed.", error);
         });
       }
+    }
+
+    if (workflowSetup?.ok) {
+      const savedEffort = chat.data.settings.modelConfig?.reasoningEffort;
+      return handleWorkflowChatRequest({
+        chat,
+        setup: workflowSetup.setup,
+        messages,
+        responseParentId,
+        chatModel: {
+          id: model.id,
+          reasoningEffort:
+            savedEffort &&
+            getModelReasoningEfforts(provider.catalogId as ProviderId, model.metadata).includes(
+              savedEffort,
+            )
+              ? savedEffort
+              : null,
+          provider: provider.catalogId,
+        },
+        temperature,
+        getModelIdToSave,
+        abortSignal: c.req.raw.signal,
+        onChatCostUpdated: options?.onChatCostUpdated,
+      });
     }
 
     const startTime = Date.now();
@@ -471,20 +538,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     const result = await agent.stream({
       abortSignal: c.req.raw.signal,
       experimental_transform: smoothStream({ chunking: "line" }),
-      messages: stripReplayedReasoning(
-        await convertToModelMessages<HanokiUiMessage>(modelInputMessages, {
-          convertDataPart: (part) => {
-            if (part.type !== "data-tiptap") {
-              return undefined;
-            }
-            const parsed = parseTiptapDocument(part.data);
-            if (!parsed.ok) {
-              throw new Error(parsed.error);
-            }
-            return { type: "text", text: parsed.value.modelText };
-          },
-        }),
-      ),
+      messages: await toModelMessages(modelInputMessages),
     });
 
     // The stream reports failures as an `error` chunk rather than by rejecting,

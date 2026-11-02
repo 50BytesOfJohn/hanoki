@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { type } from "arktype";
 import type { TiptapDocument } from "../tiptap/document";
+import type { WorkflowRunState, WorkflowStepState } from "../workflow/run";
 
 export const chatMessageMetadataSchema = type({
   parentId: "string|null",
@@ -68,7 +69,15 @@ export const chatMessageMetadataSchema = type({
 
 export type ChatMessageMetadata = typeof chatMessageMetadataSchema.infer;
 
-export type HanokiUiMessage = UIMessage<ChatMessageMetadata, { tiptap: TiptapDocument }>;
+/**
+ * `workflowRun` and `workflowStep` record a workflow run on the message it
+ * produced. They are shown to the user but never sent to a model: only the
+ * message text is chat context.
+ */
+export type HanokiUiMessage = UIMessage<
+  ChatMessageMetadata,
+  { tiptap: TiptapDocument; workflowRun: WorkflowRunState; workflowStep: WorkflowStepState }
+>;
 
 type ParseChatMessageMetadataResult =
   | {

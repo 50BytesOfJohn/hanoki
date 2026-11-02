@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { ChatInfo, ChatSettingsUpdateInput } from "@shared/ipc";
+import type { ChatInfo, ChatSettings, ChatSettingsUpdateInput } from "@shared/ipc";
 
 import { chatsApi } from "../api/chats";
 import { useWorkspaceStore } from "../features/workspace/store";
@@ -60,8 +60,15 @@ export function useUpdateChatSettings() {
 
       const previous = queryClient.getQueryData<ChatInfo>(queryKeys.chats.byId(id));
       if (previous) {
-        const { modelConfig: modelConfigPatch, ...settingsPatch } = input;
+        const { modelConfig: modelConfigPatch, workflowModelOverride, ...settingsPatch } = input;
         const settings = { ...previous.data.settings, ...settingsPatch };
+
+        if (workflowModelOverride) {
+          settings.workflowModelOverrides = applyWorkflowModelOverride(
+            settings.workflowModelOverrides,
+            workflowModelOverride,
+          );
+        }
 
         if (modelConfigPatch) {
           const modelConfig = { ...previous.data.settings.modelConfig };
@@ -117,4 +124,16 @@ export function useDeleteChat() {
   return useMutation({
     mutationFn: ({ id }: { id: string }) => chatsApi.delete(id),
   });
+}
+
+function applyWorkflowModelOverride(
+  overrides: ChatSettings["workflowModelOverrides"],
+  { workflowId, nodeId, model }: NonNullable<ChatSettingsUpdateInput["workflowModelOverride"]>,
+): ChatSettings["workflowModelOverrides"] {
+  const steps = { ...overrides?.[workflowId] };
+  if (model) steps[nodeId] = model;
+  else delete steps[nodeId];
+  const next = { ...overrides, [workflowId]: steps };
+  if (Object.keys(steps).length === 0) delete next[workflowId];
+  return Object.keys(next).length > 0 ? next : undefined;
 }

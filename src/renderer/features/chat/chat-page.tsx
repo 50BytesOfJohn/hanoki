@@ -69,6 +69,8 @@ import { ChatComposerEditor } from "./tiptap-editor";
 import { ChatModelPicker } from "./model-picker/chat-model-picker";
 import { useToolApprovalActions } from "./tool-approval-actions";
 import { APPROVAL_TOOLS } from "@shared/chat/tool-approval";
+import { ChatWorkflowMenu, ChatWorkflowSidebar } from "../workflow/chat-workflow";
+import { useChatWorkflowStatus } from "../workflow/workflow-model-availability";
 
 const STOP_GENERATION_HOTKEY = { key: ".", mod: true } as const;
 const STOP_GENERATION_SHORTCUT_LABEL = "Cmd/Ctrl + .";
@@ -208,6 +210,10 @@ function ActiveChatContent() {
   const stopChat = useChatStop();
   const canStop = useChatCanStop();
   const isInteractionLocked = useChatIsInteractionLocked();
+  // A workflow that can't run (deleted, unreadable, or a step's model gone)
+  // would fail the request after the composer clears; fix it first.
+  const workflowBlockReason = useChatWorkflowStatus(chatId).blockReason;
+  const isWorkflowBlocked = workflowBlockReason !== null;
   const isStreaming = useChatIsStreaming();
   const isActiveTab = useIsActiveChatTab();
   const isActivePane = useIsActiveChatPane();
@@ -314,7 +320,8 @@ function ActiveChatContent() {
       !modelId ||
       !parsedInput.ok ||
       !parsedInput.value.displayText.trim() ||
-      isInteractionLocked
+      isInteractionLocked ||
+      isWorkflowBlocked
     ) {
       return false;
     }
@@ -331,6 +338,7 @@ function ActiveChatContent() {
   }, [
     getMessages,
     isInteractionLocked,
+    isWorkflowBlocked,
     modelId,
     parsedInput,
     scrollToBottom,
@@ -346,6 +354,7 @@ function ActiveChatContent() {
     },
     {
       enabled: canStop && isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: false,
       preventDefault: false,
       stopPropagation: false,
@@ -361,6 +370,7 @@ function ActiveChatContent() {
     },
     {
       enabled: isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: true,
       preventDefault: false,
       stopPropagation: false,
@@ -376,6 +386,7 @@ function ActiveChatContent() {
     },
     {
       enabled: isActivePane,
+      conflictBehavior: "allow",
       ignoreInputs: true,
       preventDefault: false,
       stopPropagation: false,
@@ -385,118 +396,138 @@ function ActiveChatContent() {
 
   return (
     <ChatScrollToBottomProvider scrollToBottom={scrollToBottom}>
-      <div
-        ref={containerRef}
-        role="region"
-        aria-label="Conversation"
-        className="flex-1 min-h-0 overflow-auto scrollbar"
-      >
-        <ChatMessageHotkeys />
+      {/* A container, so the workflow sidebar reacts to this pane's width, not the window's. */}
+      <div className="@container/chat relative flex min-h-0 flex-1">
+        <div
+          ref={containerRef}
+          role="region"
+          aria-label="Conversation"
+          className="min-w-0 flex-1 overflow-auto scrollbar"
+        >
+          <ChatMessageHotkeys />
 
-        <div className="flex flex-col min-h-full justify-end">
-          <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
-            <Conversation />
-          </React.Activity>
+          <div className="flex flex-col min-h-full justify-end">
+            <React.Activity mode={isActiveTab ? "visible" : "hidden"}>
+              <Conversation />
+            </React.Activity>
 
-          <div
-            data-chat-composer-shell="true"
-            className={cn(
-              "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
-              promptStickyPosition ? "sticky bottom-3" : null,
-            )}
-          >
-            {lastUserMessageId && !canStop ? (
-              <div className="mb-3 flex justify-center">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!modelId || isInteractionLocked}
-                  onClick={() => {
-                    scrollToBottom();
-                    void regenerateMessage({ messageId: lastUserMessageId });
-                  }}
-                >
-                  Generate
-                </Button>
-              </div>
-            ) : null}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitMessage();
-              }}
+            <div
+              data-chat-composer-shell="true"
+              className={cn(
+                "mt-12 mx-auto w-full max-w-3xl px-6 mb-3",
+                promptStickyPosition ? "sticky bottom-3" : null,
+              )}
             >
-              {/* has-disabled overrides: InputGroup dims itself when ANY child is
+              {lastUserMessageId && !canStop ? (
+                <div className="mb-3 flex justify-center">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!modelId || isInteractionLocked || isWorkflowBlocked}
+                    onClick={() => {
+                      scrollToBottom();
+                      void regenerateMessage({ messageId: lastUserMessageId });
+                    }}
+                  >
+                    Generate
+                  </Button>
+                </div>
+              ) : null}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitMessage();
+                }}
+              >
+                {/* has-disabled overrides: InputGroup dims itself when ANY child is
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
-              <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-                <ChatComposerEditor
-                  ref={composerEditorRef}
-                  document={input}
-                  disabled={isInteractionLocked}
-                  submitBehavior={submitBehavior}
-                  workspaceId={workspaceId}
-                  onChange={updateInput}
-                  onSubmit={submitMessage}
-                />
-                <InputGroupAddon
-                  align="block-end"
-                  className="flex w-full items-center gap-1.5 px-2 py-0"
-                >
-                  <ChatToolsMenu />
-                  <ChatModelPicker />
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <ChatContextUsage />
-                    <SumiPromptAction
-                      prompt={inputText}
-                      isDisabled={isInteractionLocked}
-                      canShorten={inputIsTextOnly}
-                      editorRef={composerEditorRef}
-                      onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
-                    />
-                    {canStop ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              aria-label="Stop"
-                              size="icon-sm"
-                              type="button"
-                              onClick={stopGeneration}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={Cancel01Icon} />
-                        </TooltipTrigger>
-                        <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
+                <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                  <ChatComposerEditor
+                    ref={composerEditorRef}
+                    document={input}
+                    disabled={isInteractionLocked}
+                    submitBehavior={submitBehavior}
+                    workspaceId={workspaceId}
+                    onChange={updateInput}
+                    onSubmit={submitMessage}
+                  />
+                  <InputGroupAddon
+                    align="block-end"
+                    className="flex w-full items-center gap-1.5 px-2 py-0"
+                  >
+                    <ChatToolsMenu />
+                    <ChatWorkflowMenu />
+                    <ChatModelPicker />
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <ChatContextUsage />
+                      <SumiPromptAction
+                        prompt={inputText}
+                        isDisabled={isInteractionLocked}
+                        canShorten={inputIsTextOnly}
+                        editorRef={composerEditorRef}
+                        onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
+                      />
+                      {canStop ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                aria-label="Stop"
+                                size="icon-sm"
+                                type="button"
+                                onClick={stopGeneration}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} />
+                          </TooltipTrigger>
+                          <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          {/* A disabled button gets no pointer events, so the wrapper
+                            carries the tooltip that says why Send is off. */}
+                          <TooltipTrigger
+                            render={
+                              <span
+                                className="inline-flex rounded-md"
+                                tabIndex={isWorkflowBlocked ? 0 : undefined}
+                                aria-label={workflowBlockReason ?? undefined}
+                              />
+                            }
+                          >
                             <Button
                               type="submit"
                               aria-label="Send"
                               size="sm"
-                              disabled={!modelId || !inputText.trim() || isInteractionLocked}
-                            />
-                          }
-                        >
-                          <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
-                          Send
-                        </TooltipTrigger>
-                        <TooltipContent>Send</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </InputGroupAddon>
-              </InputGroup>
-            </form>
-          </div>
+                              disabled={
+                                !modelId ||
+                                !inputText.trim() ||
+                                isInteractionLocked ||
+                                isWorkflowBlocked
+                              }
+                            >
+                              <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
+                              Send
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-72">
+                            {workflowBlockReason ?? "Send"}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </InputGroupAddon>
+                </InputGroup>
+              </form>
+            </div>
 
-          <div ref={anchorRef} aria-hidden="true" />
+            <div ref={anchorRef} aria-hidden="true" />
+          </div>
         </div>
+        <ChatWorkflowSidebar />
       </div>
     </ChatScrollToBottomProvider>
   );

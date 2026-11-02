@@ -70,7 +70,7 @@ async function generateItemTitle(
   }
 
   const item = getItemById(itemId);
-  if (!item || item.type === "terminal") {
+  if (!item || item.type === "terminal" || item.type === "workflow") {
     throw new Error("Item not found or unsupported.");
   }
 

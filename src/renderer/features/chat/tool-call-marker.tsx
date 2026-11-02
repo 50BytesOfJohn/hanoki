@@ -66,7 +66,8 @@ import {
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/queries/keys";
 import { useWorkspaceStore } from "@/features/workspace/store";
-import type { ChatTreeSnapshot } from "@shared/ipc";
+import { isItemType, type ChatTreeSnapshot } from "@shared/ipc";
+import { ITEM_TYPE_ICONS } from "@/features/items/item-type-icon";
 import { APPROVAL_TOOLS, isApprovalToolName } from "@shared/chat/tool-approval";
 import {
   formatHanokiDeleteApproval,
@@ -206,13 +207,17 @@ function WorkspaceItemLine({ item }: { item: unknown }) {
   const line = (
     <TraceLine>
       <TraceIcon>
-        <HugeiconsIcon icon={kind === "folder" ? Folder01Icon : File01Icon} />
+        <HugeiconsIcon
+          icon={
+            kind === "folder" ? Folder01Icon : isItemType(kind) ? ITEM_TYPE_ICONS[kind] : File01Icon
+          }
+        />
       </TraceIcon>
       <TraceTitle>{name}</TraceTitle>
     </TraceLine>
   );
 
-  if (!id || (kind !== "chat" && kind !== "markdown" && kind !== "terminal")) return line;
+  if (!id || !isItemType(kind)) return line;
 
   return (
     <button type="button" onClick={() => openHanokiItem(id, kind, "focus")}>
@@ -300,7 +305,7 @@ function getReadTarget(
   if (toolName === "hanokiGetItem") {
     const id = getStringField(output, "id");
     const kind = getStringField(output, "kind");
-    if (id && (kind === "chat" || kind === "markdown" || kind === "terminal")) {
+    if (id && isItemType(kind)) {
       return { id, type: kind };
     }
   }

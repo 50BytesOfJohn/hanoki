@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import {
@@ -18,6 +18,9 @@ import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { messagesApi } from "@/api/messages";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
@@ -25,13 +28,19 @@ import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import {
   useChatDeleteMessage,
   useChatRegenerateMessage,
+  useChatRegenerateWithWorkflow,
   useChatRevisionComposer,
   useChatStartEditingMessage,
 } from "@/features/chat/chat-context";
 import { useChatScrollToBottom } from "@/features/chat/chat-scroll-context";
 import { useWorkspaceStore } from "@/features/workspace/store";
 import { queryKeys } from "@/queries/keys";
-import { CURRENT_BRANCH_QUERY_KEY } from "@/queries/chats";
+import { CURRENT_BRANCH_QUERY_KEY, getChatQueryOptions } from "@/queries/chats";
+import { listWorkflowsQueryOptions } from "@/queries/workflows";
+import {
+  useChatWorkflowStatus,
+  useWorkflowBlockReason,
+} from "@/features/workflow/workflow-model-availability";
 import { useChatStore } from "@/stores/chat-store";
 import { useOptionalChatPane } from "./chat-pane-context";
 
@@ -164,6 +173,97 @@ export function DeleteMessageDialog({ message, open, onOpenChange }: DeleteMessa
   );
 }
 
+/** Menu text under an item that can't be used, saying why. */
+function MenuItemReason({ children }: { children: React.ReactNode }) {
+  return <span className="text-xs whitespace-normal text-muted-foreground">{children}</span>;
+}
+
+// The items below mount only while the menu is open, so a long chat doesn't
+// keep a workflow query per message.
+
+function RegenerateMenuItem({
+  chatId,
+  disabled,
+  onRegenerate,
+}: {
+  chatId: string;
+  disabled: boolean;
+  onRegenerate: () => void;
+}) {
+  const { blockReason } = useChatWorkflowStatus(chatId);
+  return (
+    <ContextMenuItem disabled={disabled || blockReason !== null} onClick={onRegenerate}>
+      <span className="flex min-w-0 flex-col">
+        Regenerate
+        {blockReason ? <MenuItemReason>{blockReason}</MenuItemReason> : null}
+      </span>
+    </ContextMenuItem>
+  );
+}
+
+function RegenerateWithWorkflowMenu({
+  chatId,
+  disabled,
+  onRegenerate,
+}: {
+  chatId: string;
+  disabled: boolean;
+  /** Null regenerates without a workflow. */
+  onRegenerate: (workflowId: string | null) => void;
+}) {
+  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const { data: chat } = useQuery(getChatQueryOptions(chatId));
+  const { data: workflows = [] } = useQuery(listWorkflowsQueryOptions(workspaceId));
+  const activeWorkflowId = chat?.data.settings.workflowId ?? null;
+  if (workflows.length === 0 && !activeWorkflowId) return null;
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger disabled={disabled}>Regenerate with Workflow</ContextMenuSubTrigger>
+      <ContextMenuSubContent className="w-64">
+        {workflows.map((workflow) => (
+          <RegenerateWithWorkflowItem
+            key={workflow.id}
+            chatId={chatId}
+            workflowId={workflow.id}
+            title={workflow.title}
+            onRegenerate={() => onRegenerate(workflow.id)}
+          />
+        ))}
+        {activeWorkflowId ? (
+          <>
+            {workflows.length > 0 ? <ContextMenuSeparator /> : null}
+            <ContextMenuItem onClick={() => onRegenerate(null)}>Without a Workflow</ContextMenuItem>
+          </>
+        ) : null}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
+/** Checks the workflow it names, not the chat's own. */
+function RegenerateWithWorkflowItem({
+  chatId,
+  workflowId,
+  title,
+  onRegenerate,
+}: {
+  chatId: string;
+  workflowId: string;
+  title: string;
+  onRegenerate: () => void;
+}) {
+  const blockReason = useWorkflowBlockReason(chatId, workflowId);
+  return (
+    <ContextMenuItem disabled={blockReason !== null} onClick={onRegenerate}>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{title}</span>
+        {blockReason ? <MenuItemReason>{blockReason}</MenuItemReason> : null}
+      </span>
+    </ContextMenuItem>
+  );
+}
+
 export function MessageContextMenu({
   children,
   chatId,
@@ -179,6 +279,7 @@ export function MessageContextMenu({
   const pane = useOptionalChatPane();
   const setPaneView = useWorkspaceStore((state) => state.setPaneView);
   const regenerate = useChatRegenerateMessage();
+  const regenerateWithWorkflow = useChatRegenerateWithWorkflow();
   const revisionComposer = useChatRevisionComposer(message.id);
   const startEditingMessage = useChatStartEditingMessage();
   const scrollToBottom = useChatScrollToBottom();
@@ -215,15 +316,14 @@ export function MessageContextMenu({
           <>
             <ContextMenuGroup>
               {isAssistant ? (
-                <ContextMenuItem
+                <RegenerateMenuItem
+                  chatId={chatId}
                   disabled={isInteractionLocked}
-                  onClick={() => {
+                  onRegenerate={() => {
                     scrollToBottom();
-                    regenerate({ messageId: message.id });
+                    void regenerate({ messageId: message.id });
                   }}
-                >
-                  Regenerate
-                </ContextMenuItem>
+                />
               ) : null}
               {isAssistant ? (
                 <ContextMenuItem
@@ -236,6 +336,16 @@ export function MessageContextMenu({
                 >
                   Regenerate with Note…
                 </ContextMenuItem>
+              ) : null}
+              {isAssistant ? (
+                <RegenerateWithWorkflowMenu
+                  chatId={chatId}
+                  disabled={isInteractionLocked}
+                  onRegenerate={(workflowId) => {
+                    scrollToBottom();
+                    void regenerateWithWorkflow(message.id, workflowId);
+                  }}
+                />
               ) : null}
               <ContextMenuItem
                 disabled={isInteractionLocked}

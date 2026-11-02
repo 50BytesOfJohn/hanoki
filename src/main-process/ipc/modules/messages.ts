@@ -36,6 +36,15 @@ function parseValidMessageId(input: unknown): string {
   return input;
 }
 
+/** Step node ids follow the workflow graph's own bound. */
+function parseWorkflowStepId(input: unknown): string {
+  if (typeof input !== "string" || input.length === 0 || input.length > 64) {
+    throw AppError.badRequest("Workflow step ID must be a string of 1-64 characters.");
+  }
+
+  return input;
+}
+
 function parseOptionalBranchId(input: unknown): string | null {
   if (input === null || input === undefined) {
     return null;
@@ -158,6 +167,16 @@ export function registerMessagesIpcModule(
     },
     handler: ({ services }, _event, messageId, pinned) =>
       services.chatMessages.setMessagePinned(messageId, pinned),
+  });
+
+  registerInvokeHandler<[string, string], HanokiUiMessage[]>(context, registeredChannels, {
+    channel: IPC_CHANNELS.messages.applyWorkflowStep,
+    parseArgs: (args): [string, string] => {
+      expectArgCount(args, 2);
+      return [parseValidMessageId(args[0]), parseWorkflowStepId(args[1])];
+    },
+    handler: ({ services }, _event, messageId, nodeId) =>
+      services.chatMessages.applyWorkflowStepAsMessage(messageId, nodeId),
   });
 
   registerInvokeHandler<[], PinnedBranchSummary[]>(context, registeredChannels, {

@@ -159,8 +159,22 @@ function parseChatLayoutNode(input: unknown, depth = 0): ItemLayoutNode {
   const id = parseValidTabId(record.id);
   if (record.type === "pane") {
     const itemType = record.itemType;
-    if (itemType !== "chat" && itemType !== "terminal" && itemType !== "markdown") {
+    if (
+      itemType !== "chat" &&
+      itemType !== "terminal" &&
+      itemType !== "markdown" &&
+      itemType !== "workflow"
+    ) {
       throw AppError.badRequest("Invalid item pane type.");
+    }
+    if (itemType === "workflow") {
+      return {
+        id,
+        type: "pane",
+        itemId: parseValidChatId(record.itemId),
+        itemType: "workflow",
+        view: "/workflow",
+      };
     }
     if (itemType === "terminal") {
       return {

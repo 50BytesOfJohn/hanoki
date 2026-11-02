@@ -36,4 +36,8 @@ export const messagesApi = {
   listPinnedBranches(): Promise<PinnedBranchSummary[]> {
     return window.electronAPI.listPinnedBranches();
   },
+
+  applyWorkflowStepAsMessage(messageId: string, nodeId: string): Promise<HanokiUiMessage[]> {
+    return window.electronAPI.applyWorkflowStepAsMessage(messageId, nodeId);
+  },
 };

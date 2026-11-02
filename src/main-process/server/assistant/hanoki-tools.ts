@@ -8,6 +8,7 @@ import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { parseChatTitle } from "@shared/chat/chat-title";
 import { parseFolderName } from "@shared/folder/folder-name";
 import { MAX_MARKDOWN_LENGTH } from "@shared/markdown/content";
+import { getOrderedSteps } from "@shared/workflow/graph";
 import {
   createTiptapDocumentFromText,
   createTiptapMessageParts,
@@ -54,11 +55,11 @@ export function hanokiSendKickNeedsApproval(
   return !isChatGenerationBusy(targetChatId);
 }
 
-type ItemKind = "chat" | "folder" | "markdown" | "terminal";
+type ItemKind = "chat" | "folder" | "markdown" | "terminal" | "workflow";
 type ItemRef = { kind: ItemKind; id: string };
 type BrowseKind = "all" | ItemKind;
 
-const itemKindEnum = ["chat", "folder", "markdown", "terminal"] as const;
+const itemKindEnum = ["chat", "folder", "markdown", "terminal", "workflow"] as const;
 
 const itemRefSchema: JSONSchema7 = {
   type: "object",
@@ -140,6 +141,7 @@ function getFolderLocation(workspaceId: string, folderId: string | null) {
 function itemKindLabel(kind: Exclude<ItemKind, "folder">): string {
   if (kind === "chat") return "Chat";
   if (kind === "markdown") return "Markdown note";
+  if (kind === "workflow") return "Workflow";
   return "Terminal";
 }
 
@@ -744,6 +746,19 @@ export function createHanokiTools({
             content: capped.text,
             contentLength: (flushed.data.markdown ?? "").length,
             truncated: capped.truncated,
+          };
+        }
+        if (row.type === "workflow") {
+          return {
+            ...base,
+            ...(row.data.graphError
+              ? { error: `This workflow's saved data can't be read: ${row.data.graphError}` }
+              : {}),
+            steps: getOrderedSteps(row.data.graph).map((step) => ({
+              name: step.name,
+              kind: step.type === "ai" ? "AI step" : "Merge",
+              disabled: step.disabled,
+            })),
           };
         }
         return {

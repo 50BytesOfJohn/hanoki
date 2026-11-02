@@ -1,6 +1,9 @@
 import {
   createChat,
   createMarkdown,
+  createWorkflow,
+  listWorkflowSummaries,
+  updateWorkflowGraph as updateWorkflowGraphInRepo,
   cloneChat as cloneChatInRepo,
   createFolder,
   deleteChatTreeItems as deleteChatTreeItemsInRepo,
@@ -33,6 +36,7 @@ import {
   type FolderRow,
 } from "../chat-tree/repository";
 import { parseChatId } from "@shared/chat/chat-id";
+import type { WorkflowGraph } from "@shared/workflow/graph";
 import { parseFolderId } from "@shared/folder/folder-id";
 import type {
   ChatInfo,
@@ -50,6 +54,8 @@ import type {
   DeleteChatTreeItemsResult,
   FolderInfo,
   MarkdownInfo,
+  WorkflowInfo,
+  WorkflowSummary,
   MarkdownTitleOption,
   NoteBacklink,
   TabsUiState,
@@ -96,6 +102,13 @@ export interface ChatTreeService {
     title: string;
     folderId: string | null;
   }): MarkdownInfo;
+  createWorkflow(input: {
+    workspaceId: string;
+    title: string;
+    folderId: string | null;
+  }): WorkflowInfo;
+  updateWorkflowGraph(id: string, graph: WorkflowGraph): WorkflowInfo;
+  listWorkflows(workspaceId: string): WorkflowSummary[];
   queueMarkdownContent(id: string, markdown: string): void;
   flushMarkdownContent(id: string): MarkdownInfo;
   flushAllMarkdownContent(): void;
@@ -141,6 +154,7 @@ function toChatInfo(chat: ChatRow): ChatInfo {
 function toItemInfo(item: ItemRow): ItemInfo {
   if (item.type === "chat") return toChatInfo(item);
   if (item.type === "markdown") return toMarkdownInfo(item);
+  if (item.type === "workflow") return { ...item };
   return {
     type: "terminal",
     id: item.id,
@@ -255,9 +269,13 @@ function normalizeLayout(value: unknown, depth = 0): ItemLayoutNode | null {
       !itemId.ok ||
       (record.itemType !== "chat" &&
         record.itemType !== "terminal" &&
-        record.itemType !== "markdown")
+        record.itemType !== "markdown" &&
+        record.itemType !== "workflow")
     )
       return null;
+    if (record.itemType === "workflow") {
+      return { id, type: "pane", itemId: itemId.value, itemType: "workflow", view: "/workflow" };
+    }
     if (record.itemType === "terminal") {
       return { id, type: "pane", itemId: itemId.value, itemType: "terminal", view: "/terminal" };
     }
@@ -626,6 +644,18 @@ export function createChatTreeService(): ChatTreeService {
 
     createMarkdown(input): MarkdownInfo {
       return toMarkdownInfo(createMarkdown(input));
+    },
+
+    createWorkflow(input): WorkflowInfo {
+      return { ...createWorkflow(input) };
+    },
+
+    updateWorkflowGraph(id: string, graph: WorkflowGraph): WorkflowInfo {
+      return { ...updateWorkflowGraphInRepo(id, graph) };
+    },
+
+    listWorkflows(workspaceId: string): WorkflowSummary[] {
+      return listWorkflowSummaries(workspaceId);
     },
 
     queueMarkdownContent(id: string, markdown: string): void {

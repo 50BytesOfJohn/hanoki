@@ -9,12 +9,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  Add01Icon,
-  Cancel01Icon,
-  ComputerTerminal01Icon,
-  FileScriptIcon,
-} from "@hugeicons/core-free-icons";
+import { Add01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 
 import { ChatActivityIndicator } from "./chat-activity-indicator";
 import { useNewChatTab } from "./use-new-chat-tab";
@@ -32,7 +27,8 @@ import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useChatStatus } from "@/stores/chat-store";
 import { modShortcut } from "@/lib/platform";
 import { cn } from "cn";
-import type { ChatTabsPosition, ItemType } from "@shared/ipc";
+import { isItemType, type ChatTabsPosition, type ItemType } from "@shared/ipc";
+import { ITEM_TYPE_ICONS } from "../items/item-type-icon";
 import type { Tab } from "../workspace/store/types";
 import { useWorkspaceStore } from "../workspace/store";
 import { getFocusedPane, getPanes } from "../workspace/store/layout-tree";
@@ -45,8 +41,7 @@ function readDraggedItems(event: React.DragEvent): Array<{ id: string; type: Ite
   return parsed.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const item = entry as Record<string, unknown>;
-    return typeof item.id === "string" &&
-      (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
+    return typeof item.id === "string" && isItemType(item.type)
       ? [{ id: item.id, type: item.type }]
       : [];
   });
@@ -284,9 +279,7 @@ const ChatTabItem = React.memo(function ChatTabItem({
                 <ChatTabActivitySlot chatId={focusedPane.itemId} />
               ) : (
                 <HugeiconsIcon
-                  icon={
-                    focusedPane.itemType === "terminal" ? ComputerTerminal01Icon : FileScriptIcon
-                  }
+                  icon={ITEM_TYPE_ICONS[focusedPane.itemType]}
                   className="mr-1.5 size-3.5! shrink-0 text-muted-foreground"
                 />
               )}

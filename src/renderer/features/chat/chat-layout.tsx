@@ -69,14 +69,16 @@ import { useOpenChatView } from "@/features/chat/use-chat-view";
 import { useIsWorkspaceHydrated, useWorkspaceStore } from "@/features/workspace/store";
 import { cn } from "cn";
 import { selectAiServerPort, useSystemStore } from "@/stores/system-store";
-import type {
-  ItemInfo,
-  ItemLayoutNode,
-  ItemPaneState,
-  ChatPaneView,
-  ItemType,
-  TabStateItem,
+import {
+  isItemType,
+  type ItemInfo,
+  type ItemLayoutNode,
+  type ItemPaneState,
+  type ChatPaneView,
+  type ItemType,
+  type TabStateItem,
 } from "@shared/ipc";
+import { WorkflowEditorPane } from "@/features/workflow/workflow-editor";
 import { findPaneByItemId, type PaneDropPosition } from "@/features/workspace/store/layout-tree";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { PaneDropOverlay, type PaneDropIntent } from "./chat-pane-drop-overlay";
@@ -107,8 +109,7 @@ function readChatDrag(event: DragEvent): NativeChatDrag | null {
       if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
       if (!entry || typeof entry !== "object") return [];
       const item = entry as Record<string, unknown>;
-      return typeof item.id === "string" &&
-        (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
+      return typeof item.id === "string" && isItemType(item.type)
         ? [{ id: item.id, type: item.type }]
         : [];
     });
@@ -344,8 +345,7 @@ function ItemPane({
           if (typeof entry === "string") return [{ id: entry, type: "chat" as const }];
           if (!entry || typeof entry !== "object") return [];
           const item = entry as Record<string, unknown>;
-          return typeof item.id === "string" &&
-            (item.type === "chat" || item.type === "terminal" || item.type === "markdown")
+          return typeof item.id === "string" && isItemType(item.type)
             ? [{ id: item.id, type: item.type }]
             : [];
         });
@@ -383,7 +383,7 @@ function ItemPane({
           dragHandleProps={{ ...attributes, ...listeners }}
           onClose={() => useWorkspaceStore.getState().closePane(tab.id, pane.id)}
         />
-        <PaneContent pane={pane} />
+        <PaneContent tabId={tab.id} pane={pane} />
         <PaneDropOverlay
           paneId={pane.id}
           intent={dropIntent}
@@ -402,9 +402,12 @@ function ItemPane({
   );
 }
 
-function PaneContent({ pane }: { pane: ItemPaneState }) {
+function PaneContent({ tabId, pane }: { tabId: string; pane: ItemPaneState }) {
   if (pane.itemType === "terminal") return <TerminalPane itemId={pane.itemId} />;
   if (pane.itemType === "markdown") return <MarkdownPane itemId={pane.itemId} />;
+  if (pane.itemType === "workflow") {
+    return <WorkflowEditorPane workflowId={pane.itemId} tabId={tabId} paneId={pane.id} />;
+  }
   if (pane.view === "/chat/graph") {
     return <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />;
   }
@@ -512,7 +515,9 @@ function ItemTitleMenu({ itemId, onRename }: { itemId: string; onRename: () => v
   const { data: sumiSettings } = useQuery(sumiSettingsQueryOptions);
   const [generatingItemId, setGeneratingItemId] = React.useState<string | null>(null);
   const titleGeneration = sumiSettings?.titleGeneration;
-  const canGenerateTitle = Boolean(titleGeneration?.enabled && titleGeneration.model && port);
+  const canGenerateTitle = Boolean(
+    titleGeneration?.enabled && titleGeneration.model && port && item?.type !== "workflow",
+  );
   const isGeneratingTitle = Boolean(item && generatingItemId === item.id);
   if (!item) return null;
 

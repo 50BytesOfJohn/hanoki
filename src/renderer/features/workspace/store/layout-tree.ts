@@ -87,6 +87,9 @@ function createPaneWithId(id: string, itemId: string, itemType: ItemType): ItemP
   if (itemType === "terminal") {
     return { id, type: "pane", itemId, itemType: "terminal", view: "/terminal" };
   }
+  if (itemType === "workflow") {
+    return { id, type: "pane", itemId, itemType: "workflow", view: "/workflow" };
+  }
   return { id, type: "pane", itemId, itemType: "markdown", view: "/markdown" };
 }
 
