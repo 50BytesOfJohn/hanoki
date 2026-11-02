@@ -7,8 +7,9 @@ import {
 } from "@shared/workflow/graph";
 import { planWorkflowRerun, type WorkflowStepState } from "@shared/workflow/run";
 
-import { mergeSameRoleTurns } from "../model-message-turns";
-import { buildStepRequest, runWorkflow, type WorkflowModelCall } from "./run-workflow";
+import { mergeSameRoleTurns } from "@shared/chat/model-message-turns";
+import { buildStepRequest, previewStepRequest } from "@shared/workflow/step-request";
+import { runWorkflow, type WorkflowModelCall } from "./run-workflow";
 
 const MODEL = { modelId: "model-a", reasoningEffort: null };
 
@@ -294,11 +295,48 @@ describe("buildStepRequest", () => {
     expect(request?.system).toBe("Chat system");
   });
 
-  it("sends input and prompt as one user turn without context", () => {
-    const review = aiNode(graph, "review");
-    const request = buildStepRequest(review, "Draft", undefined, context, new Map());
-    expect(request?.messages).toEqual([{ role: "user", content: `Draft\n\n${review.prompt}` }]);
+  it("sends input and prompt as one user turn, the input tagged, without context", () => {
+    const review = { ...aiNode(graph, "review"), includeContext: false };
+    const draft = graph.nodes.find((node) => node.id === "draft");
+    const request = buildStepRequest(review, "Draft", draft, context, new Map());
+    expect(request?.messages).toEqual([
+      { role: "user", content: `<draft>\nDraft\n</draft>\n\n${review.prompt}` },
+    ]);
     expect(request?.system).toBe(review.systemPrompt);
+  });
+
+  it("keeps a step's input apart from the chat history it is sent with", () => {
+    // A reviewer that saw the draft as one more assistant turn reviewed every
+    // earlier reply too; tagged in the last user turn, only the draft is under review.
+    const history = {
+      messages: [
+        { role: "user" as const, content: "Scene one" },
+        { role: "assistant" as const, content: "Old scene" },
+        { role: "user" as const, content: "Scene two" },
+      ],
+      instructions: "Chat system",
+    };
+    const review = aiNode(graph, "review");
+    expect(review.includeContext).toBe(true);
+    const draft = graph.nodes.find((node) => node.id === "draft");
+    const request = buildStepRequest(review, "New scene", draft, history, new Map());
+    expect(request?.messages).toEqual([
+      { role: "user", content: "Scene one" },
+      { role: "assistant", content: "Old scene" },
+      {
+        role: "user",
+        content: `Scene two\n\n<draft>\nNew scene\n</draft>\n\n${review.prompt}`,
+      },
+    ]);
+    expect(request?.system).toBe(`Chat system\n\n${review.systemPrompt}`);
+  });
+
+  it("tags the request itself when it is sent without context", () => {
+    const node = { ...aiNode(graph, "review"), includeContext: false, prompt: "Translate it." };
+    const request = buildStepRequest(node, "Hello", input, context, new Map());
+    expect(request?.messages).toEqual([
+      { role: "user", content: "<request>\nHello\n</request>\n\nTranslate it." },
+    ]);
   });
 
   it("sends an assistant-role input as the model's own draft to continue", () => {
@@ -317,8 +355,36 @@ describe("buildStepRequest", () => {
     expect(request?.prefix).toBe("Once upon");
   });
 
+  it("continues a step's output with a natural role and no prompt", () => {
+    const node = { ...aiNode(graph, "review"), prompt: "", includeContext: true };
+    const draft = graph.nodes.find((n) => n.id === "draft");
+    const request = buildStepRequest(node, "Once upon", draft, context, new Map());
+    expect(request?.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(request?.prefix).toBe("Once upon");
+  });
+
+  it("keeps an explicit assistant role before the prompt when there is history", () => {
+    const node = {
+      ...aiNode(graph, "rewrite"),
+      role: "assistant" as const,
+      prompt: "Shorter.",
+    };
+    const merge = graph.nodes.find((n) => n.id === "merge");
+    const request = buildStepRequest(node, "Merged", merge, context, new Map());
+    expect(request?.messages).toEqual([
+      { role: "user", content: "Request" },
+      { role: "assistant", content: "Merged" },
+      { role: "user", content: "Shorter." },
+    ]);
+  });
+
   it("never opens a request with an assistant turn", () => {
-    const node = { ...aiNode(graph, "review"), role: "assistant" as const, prompt: "" };
+    const node = {
+      ...aiNode(graph, "review"),
+      includeContext: false,
+      role: "assistant" as const,
+      prompt: "",
+    };
     const request = buildStepRequest(node, "Once upon", undefined, context, new Map());
     expect(request?.messages).toEqual([{ role: "user", content: "Once upon" }]);
     expect(request?.prefix).toBe("");
@@ -330,35 +396,36 @@ describe("buildStepRequest", () => {
       context,
       new Map(),
     );
-    expect(withPrompt?.messages).toEqual([{ role: "user", content: "Once upon\n\nGo on." }]);
+    expect(withPrompt?.messages).toEqual([
+      { role: "user", content: "<input>\nOnce upon\n</input>\n\nGo on." },
+    ]);
   });
 
   it("lets a prompt place the input itself", () => {
-    const node = { ...aiNode(graph, "review"), prompt: "Check: {{input}} vs {{step.draft}}" };
+    const node = {
+      ...aiNode(graph, "review"),
+      includeContext: false,
+      prompt: "Check: {{input}} vs {{step.draft}}",
+    };
     const request = buildStepRequest(node, "A", undefined, context, new Map([["draft", "D"]]));
     expect(request?.messages).toEqual([{ role: "user", content: "Check: A vs D" }]);
-  });
-
-  it("alternates turns with a natural role", () => {
-    const rewrite = aiNode(graph, "rewrite");
-    expect(rewrite.role).toBe("natural");
-    const merge = graph.nodes.find((node) => node.id === "merge");
-    const request = buildStepRequest(rewrite, "Merged", merge, context, new Map());
-    expect(request?.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
-    const noContext = buildStepRequest(
-      { ...rewrite, includeContext: false },
-      "Merged",
-      merge,
-      context,
-      new Map(),
-    );
-    expect(noContext?.messages).toEqual([{ role: "user", content: `Merged\n\n${rewrite.prompt}` }]);
   });
 
   it("merges an explicit role that repeats the turn before it", () => {
     const node = { ...aiNode(graph, "rewrite"), role: "user" as const, prompt: "" };
     const request = buildStepRequest(node, "Merged", undefined, context, new Map());
     expect(request?.messages).toEqual([{ role: "user", content: "Request\n\nMerged" }]);
+  });
+});
+
+describe("previewStepRequest", () => {
+  it("shows the default rewrite's request with placeholders", () => {
+    const request = previewStepRequest(createDefaultWorkflowGraph(), "rewrite");
+    expect(request?.system).toBe("[the chat's instructions]");
+    expect(request?.messages).toHaveLength(1);
+    const content = request?.messages[0]?.content;
+    expect(content).toContain("[the chat so far, ending with your message]");
+    expect(content).toContain("<draft_review>\n[output of “Draft + review”]\n</draft_review>");
   });
 });
 

@@ -20,10 +20,7 @@ import { cn } from "cn";
 import { formatInputRole } from "./workflow-labels";
 import { WorkflowModelName } from "./workflow-model-picker";
 
-export type StepFlowNode = Node<
-  { node: WorkflowStepNode; notReachingOutput: boolean },
-  "workflowStep"
->;
+export type StepFlowNode = Node<{ node: WorkflowStepNode; warning: string | null }, "workflowStep">;
 export type EndpointFlowNode = Node<
   { node: WorkflowInputNode | WorkflowOutputNode },
   "workflowEndpoint"
@@ -37,7 +34,7 @@ export const StepNodeView = React.memo(function StepNodeView({
   data,
   selected,
 }: NodeProps<StepFlowNode>) {
-  const { node, notReachingOutput } = data;
+  const { node, warning } = data;
 
   return (
     <div
@@ -58,16 +55,14 @@ export const StepNodeView = React.memo(function StepNodeView({
         >
           {node.name}
         </span>
-        {notReachingOutput ? (
+        {warning ? (
           <Tooltip>
             <TooltipTrigger
-              render={<span className="flex shrink-0 text-warning" aria-label="Not connected" />}
+              render={<span className="flex shrink-0 text-warning" aria-label={warning} />}
             >
               <HugeiconsIcon icon={Alert02Icon} className="size-3.5" />
             </TooltipTrigger>
-            <TooltipContent>
-              Not connected to Output. It still runs and is saved in the run.
-            </TooltipContent>
+            <TooltipContent className="max-w-64">{warning}</TooltipContent>
           </Tooltip>
         ) : null}
       </div>

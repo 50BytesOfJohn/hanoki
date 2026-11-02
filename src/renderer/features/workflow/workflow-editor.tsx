@@ -39,6 +39,7 @@ import {
   createWorkflowMergeNode,
   duplicateWorkflowStep,
   getNodesNotReachingOutput,
+  getStepWarnings,
   isStepNode,
   type WorkflowEdge,
   type WorkflowGraph,
@@ -164,6 +165,10 @@ function WorkflowCanvas({
     return () => observer.disconnect();
   }, [reactFlow]);
   const notReachingOutput = React.useMemo(() => getNodesNotReachingOutput(graph), [graph]);
+  const stepWarnings = React.useMemo(() => getStepWarnings(graph), [graph]);
+  const droppingMerges = graph.nodes.filter(
+    (node) => node.type === "merge" && stepWarnings.has(node.id) && !notReachingOutput.has(node.id),
+  ).length;
   const updateGraph = React.useCallback<UpdateWorkflowGraph>(
     (update, options) => updateWorkflowGraph(workflowId, update, options),
     [workflowId],
@@ -177,12 +182,12 @@ function WorkflowCanvas({
   // React Flow measures nodes into its own copies, so they live in state and
   // follow the graph; unchanged nodes keep their identity and skip rendering.
   const [flowNodes, setFlowNodes] = React.useState<WorkflowFlowNode[]>(() =>
-    toFlowNodes(graph, notReachingOutput, []),
+    toFlowNodes(graph, stepWarnings, []),
   );
   const [syncedGraph, setSyncedGraph] = React.useState(graph);
   if (syncedGraph !== graph) {
     setSyncedGraph(graph);
-    setFlowNodes((previous) => toFlowNodes(graph, notReachingOutput, previous));
+    setFlowNodes((previous) => toFlowNodes(graph, stepWarnings, previous));
     // Undo can take the selected step away; its inspector goes with it.
     if (selectedNodeId !== null && !graph.nodes.some((node) => node.id === selectedNodeId)) {
       setSelectedNodeId(null);
@@ -289,7 +294,11 @@ function WorkflowCanvas({
       ...current.map((flowNode) =>
         flowNode.selected ? { ...flowNode, selected: false } : flowNode,
       ),
-      ...toFlowNodes({ nodes: [node], edges: [] }, new Set([node.id]), []).map((flowNode) => ({
+      ...toFlowNodes(
+        { nodes: [node], edges: [] },
+        getStepWarnings({ nodes: [node], edges: [] }),
+        [],
+      ).map((flowNode) => ({
         ...flowNode,
         selected: true,
       })),
@@ -508,6 +517,27 @@ function WorkflowCanvas({
             </TooltipContent>
           </Tooltip>
         ) : null}
+        {droppingMerges > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className="flex items-center gap-1.5 px-2 text-xs text-warning"
+                  tabIndex={0}
+                />
+              }
+            >
+              <HugeiconsIcon icon={Alert02Icon} className="size-3.5" />
+              {droppingMerges === 1
+                ? "A Merge drops an input"
+                : `${droppingMerges} Merges drop inputs`}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64">
+              A connected step that the Merge template doesn't use never reaches the steps after it.
+              Open the Merge to fix its template.
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
 
       {selectedNode ? (
@@ -580,27 +610,27 @@ function getGraphBounds(graph: WorkflowGraph, sizes: ReadonlyMap<string, Workflo
 
 function toFlowNodes(
   graph: WorkflowGraph,
-  notReachingOutput: ReadonlySet<string>,
+  warnings: ReadonlyMap<string, string>,
   previous: readonly WorkflowFlowNode[],
 ): WorkflowFlowNode[] {
   const previousById = new Map(previous.map((flowNode) => [flowNode.id, flowNode]));
   return graph.nodes.map((node): WorkflowFlowNode => {
     const before = previousById.get(node.id);
-    const isUnreachable = notReachingOutput.has(node.id);
+    const warning = warnings.get(node.id) ?? null;
     if (
       before &&
       before.data.node === node &&
-      ("notReachingOutput" in before.data ? before.data.notReachingOutput : false) === isUnreachable
+      ("warning" in before.data ? before.data.warning : null) === warning
     ) {
       return before;
     }
-    return toFlowNode(node, isUnreachable, before);
+    return toFlowNode(node, warning, before);
   });
 }
 
 function toFlowNode(
   node: WorkflowNode,
-  notReachingOutput: boolean,
+  warning: string | null,
   before: WorkflowFlowNode | undefined,
 ): WorkflowFlowNode {
   const shared = {
@@ -612,7 +642,7 @@ function toFlowNode(
     ...(before?.dragging ? { dragging: true } : {}),
   };
   if (isStepNode(node)) {
-    return { ...shared, type: "workflowStep", data: { node, notReachingOutput } };
+    return { ...shared, type: "workflowStep", data: { node, warning } };
   }
   return { ...shared, type: "workflowEndpoint", deletable: false, data: { node } };
 }

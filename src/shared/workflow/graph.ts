@@ -348,6 +348,59 @@ export function getNodesNotReachingOutput(graph: WorkflowGraph): Set<string> {
   );
 }
 
+/**
+ * Steps connected into a Merge whose template never reads them, so their
+ * output is dropped. Typical after duplicating a Merge: the copy is wired to
+ * new steps but its template still names the old ones. An empty template or
+ * one using `{{input}}` reads every input. Input itself can only be read
+ * through `{{input}}`, so it is not reported.
+ */
+export function getUnusedMergeInputs(
+  graph: WorkflowGraph,
+  node: WorkflowMergeNode,
+): WorkflowStepNode[] {
+  if (node.disabled || !node.template.trim() || templateUsesInput(node.template)) return [];
+  const used = new Set(getTemplateReferences(node.template));
+  const nodesById = new Map(graph.nodes.map((candidate) => [candidate.id, candidate]));
+  return (getIncomingMap(graph).get(node.id) ?? []).flatMap((id) => {
+    const source = nodesById.get(id);
+    return source && isStepNode(source) && !used.has(source.key) ? [source] : [];
+  });
+}
+
+/**
+ * A Merge template that reads each connected step once, each in a tag named
+ * after it, in run order: a text comes before the review of it, so the text is
+ * the Merge's main path and the fallback when a run stops early.
+ */
+export function createMergeTemplate(graph: WorkflowGraph, nodeId: string): string {
+  const sources = new Set(getIncomingMap(graph).get(nodeId) ?? []);
+  return (topologicalOrder(graph) ?? graph.nodes)
+    .filter((node): node is WorkflowStepNode => sources.has(node.id) && isStepNode(node))
+    .map((source) => `<${source.key}>\n{{step.${source.key}}}\n</${source.key}>`)
+    .join("\n\n");
+}
+
+/** What the editor flags on a step, if anything. */
+export function getStepWarnings(graph: WorkflowGraph): Map<string, string> {
+  const warnings = new Map<string, string>();
+  const notReaching = getNodesNotReachingOutput(graph);
+  for (const node of graph.nodes) {
+    if (!isStepNode(node)) continue;
+    const unused = node.type === "merge" ? getUnusedMergeInputs(graph, node) : [];
+    if (unused.length > 0) {
+      const names = unused.map((source) => `“${source.name}”`).join(" and ");
+      warnings.set(
+        node.id,
+        `The template doesn't use ${names}, so ${unused.length === 1 ? "its" : "their"} output is dropped.`,
+      );
+    } else if (notReaching.has(node.id)) {
+      warnings.set(node.id, "Not connected to Output. It still runs and is saved in the run.");
+    }
+  }
+  return warnings;
+}
+
 /** Step nodes in the order they can run, for lists such as the chat sidebar. */
 export function getOrderedSteps(graph: WorkflowGraph): WorkflowStepNode[] {
   return (topologicalOrder(graph) ?? graph.nodes).filter(isStepNode);
@@ -482,8 +535,8 @@ export function createWorkflowEdge(source: string, target: string): WorkflowEdge
 }
 
 /**
- * The first use case, ready to run: a draft, an independent review of it, and
- * a rewrite that sees both. The draft is the Merge's primary input, so
+ * The first use case, ready to run: a draft, a review of it that checks it
+ * against the conversation (e.g. for repeats), and a rewrite that sees both. The draft is the Merge's primary input, so
  * stopping during the rewrite keeps the draft.
  */
 export function createDefaultWorkflowGraph(): WorkflowGraph {
@@ -516,8 +569,8 @@ export function createDefaultWorkflowGraph(): WorkflowGraph {
     systemPrompt:
       "You are a demanding editor. You never rewrite the text yourself; you point out what to change.",
     prompt:
-      "Review the text above. List its concrete problems: repetition, clichés, inconsistencies, pacing, voice, and anything that breaks the request. Be specific and quote the passages you mean.",
-    includeContext: false,
+      "Review the draft in the <draft> tags. Use the conversation before it as reference: flag lines, beats, images and phrasing the draft repeats from earlier messages, and anything that contradicts them, but don't review the earlier messages themselves. List its concrete problems: repetition, clichés, inconsistencies, pacing, voice, and anything that breaks the request. Be specific and quote the passages you mean.",
+    includeContext: true,
     role: "natural",
     disabled: false,
   };
@@ -539,7 +592,7 @@ export function createDefaultWorkflowGraph(): WorkflowGraph {
     model: null,
     systemPrompt: "",
     prompt:
-      "Rewrite the draft so it addresses every point of the review. Reply with the rewritten text only, without commentary.",
+      "Rewrite the text in the <draft> tags so it addresses every point in the <review> tags. Reply with the rewritten text only, without commentary.",
     includeContext: true,
     role: "natural",
     disabled: false,

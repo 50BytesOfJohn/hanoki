@@ -32,6 +32,21 @@ A workflow is a graph of nodes connected by edges, built in a visual editor.
 - **Role:** whether the node's input is sent as a user or an assistant message. This gives control over how a model treats earlier output, e.g. as a text to review or as its own draft to continue.
 - **Model:** use the chat's model (default), or pin a specific model.
 
+### How a step's input is sent
+
+- **With a prompt** (role Natural or User), the input and the prompt go in one user turn, the input first, wrapped in a tag named after the step it comes from: `<draft>…</draft>`, `<draft_review>…</draft_review>`, or `<request>…</request>` for the message itself. Prompts can name it: "Review the draft in the `<draft>` tags."
+- This matters most with **Include context** on. The text to work on must not look like one more turn of the conversation. Sent as an assistant turn followed by "Review the text above", a reviewer reviews every earlier reply in the chat, and the rewrite after it rewrites the whole story. Models also tend to go easy on text presented as their own.
+- **A review with context on** sees the whole conversation as real turns and the draft in its tag, so it can check the draft against earlier messages (repeated lines, beats, contradictions) without reviewing them. The default Review step does this: "Use the conversation before it as reference: flag lines, beats, images and phrasing the draft repeats from earlier messages, and anything that contradicts them, but don't review the earlier messages themselves."
+- **Without a prompt**, Natural continues the input as the model's own words when it follows a user turn.
+- **Assistant** with a prompt keeps the input as the model's own turn, for a model that should treat it as its own draft.
+- `{{input}}` in the prompt places the input yourself; nothing else is added.
+- The step inspector's **Show what it sends** lists the exact turns, built by the same code the run uses, with placeholders for the chat and step outputs.
+- Setting `HANOKI_DEBUG_CONTEXT=1` logs an outline of every model request (chat and workflow steps) to the console. `HANOKI_DEBUG_CONTEXT=/path/file.jsonl` also writes each full request to that file.
+
+### Merge templates
+
+- A Merge template names the steps it reads. A connected step the template doesn't read is dropped, and the editor flags it. This typically happens after duplicating a Merge for a second pass: the copy is wired to the new steps but still reads the old ones. **Use the connected steps** rewrites the template to read each connected step in its own tag.
+
 ## Using a workflow in a chat
 
 - A workflow can be selected and removed in a chat at any time.

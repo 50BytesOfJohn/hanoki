@@ -38,6 +38,7 @@ import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate"
 import { persistGeneratedAssistantMessage } from "../chat-message-persistence";
 import { toModelMessages } from "../chat-model-messages";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
+import { logModelRequest } from "../context-debug";
 import { runWorkflow } from "./run-workflow";
 import {
   createWorkflowModelCaller,
@@ -259,6 +260,7 @@ export function handleWorkflowChatRequest({
         });
 
         const context = await toModelMessages(messages);
+        const callModel = createWorkflowModelCaller(temperature);
         const states = await runWorkflow({
           graph,
           input: getLatestUserText(context),
@@ -266,7 +268,17 @@ export function handleWorkflowChatRequest({
           reused: setup.reused,
           skip: setup.skipped,
           signal: controller.signal,
-          callModel: createWorkflowModelCaller(temperature),
+          callModel: (call) => {
+            logModelRequest({
+              source: `workflow:${call.step.name}`,
+              chatId: chat.id,
+              modelId: call.model.modelId,
+              system: call.system,
+              messages: call.messages,
+              extra: { runId, nodeId: call.step.id },
+            });
+            return callModel(call);
+          },
           getRetryDelay: getWorkflowRetryDelay,
           formatError: getWorkflowStepErrorMessage,
           onStep: steps.push,

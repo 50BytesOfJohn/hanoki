@@ -69,6 +69,7 @@ import { getChatStreamErrorMessage } from "../chat-stream-error";
 import { beginChatGeneration, endChatGeneration } from "../chat-generation-gate";
 import { resolveRevisionContext } from "../chat-revision";
 import { toModelMessages } from "../chat-model-messages";
+import { logModelRequest } from "../context-debug";
 import { workflowRequestSchema } from "@shared/workflow/run";
 import { handleWorkflowChatRequest, resolveWorkflowSetup } from "../workflow/chat-workflow";
 import { stopWorkflowRun } from "../workflow/workflow-runs";
@@ -440,18 +441,19 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         : undefined;
     // Feeds the picker's recent section with the pair that was actually sent.
     recordModelUsage(model.id, reasoningEffort ?? "");
+    const instructions =
+      [
+        chat.data.settings.systemPrompt?.trim() || "",
+        mentionedInstructions ?? "",
+        isHanokiEnabledForRequest
+          ? "Additional Hanoki tools (creating, editing, deleting, moving, renaming, sending messages, and Hanoki terminals) are loaded on demand. Call hanokiFindTools with your goal to discover and load them before saying an action is unavailable."
+          : "",
+      ]
+        .filter((part) => part.length > 0)
+        .join("\n\n") || undefined;
     const agent = new ToolLoopAgent({
       model: languageModel,
-      instructions:
-        [
-          chat.data.settings.systemPrompt?.trim() || "",
-          mentionedInstructions ?? "",
-          isHanokiEnabledForRequest
-            ? "Additional Hanoki tools (creating, editing, deleting, moving, renaming, sending messages, and Hanoki terminals) are loaded on demand. Call hanokiFindTools with your goal to discover and load them before saying an action is unavailable."
-            : "",
-        ]
-          .filter((part) => part.length > 0)
-          .join("\n\n") || undefined,
+      instructions,
       temperature,
       reasoning: reasoningEffort,
       providerOptions: buildChatProviderOptions(
@@ -535,10 +537,20 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
       },
     });
 
+    const modelMessages = await toModelMessages(modelInputMessages);
+    logModelRequest({
+      source:
+        mode === "continue-message" ? "chat:continue" : revisionMetadata ? "chat:revision" : "chat",
+      chatId: chat.id,
+      modelId: model.id,
+      system: instructions,
+      messages: modelMessages,
+      extra: { activeTools },
+    });
     const result = await agent.stream({
       abortSignal: c.req.raw.signal,
       experimental_transform: smoothStream({ chunking: "line" }),
-      messages: await toModelMessages(modelInputMessages),
+      messages: modelMessages,
     });
 
     // The stream reports failures as an `error` chunk rather than by rejecting,

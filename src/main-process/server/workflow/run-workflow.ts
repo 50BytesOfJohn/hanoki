@@ -6,7 +6,6 @@ import {
   getIncomingMap,
   isStepNode,
   renderTemplate,
-  templateUsesInput,
   type WorkflowAiNode,
   type WorkflowGraph,
   type WorkflowMergeNode,
@@ -14,10 +13,10 @@ import {
   type WorkflowNode,
 } from "@shared/workflow/graph";
 import type { WorkflowStepState } from "@shared/workflow/run";
-
-import { mergeSameRoleTurns } from "../model-message-turns";
+import { buildStepRequest, type StepContext } from "@shared/workflow/step-request";
 
 export interface WorkflowModelCall {
+  step: { id: string; name: string };
   model: WorkflowModelRef;
   system: string | undefined;
   messages: ModelMessage[];
@@ -37,7 +36,7 @@ export interface RunWorkflowOptions {
   /** The request's text, as the Input step's output. */
   input: string;
   /** What "Include context" adds: the chat history and the chat's instructions. */
-  context: { messages: ModelMessage[]; instructions: string | undefined };
+  context: StepContext;
   /** Steps carried over from an earlier run; they are not run again. */
   reused?: ReadonlyMap<string, WorkflowStepState>;
   /** Steps a rerun leaves out because nothing reads their output; they stay pending. */
@@ -208,6 +207,7 @@ export async function runWorkflow(
     for (let attempt = 1; ; attempt += 1) {
       try {
         const result = await options.callModel({
+          step: { id: node.id, name: node.name },
           model: node.model,
           system: request.system,
           messages: request.messages,
@@ -293,60 +293,6 @@ export async function runWorkflow(
     options.signal.removeEventListener("abort", abortFromCaller);
   }
   return states;
-}
-
-interface StepRequest {
-  system: string | undefined;
-  messages: ModelMessage[];
-  /** Text the model continues from; it leads the step's output. */
-  prefix: string;
-}
-
-/**
- * - Context off: the input (as the step's role), then the prompt.
- * - Context on: the chat history and instructions first, the same as a
- *   regular message. When the input is the request itself it is already the
- *   last turn of that history, so it is not repeated.
- * - A prompt that places `{{input}}` itself gets no separate input message.
- * - A natural role takes whichever role alternates with the turn before it.
- * - An assistant-role input with no prompt after it is continued by the model.
- * - Nothing opens with an assistant turn: with no history before it, the
- *   input goes as a user turn.
- * - Turns of the same role in a row are merged, which some providers require.
- */
-export function buildStepRequest(
-  node: WorkflowAiNode,
-  input: string,
-  parent: WorkflowNode | undefined,
-  context: RunWorkflowOptions["context"],
-  steps: ReadonlyMap<string, string>,
-): StepRequest | null {
-  const values = { input, steps };
-  const prompt = renderTemplate(node.prompt, values).trim();
-  const nodeSystem = renderTemplate(node.systemPrompt, values).trim();
-  const system =
-    [node.includeContext ? (context.instructions ?? "") : "", nodeSystem]
-      .filter((part) => part.length > 0)
-      .join("\n\n") || undefined;
-  const messages: ModelMessage[] = node.includeContext ? [...context.messages] : [];
-  const inputInHistory = node.includeContext && parent?.type === "input";
-  const sendInput = !inputInHistory && !templateUsesInput(node.prompt) && input.trim().length > 0;
-  const preferredRole =
-    node.role === "natural" ? (messages.at(-1)?.role === "user" ? "assistant" : "user") : node.role;
-  // Providers reject a conversation that opens with the model's own turn.
-  const role = messages.length === 0 ? "user" : preferredRole;
-  let prefix = "";
-
-  if (sendInput && role === "assistant" && !prompt) {
-    // Continued by the model; providers reject a prefill that ends in whitespace.
-    prefix = input.trimEnd();
-    messages.push({ role, content: prefix });
-  } else if (sendInput) {
-    messages.push({ role, content: input });
-  }
-  if (prompt) messages.push({ role: "user", content: prompt });
-
-  return messages.length > 0 ? { system, messages: mergeSameRoleTurns(messages), prefix } : null;
 }
 
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {

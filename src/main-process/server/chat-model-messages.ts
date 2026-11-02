@@ -4,7 +4,7 @@ import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { stripReplayedReasoning } from "@shared/chat/reasoning-replay";
 import { parseTiptapDocument } from "@shared/tiptap/document";
 
-import { mergeSameRoleTurns } from "./model-message-turns";
+import { mergeSameRoleTurns } from "@shared/chat/model-message-turns";
 
 /**
  * Chat messages as a model reads them. Tiptap documents become their model

@@ -13,11 +13,13 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HotkeyKbd } from "@/features/chat/model-picker/model-picker-parts";
 import {
+  createMergeTemplate,
   createUniqueStepKey,
   getAncestorIds,
   getFailureMode,
   getMainPath,
   getTemplateReferences,
+  getUnusedMergeInputs,
   isStepNode,
   renameStepKey,
   WORKFLOW_KEY_PATTERN,
@@ -30,6 +32,7 @@ import {
   type WorkflowNode,
   type WorkflowStepNode,
 } from "@shared/workflow/graph";
+import { getInputTag, previewStepRequest } from "@shared/workflow/step-request";
 import { cn } from "cn";
 
 import type { UpdateWorkflowGraph, UpdateWorkflowGraphOptions } from "./workflow-graph-store";
@@ -40,9 +43,10 @@ const CHAT_MODEL_PRESETS = [{ key: "chat", label: "Chat model", modelId: null }]
 
 const INPUT_ROLE_DESCRIPTIONS = {
   natural:
-    "Whichever role keeps turns alternating after what comes before, so models that reject two user or two assistant turns in a row still work.",
-  user: "A text to work on, e.g. a draft to review.",
-  assistant: "The model's own words, e.g. a draft to continue or rewrite.",
+    "With a prompt, the input is a text to work on, sent in tags with the prompt. Without one, the model continues it as its own words.",
+  user: "Always a text to work on, e.g. a draft to review. With a prompt it is sent in tags before it.",
+  assistant:
+    "The model's own words, e.g. a draft to continue. With chat context on, the model may read it as one more of its replies.",
 } satisfies Record<WorkflowInputRole, string>;
 
 const FAILURE_MODE_DESCRIPTIONS = {
@@ -201,6 +205,11 @@ function StepFields({
   ).filter((key) => !variables.some((variable) => variable.key === key));
   const isMainPathMerge =
     node.type === "merge" && getMainPath(graph).some((candidate) => candidate.id === node.id);
+  const unusedInputs = node.type === "merge" ? getUnusedMergeInputs(graph, node) : [];
+  const inputTag = React.useMemo(() => {
+    const parentId = graph.edges.find((edge) => edge.target === node.id)?.source;
+    return getInputTag(graph.nodes.find((candidate) => candidate.id === parentId));
+  }, [graph, node.id]);
 
   const insertVariable = (token: string) => {
     const element = promptRef.current;
@@ -322,7 +331,7 @@ function StepFields({
         htmlFor={`${id}-prompt`}
         description={
           node.type === "ai"
-            ? "Sent after the input. Use {{input}} to place the input yourself instead."
+            ? `Sent after the input, which arrives in <${inputTag}> tags. Use {{input}} to place it yourself instead.`
             : isMainPathMerge
               ? "Empty joins the inputs in connection order. The first step it uses is the main path when a run stops early."
               : "Empty joins the inputs in connection order."
@@ -365,7 +374,25 @@ function StepFields({
             one, so {unknownReferences.length === 1 ? "it stays" : "they stay"} empty.
           </p>
         ) : null}
+        {unusedInputs.length > 0 ? (
+          <div className="flex flex-col items-start gap-1.5">
+            <p className="text-xs text-warning">
+              Doesn't use {unusedInputs.map((source) => `“${source.name}”`).join(" and ")}, though{" "}
+              {unusedInputs.length === 1 ? "it is" : "they are"} connected, so{" "}
+              {unusedInputs.length === 1 ? "its" : "their"} output is dropped.
+            </p>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => updateNode({ template: createMergeTemplate(graph, node.id) })}
+            >
+              Use the connected steps
+            </Button>
+          </div>
+        ) : null}
       </InspectorField>
+
+      {node.type === "ai" ? <RequestPreview graph={graph} nodeId={node.id} /> : null}
 
       {node.type === "ai" ? (
         <InspectorField
@@ -525,4 +552,63 @@ function SwitchRow({
 
 function InspectorNote({ children }: { children: React.ReactNode }) {
   return <p className="text-[13px] leading-relaxed text-muted-foreground">{children}</p>;
+}
+
+/** What the step sends, with placeholders for what only a run knows. */
+function RequestPreview({ graph, nodeId }: { graph: WorkflowGraph; nodeId: string }) {
+  const [open, setOpen] = React.useState(false);
+  const request = React.useMemo(
+    () => (open ? previewStepRequest(graph, nodeId) : null),
+    [graph, nodeId, open],
+  );
+  const turns = request
+    ? [
+        ...(request.system ? [{ role: "system", text: request.system }] : []),
+        ...request.messages.map((message) => ({
+          role: message.role,
+          text:
+            typeof message.content === "string"
+              ? message.content
+              : message.content.map((part) => ("text" in part ? part.text : "")).join(""),
+        })),
+      ]
+    : [];
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        className="self-start text-[10px] font-medium tracking-wider text-muted-foreground/80 uppercase transition-colors duration-100 hover:text-foreground"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Hide what it sends" : "Show what it sends"}
+      </button>
+      {open ? (
+        request ? (
+          <ol className="flex flex-col gap-1.5">
+            {turns.map((turn, index) => (
+              <li key={index} className="rounded-md bg-hover px-2 py-1.5">
+                <span className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
+                  {turn.role}
+                </span>
+                <p className="max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+                  {turn.text}
+                </p>
+              </li>
+            ))}
+            {request.prefix ? (
+              <li className="text-xs text-muted-foreground">
+                The model continues the last assistant turn.
+              </li>
+            ) : null}
+          </ol>
+        ) : (
+          <p className="text-xs text-warning">
+            Nothing to send: give the step an input, a prompt or chat context.
+          </p>
+        )
+      ) : null}
+    </div>
+  );
 }

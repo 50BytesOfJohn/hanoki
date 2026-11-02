@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   canConnect,
   createDefaultWorkflowGraph,
+  createMergeTemplate,
   createUniqueStepKey,
   createWorkflowEdge,
   duplicateWorkflowStep,
   getMainPath,
   getNodesNotReachingOutput,
   getOrderedSteps,
+  getStepWarnings,
   getTemplateReferences,
+  getUnusedMergeInputs,
   parseWorkflowGraph,
   renameStepKey,
   renderTemplate,
@@ -174,5 +177,61 @@ describe("selectWorkflowOutput", () => {
 
   it("returns null when nothing finished", () => {
     expect(selectWorkflowOutput(graph, new Map())).toBeNull();
+  });
+});
+
+describe("getUnusedMergeInputs", () => {
+  /** A second review pass built by duplicating the first Merge: wired anew, template not. */
+  function secondPass(): WorkflowGraph {
+    const graph = createDefaultWorkflowGraph();
+    const merge = graph.nodes.find((node) => node.id === "merge")!;
+    const review = graph.nodes.find((node) => node.id === "review")!;
+    const review2 = { ...review, id: "review2", key: "review_2", name: "Review 2" };
+    const merge2 = { ...merge, id: "merge2", key: "merge_2", name: "Merge 2" };
+    graph.nodes.push(review2, merge2);
+    graph.edges = graph.edges.filter((edge) => edge.target !== "output");
+    graph.edges.push(
+      createWorkflowEdge("rewrite", "review2"),
+      createWorkflowEdge("rewrite", "merge2"),
+      createWorkflowEdge("review2", "merge2"),
+      createWorkflowEdge("merge2", "output"),
+    );
+    return graph;
+  }
+
+  it("names connected steps a copied template no longer reads", () => {
+    const graph = secondPass();
+    const merge2 = graph.nodes.find((node) => node.id === "merge2");
+    if (merge2?.type !== "merge") throw new Error("missing merge");
+    expect(getUnusedMergeInputs(graph, merge2).map((node) => node.id)).toEqual([
+      "rewrite",
+      "review2",
+    ]);
+    expect(getStepWarnings(graph).get("merge2")).toContain("“Rewrite” and “Review 2”");
+  });
+
+  it("builds a template that reads every connected step, the text before its review", () => {
+    const graph = secondPass();
+    // Connected review first: the template still leads with the rewrite.
+    graph.edges.sort((a, b) => (a.source === "review2" ? -1 : b.source === "review2" ? 1 : 0));
+    expect(createMergeTemplate(graph, "merge2")).toBe(
+      "<rewrite>\n{{step.rewrite}}\n</rewrite>\n\n<review_2>\n{{step.review_2}}\n</review_2>",
+    );
+    const fixed = graph.nodes.map((node) =>
+      node.id === "merge2" && node.type === "merge"
+        ? { ...node, template: createMergeTemplate(graph, "merge2") }
+        : node,
+    );
+    expect(getMainPath({ ...graph, nodes: fixed }).map((node) => node.id)).toContain("rewrite");
+  });
+
+  it("accepts the default graph, an empty template and {{input}}", () => {
+    const graph = createDefaultWorkflowGraph();
+    const merge = graph.nodes.find((node) => node.id === "merge");
+    if (merge?.type !== "merge") throw new Error("missing merge");
+    expect(getUnusedMergeInputs(graph, merge)).toEqual([]);
+    expect(getUnusedMergeInputs(graph, { ...merge, template: "" })).toEqual([]);
+    expect(getUnusedMergeInputs(graph, { ...merge, template: "{{input}}" })).toEqual([]);
+    expect(getStepWarnings(graph).size).toBe(0);
   });
 });
