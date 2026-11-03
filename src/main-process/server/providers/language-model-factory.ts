@@ -29,6 +29,7 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
     cohere: createApiKeyLanguageModelResolver("cohere"),
     huggingface: createApiKeyLanguageModelResolver("huggingface"),
     featherless: createApiKeyLanguageModelResolver("featherless"),
+    outrun: createApiKeyLanguageModelResolver("outrun"),
     ollama: async (input) => {
       const { createOllamaLanguageModel } = await import("./resolvers/ollama-language-model");
       return createOllamaLanguageModel(input);

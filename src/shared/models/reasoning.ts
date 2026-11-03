@@ -54,6 +54,9 @@ const REASONING_EFFORTS_BY_PROVIDER = {
   togetherai: ["low", "medium", "high"],
   huggingface: ["low", "medium", "high"],
   featherless: ["low", "medium", "high"],
+  // Claude goes through the Anthropic adapter, everything else through `reasoning_effort`;
+  // these three are what both sides accept.
+  outrun: ["low", "medium", "high"],
   // Passed through verbatim as `reasoning_effort`; stick to the widely accepted values.
   "openai-compatible": ["low", "medium", "high"],
   codex: ["low", "medium", "high", "xhigh"],

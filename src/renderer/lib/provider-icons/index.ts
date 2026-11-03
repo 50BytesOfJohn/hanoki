@@ -3,6 +3,7 @@ import type { ProviderId } from "@shared/providers/catalog";
 import { OllamaIcon } from "./ollama-icon";
 import { OpenAiCompatibleIcon } from "./openai-compatible-icon";
 import { OpenRouterIcon } from "./openrouter-icon";
+import { OutrunIcon } from "./outrun-icon";
 import { createRemoteProviderIcon, type ProviderIconProps } from "./remote-provider-icon";
 
 export type ProviderIconComponent = ComponentType<ProviderIconProps>;
@@ -80,6 +81,7 @@ export const providerIconsById = {
   openai: OpenAiIcon,
   "openai-compatible": OpenAiCompatibleIcon,
   openrouter: OpenRouterIcon,
+  outrun: OutrunIcon,
   togetherai: TogetherAiIcon,
   xai: XAiIcon,
 } satisfies Record<ProviderId, ProviderIconComponent>;

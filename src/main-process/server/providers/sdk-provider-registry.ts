@@ -14,7 +14,10 @@ export interface ProviderRequestSpec {
 interface SdkProviderRegistryEntry {
   createLanguageModel: (apiKey: string, providerModelId: string) => Promise<LanguageModel>;
   buildModelsRequest: (apiKey: string) => ProviderRequestSpec;
-  parseModels: (body: unknown) => SyncProviderModelInput[];
+  /** A public catalog fetched beside the model list to fill in what that list leaves out. */
+  buildCatalogRequest?: () => ProviderRequestSpec;
+  /** `catalogBody` is absent during credential tests and when the catalog fetch failed. */
+  parseModels: (body: unknown, catalogBody?: unknown) => SyncProviderModelInput[];
 }
 
 export const sdkProviderRegistry = {
@@ -286,7 +289,126 @@ export const sdkProviderRegistry = {
       );
     },
   },
+  outrun: {
+    async createLanguageModel(apiKey, providerModelId) {
+      // Claude speaks Anthropic Messages natively there; over Chat Completions the
+      // cheaper "-2" routes reject `reasoning_effort` and thinking never comes back.
+      if (providerModelId.startsWith("claude-")) {
+        const { createAnthropic } = await import("@ai-sdk/anthropic");
+        return createAnthropic({ apiKey, baseURL: OUTRUN_API_URL })(providerModelId);
+      }
+
+      const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
+      return createOpenAICompatible({
+        name: "outrun",
+        baseURL: OUTRUN_API_URL,
+        apiKey,
+        includeUsage: true,
+      }).chatModel(providerModelId);
+    },
+    buildModelsRequest(apiKey) {
+      return buildBearerRequest(`${OUTRUN_API_URL}/models`, apiKey);
+    },
+    buildCatalogRequest() {
+      return {
+        url: "https://api.outrun.to/pricing",
+        init: { method: "GET", headers: { Accept: "application/json" } },
+      };
+    },
+    parseModels(body, catalogBody?: unknown) {
+      return parseOutrunModels(body, catalogBody);
+    },
+  },
 } satisfies Record<ApiKeyProviderId, SdkProviderRegistryEntry>;
+
+const OUTRUN_API_URL = "https://api.outrun.to/v1";
+
+/** Model makers by id prefix; Outrun reports nearly every model as `owned_by: "openai"`. */
+const OUTRUN_CREATORS_BY_PREFIX: ReadonlyArray<readonly [string, string]> = [
+  ["claude-", "anthropic"],
+  ["gpt-", "openai"],
+  ["gemini-", "google"],
+  ["grok-", "xai"],
+  ["deepseek-", "deepseek"],
+  ["glm-", "zhipu"],
+  ["kimi-", "moonshot"],
+  ["minimax-", "minimax"],
+  ["qwen", "qwen"],
+  ["mimo-", "xiaomimimo"],
+  ["hermes-", "nousresearch"],
+  ["nemotron-", "nvidia"],
+  ["mercury-", "inception"],
+  ["outrun-", "outrun"],
+];
+
+/** Models that answer 400 to any `reasoning_effort`; they think on their own. */
+const OUTRUN_FIXED_REASONING_MODELS = new Set(["mimo-v2.6-flash-uncensored-thinking"]);
+
+/**
+ * `/v1/models` is the key-scoped list but carries only ids, and it also lists
+ * image, video and speech models plus a few ids that answer 404. The public
+ * price list names each model and says what kind it is, so when it is there,
+ * only text models present in both are kept.
+ */
+function parseOutrunModels(body: unknown, catalogBody: unknown): SyncProviderModelInput[] {
+  const catalog = new Map<string, Record<string, unknown>>();
+  const catalogEntries = readRecord(catalogBody)?.models;
+  for (const entry of Array.isArray(catalogEntries) ? catalogEntries : []) {
+    const record = readRecord(entry);
+    const id = readTrimmedString(record?.id);
+    if (record && id) {
+      catalog.set(id, record);
+    }
+  }
+
+  const rawModels: Record<string, unknown>[] = [];
+  for (const rawEntry of extractArrayFromResponse(body, ["data"], "Outrun")) {
+    const rawModel = readRecord(rawEntry);
+    if (!rawModel) {
+      continue;
+    }
+
+    const id = readTrimmedString(rawModel.id) ?? "";
+    const catalogEntry = catalog.get(id);
+    const isChatModel =
+      catalog.size > 0
+        ? catalogEntry?.kind === "text" && !id.endsWith("-stt")
+        : // Without the catalog, at least skip the video task models.
+          rawModel.owned_by !== "task plugin";
+    if (!isChatModel) {
+      continue;
+    }
+
+    const lowerId = id.toLowerCase();
+    const creator =
+      OUTRUN_CREATORS_BY_PREFIX.find(([prefix]) => lowerId.startsWith(prefix))?.[1] ?? null;
+    const [firstTier] = Array.isArray(catalogEntry?.tiers) ? catalogEntry.tiers : [];
+    const prices = readRecord(readRecord(firstTier)?.prices);
+
+    const metadata: Record<string, unknown> = {
+      ...rawModel,
+      ...catalogEntry,
+      owned_by: creator,
+      description: readTrimmedString(catalogEntry?.warning),
+    };
+    if (prices) {
+      // USD per 1M tokens; the tiers after the first only apply to long prompts.
+      metadata.pricing = {
+        input: prices.input,
+        output: prices.output,
+        cached_input: prices.cache_read,
+      };
+    }
+    if (OUTRUN_FIXED_REASONING_MODELS.has(id)) {
+      // A non-empty capability list without "reasoning" hides the effort menu.
+      metadata.supported_parameters = ["tools"];
+    }
+
+    rawModels.push(metadata);
+  }
+
+  return normalizeModelList("outrun", rawModels);
+}
 
 export function getSdkProviderRegistryEntry(
   providerId: ProviderId,
@@ -425,6 +547,12 @@ function readTrimmedString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function readStringArray(value: unknown): string[] {

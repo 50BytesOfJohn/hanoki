@@ -12,6 +12,7 @@ export type ProviderId =
   | "cohere"
   | "huggingface"
   | "featherless"
+  | "outrun"
   | "openai-compatible"
   | "ollama";
 
@@ -130,6 +131,11 @@ export const SUPPORTED_PROVIDERS: readonly SupportedProviderDefinition[] = [
     "featherless",
     "Featherless",
     "Use Featherless API keys to access open-weight models from Hugging Face.",
+  ),
+  createApiKeyProviderDefinition(
+    "outrun",
+    "Outrun",
+    "Use a prepaid Outrun API key to access GPT, Claude, Gemini, DeepSeek, GLM and more.",
   ),
   {
     id: "codex",

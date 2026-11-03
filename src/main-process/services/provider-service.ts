@@ -712,6 +712,7 @@ async function fetchModelsForProviderSync(
       getRequiredParsedSecretConfigValue(input.parsedConfig, "apiKey"),
     ),
     providerEntry.parseModels,
+    providerEntry.buildCatalogRequest?.(),
   );
 }
 
@@ -1041,10 +1042,20 @@ async function testOllamaCredentials(
 async function fetchSdkProviderModelsForSync(
   providerId: ApiKeyProviderId | "openai-compatible",
   request: ProviderRequestSpec,
-  parseModels: (body: unknown) => SyncProviderModelInput[],
+  parseModels: (body: unknown, catalogBody?: unknown) => SyncProviderModelInput[],
+  catalogRequest?: ProviderRequestSpec,
 ): Promise<SyncProviderModelInput[]> {
-  const body = await fetchJsonWithTimeout(request, `${getProviderName(providerId)} model fetch`);
-  return parseModels(body);
+  const providerName = getProviderName(providerId);
+  const [body, catalogBody] = await Promise.all([
+    fetchJsonWithTimeout(request, `${providerName} model fetch`),
+    // The catalog only enriches the list; sync without it rather than fail.
+    catalogRequest
+      ? fetchJsonWithTimeout(catalogRequest, `${providerName} catalog fetch`).catch(
+          () => undefined,
+        )
+      : undefined,
+  ]);
+  return parseModels(body, catalogBody);
 }
 
 async function fetchJsonWithTimeout(
