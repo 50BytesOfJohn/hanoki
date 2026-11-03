@@ -9,7 +9,7 @@ import type { ChatMessageMetadata, HanokiUiMessage } from "@shared/chat/message-
 import type { ChatCostUpdatedEvent } from "@shared/events";
 import type { ReasoningEffort } from "@shared/models/reasoning";
 import { createUuidV7 } from "@shared/uuidv7";
-import { getMainPath, type WorkflowGraph, type WorkflowModelRef } from "@shared/workflow/graph";
+import { isModelNode, type WorkflowGraph, type WorkflowModelRef } from "@shared/workflow/graph";
 import { buildWorkflowMessageParts } from "@shared/workflow/message-parts";
 import {
   findUnavailableWorkflowSteps,
@@ -110,7 +110,7 @@ export function resolveWorkflowSetup({
     for (const id of plan.reused) {
       reused.set(id, sourceSteps.get(id)!);
       const ranWith = sourceRun.graph.nodes.find((candidate) => candidate.id === id);
-      reusedModels.set(id, ranWith?.type === "ai" ? ranWith.model : null);
+      reusedModels.set(id, ranWith && isModelNode(ranWith) ? ranWith.model : null);
     }
 
     return checkStepModels(chat, {
@@ -174,7 +174,7 @@ function getStoredModelUnavailableReason(modelId: string): WorkflowModelUnavaila
   );
 }
 
-/** The graph as it will run: every AI step's model resolved (chat override → step → chat model). */
+/** The graph as it will run: every model step's model resolved (chat override → step → chat model). */
 function resolveRunGraph(
   setup: WorkflowSetup,
   chat: ChatRow,
@@ -186,7 +186,7 @@ function resolveRunGraph(
   return {
     edges: setup.graph.edges,
     nodes: setup.graph.nodes.map((node) => {
-      if (node.type !== "ai") return node;
+      if (!isModelNode(node)) return node;
       const model = setup.reused.has(node.id)
         ? (setup.reusedModels.get(node.id) ?? null)
         : (getStepPinnedModel(node, overrides?.[node.id]) ?? chatModel);
@@ -251,16 +251,22 @@ export function handleWorkflowChatRequest({
         writer.write({ type: "start", messageId, messageMetadata: initialMetadata });
         writer.write({ type: "data-workflowRun", id: runId, data: run });
 
+        // Every pass of every step, by part; a loop's earlier passes stay on the message.
+        const passes = new Map<string, WorkflowStepState>();
         const steps = createThrottledStepWriter((state) => {
           writer.write({
             type: "data-workflowStep",
-            id: getStepPartId(runId, state.nodeId),
+            id: getStepPartId(runId, state.nodeId, state.iteration),
             data: state,
           });
         });
+        const onStep = (state: WorkflowStepState) => {
+          passes.set(getStepPartId(runId, state.nodeId, state.iteration), state);
+          steps.push(state);
+        };
 
         const context = await toModelMessages(messages);
-        const callModel = createWorkflowModelCaller(temperature);
+        const models = createWorkflowModelCaller(temperature);
         const states = await runWorkflow({
           graph,
           input: getLatestUserText(context),
@@ -277,16 +283,27 @@ export function handleWorkflowChatRequest({
               messages: call.messages,
               extra: { runId, nodeId: call.step.id },
             });
-            return callModel(call);
+            return models.callModel(call);
+          },
+          decide: (call) => {
+            logModelRequest({
+              source: `workflow-decision:${call.step.name}`,
+              chatId: chat.id,
+              modelId: call.model.modelId,
+              system: call.system,
+              messages: call.messages,
+              extra: { runId, nodeId: call.step.id },
+            });
+            return models.decide(call);
           },
           getRetryDelay: getWorkflowRetryDelay,
           formatError: getWorkflowStepErrorMessage,
-          onStep: steps.push,
+          onStep,
         });
         steps.flush();
 
         const output = selectWorkflowOutput(graph, states);
-        const reachedOutput = output !== null && output.nodeId === getMainPath(graph)[1]?.id;
+        const reachedOutput = output?.reachedOutput === true;
         run = {
           ...run,
           status: reachedOutput ? "done" : controller.signal.aborted ? "stopped" : "error",
@@ -300,8 +317,8 @@ export function handleWorkflowChatRequest({
           writer.write({ type: "text-end", id: runId });
         }
 
-        const metadata = buildRunMetadata(graph, states, run, output?.nodeId ?? null);
-        const calledModel = [...states.values()].some(
+        const metadata = buildRunMetadata(graph, passes, states, run, output?.nodeId ?? null);
+        const calledModel = [...passes.values()].some(
           (state) => state.modelId && !state.reused && state.status !== "pending",
         );
         if (calledModel) {
@@ -316,7 +333,7 @@ export function handleWorkflowChatRequest({
           message: {
             id: messageId,
             role: "assistant",
-            parts: buildWorkflowMessageParts(run, states.values(), output?.text ?? null),
+            parts: buildWorkflowMessageParts(run, passes.values(), output?.text ?? null),
             metadata: { parentId: responseParentId },
           },
           fallbackParentId: responseParentId,
@@ -364,12 +381,13 @@ function getLatestUserText(messages: readonly ModelMessage[]): string {
 }
 
 /**
- * Totals for the message: tokens and cost of every step that ran in this run
- * (reused steps were paid for by the run they came from). The model is the
- * one that wrote the message text.
+ * Totals for the message: tokens and cost of every pass of every step that
+ * ran in this run (reused steps were paid for by the run they came from). The
+ * model is the one that wrote the message text.
  */
 function buildRunMetadata(
   graph: WorkflowGraph,
+  passes: ReadonlyMap<string, WorkflowStepState>,
   states: ReadonlyMap<string, WorkflowStepState>,
   run: WorkflowRunState,
   outputNodeId: string | null,
@@ -377,7 +395,7 @@ function buildRunMetadata(
   let input = 0;
   let output = 0;
   let cost: { total: number; currency: string } | undefined;
-  for (const state of states.values()) {
+  for (const state of passes.values()) {
     if (state.reused) continue;
     input += state.tokens?.input ?? 0;
     output += state.tokens?.output ?? 0;

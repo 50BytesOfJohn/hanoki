@@ -45,6 +45,13 @@ function parseWorkflowStepId(input: unknown): string {
   return input;
 }
 
+function parseStepIteration(input: unknown): number {
+  if (typeof input !== "number" || !Number.isInteger(input) || input < 1 || input > 10_000) {
+    throw AppError.badRequest("Workflow step iteration must be a positive whole number.");
+  }
+  return input;
+}
+
 function parseOptionalBranchId(input: unknown): string | null {
   if (input === null || input === undefined) {
     return null;
@@ -169,15 +176,23 @@ export function registerMessagesIpcModule(
       services.chatMessages.setMessagePinned(messageId, pinned),
   });
 
-  registerInvokeHandler<[string, string], HanokiUiMessage[]>(context, registeredChannels, {
-    channel: IPC_CHANNELS.messages.applyWorkflowStep,
-    parseArgs: (args): [string, string] => {
-      expectArgCount(args, 2);
-      return [parseValidMessageId(args[0]), parseWorkflowStepId(args[1])];
+  registerInvokeHandler<[string, string, number | undefined], HanokiUiMessage[]>(
+    context,
+    registeredChannels,
+    {
+      channel: IPC_CHANNELS.messages.applyWorkflowStep,
+      parseArgs: (args): [string, string, number | undefined] => {
+        expectArgCount(args, 2, 3);
+        return [
+          parseValidMessageId(args[0]),
+          parseWorkflowStepId(args[1]),
+          args[2] === undefined ? undefined : parseStepIteration(args[2]),
+        ];
+      },
+      handler: ({ services }, _event, messageId, nodeId, iteration) =>
+        services.chatMessages.applyWorkflowStepAsMessage(messageId, nodeId, iteration),
     },
-    handler: ({ services }, _event, messageId, nodeId) =>
-      services.chatMessages.applyWorkflowStepAsMessage(messageId, nodeId),
-  });
+  );
 
   registerInvokeHandler<[], PinnedBranchSummary[]>(context, registeredChannels, {
     channel: IPC_CHANNELS.messages.listPinned,

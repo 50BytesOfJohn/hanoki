@@ -157,6 +157,7 @@ export function WorkflowModelPicker({
   onSelectModel,
   className,
   size = "sm",
+  placeholder = "Model",
 }: {
   value: WorkflowModelRef | null;
   presets: readonly WorkflowModelPreset[];
@@ -165,6 +166,8 @@ export function WorkflowModelPicker({
   onSelectModel: (value: WorkflowModelRef) => void;
   className?: string;
   size?: "xs" | "sm";
+  /** Shown while nothing is picked and no preset is active. */
+  placeholder?: string;
 }) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = React.useState(false);
@@ -212,7 +215,9 @@ export function WorkflowModelPicker({
             // A preset reads quieter than a pick, which is what tells them apart.
             <WorkflowModelName modelId={activePreset.modelId} className="text-muted-foreground" />
           ) : (
-            <span className="truncate text-muted-foreground">{activePreset?.label ?? "Model"}</span>
+            <span className="truncate text-muted-foreground">
+              {activePreset?.label ?? placeholder}
+            </span>
           )}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -226,32 +231,34 @@ export function WorkflowModelPicker({
           sideOffset={6}
           className="w-3xl max-w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0"
         >
-          <div role="group" aria-label="Defaults" className="border-b border-separator p-1">
-            {presets.map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                aria-pressed={preset.key === activePresetKey}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors duration-100 hover:bg-hover",
-                  preset.key === activePresetKey && CURRENT_ITEM_CLASS,
-                )}
-                onClick={() => {
-                  onSelectPreset(preset.key);
-                  setIsOpen(false);
-                }}
-              >
-                <span className="shrink-0">{preset.label}</span>
-                {preset.modelId ? (
-                  <WorkflowModelName
-                    modelId={preset.modelId}
-                    flagUnavailable
-                    className="text-xs text-muted-foreground"
-                  />
-                ) : null}
-              </button>
-            ))}
-          </div>
+          {presets.length > 0 ? (
+            <div role="group" aria-label="Defaults" className="border-b border-separator p-1">
+              {presets.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  aria-pressed={preset.key === activePresetKey}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors duration-100 hover:bg-hover",
+                    preset.key === activePresetKey && CURRENT_ITEM_CLASS,
+                  )}
+                  onClick={() => {
+                    onSelectPreset(preset.key);
+                    setIsOpen(false);
+                  }}
+                >
+                  <span className="shrink-0">{preset.label}</span>
+                  {preset.modelId ? (
+                    <WorkflowModelName
+                      modelId={preset.modelId}
+                      flagUnavailable
+                      className="text-xs text-muted-foreground"
+                    />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <ModelPickerCommand
             selection={selection}
             onDone={() => setIsOpen(false)}

@@ -6,6 +6,7 @@ import {
   ArrowDown01Icon,
   Delete02Icon,
   FlowConnectionIcon,
+  GitBranchIcon,
   MergeIcon,
   PencilEdit01Icon,
   SidebarRightIcon,
@@ -43,6 +44,9 @@ import {
   getOrderedSteps,
   type WorkflowModelOverride,
   type WorkflowStepNode,
+  getPassModels,
+  getStepRetries,
+  isModelNode,
 } from "@shared/workflow/graph";
 import { cn } from "cn";
 
@@ -51,7 +55,7 @@ import {
   useChatWorkflowUnavailableStepsMessage,
 } from "./workflow-model-availability";
 import { WorkflowModelPicker } from "./workflow-model-picker";
-import { formatInputRole } from "./workflow-labels";
+import { formatInputRole, formatPassModels, formatRetries } from "./workflow-labels";
 import { useWorkflowSidebarPreferences } from "./workflow-sidebar-store";
 
 const NO_WORKFLOW = "none";
@@ -423,14 +427,14 @@ function WorkflowStepRow({
 }) {
   const presets = React.useMemo(
     () => [
-      ...(step.type === "ai" && step.model
+      ...(isModelNode(step) && step.model
         ? [{ key: "workflow", label: "Workflow model", modelId: step.model.modelId }]
         : []),
       { key: "chat", label: "Chat model", modelId: chatModelId },
     ],
     [chatModelId, step],
   );
-  const workflowModel = step.type === "ai" ? step.model : null;
+  const workflowModel = isModelNode(step) ? step.model : null;
   // With no model of its own, the step already uses the chat's; "chat" would only repeat that.
   const activePresetKey =
     override === "chat" || (!override && !workflowModel) ? "chat" : override ? null : "workflow";
@@ -439,14 +443,16 @@ function WorkflowStepRow({
     <li className={cn("flex flex-col gap-1 px-2.5 py-2", step.disabled && "opacity-60")}>
       <div className="flex items-center gap-2 text-[13px]">
         <HugeiconsIcon
-          icon={step.type === "ai" ? AiMagicIcon : MergeIcon}
+          icon={
+            step.type === "ai" ? AiMagicIcon : step.type === "decision" ? GitBranchIcon : MergeIcon
+          }
           className="size-3.5 shrink-0 text-muted-foreground"
         />
         <span className={cn("min-w-0 flex-1 truncate", step.disabled && "line-through")}>
           {step.name}
         </span>
       </div>
-      {step.type === "ai" ? (
+      {isModelNode(step) ? (
         <>
           <WorkflowModelPicker
             size="xs"
@@ -461,9 +467,19 @@ function WorkflowStepRow({
             {step.disabled
               ? "Disabled"
               : [
-                  step.includeContext ? "Chat context" : "No context",
-                  formatInputRole(step.role),
-                  step.onFailure === "continue" ? "Continues on failure" : null,
+                  step.type === "decision"
+                    ? `Decision${step.includeContext ? " · chat context" : ""}`
+                    : step.includeContext
+                      ? "Chat context"
+                      : "No context",
+                  step.type === "ai" ? formatInputRole(step.role) : null,
+                  step.type === "ai" && getPassModels(step).length > 0
+                    ? formatPassModels(getPassModels(step).length)
+                    : null,
+                  step.type === "ai" && step.onFailure === "continue"
+                    ? "Continues on failure"
+                    : null,
+                  getStepRetries(step) > 0 ? formatRetries(getStepRetries(step)) : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}

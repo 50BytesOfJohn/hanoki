@@ -81,6 +81,16 @@ describe("findUnavailableWorkflowSteps", () => {
     ]);
   });
 
+  it("checks the models a step takes on later passes", () => {
+    const graph = createDefaultWorkflowGraph();
+    const [draft] = aiSteps(graph) as [WorkflowAiNode];
+    draft.passModels = [ref("ok"), ref("off")];
+
+    expect(findUnavailableWorkflowSteps({ graph, getReason })).toEqual([
+      { nodeId: draft.id, name: draft.name, modelId: "off", reason: "disabled" },
+    ]);
+  });
+
   it("follows the chat's overrides", () => {
     const graph = createDefaultWorkflowGraph();
     const [draft, review] = aiSteps(graph) as [WorkflowAiNode, WorkflowAiNode];

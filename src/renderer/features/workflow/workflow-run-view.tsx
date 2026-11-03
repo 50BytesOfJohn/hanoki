@@ -6,6 +6,7 @@ import {
   ArrowUp01Icon,
   Clock01Icon,
   FlowConnectionIcon,
+  GitBranchIcon,
   MergeIcon,
   RepeatIcon,
   StopCircleIcon,
@@ -30,9 +31,16 @@ import {
 import { useChatRerunWorkflowFrom, useChatApplyWorkflowStep } from "@/features/chat/chat-context";
 import { useChatScrollToBottom } from "@/features/chat/chat-scroll-context";
 import type { HanokiUiMessage } from "@shared/chat/message-metadata";
-import { getMainPath, getOrderedSteps, type WorkflowStepNode } from "@shared/workflow/graph";
+import {
+  getOrderedSteps,
+  getOutputWriter,
+  getStepRetries,
+  isModelNode,
+  type WorkflowStepNode,
+} from "@shared/workflow/graph";
 import {
   getWorkflowRun,
+  getWorkflowStepHistory,
   getWorkflowSteps,
   type WorkflowRunState,
   type WorkflowStepState,
@@ -47,7 +55,7 @@ import { WorkflowModelName } from "./workflow-model-picker";
 export function getStreamingWorkflowText(message: HanokiUiMessage): string | null {
   const run = getWorkflowRun(message);
   if (run?.status !== "running") return null;
-  const source = getMainPath(run.graph)[1];
+  const source = getOutputWriter(run.graph);
   const state = source ? getWorkflowSteps(message).get(source.id) : undefined;
   return state && state.output.length > 0 ? state.output : null;
 }
@@ -63,6 +71,7 @@ export const WorkflowRunTrace = React.memo(function WorkflowRunTrace({
   const run = getWorkflowRun(message);
   if (!run) return null;
   const steps = getWorkflowSteps(message);
+  const history = getWorkflowStepHistory(message);
   const nodes = getOrderedSteps(run.graph);
   const isRunning = run.status === "running";
   const rerunNode = run.rerunFrom
@@ -91,6 +100,7 @@ export const WorkflowRunTrace = React.memo(function WorkflowRunTrace({
           messageId={message.id}
           node={node}
           state={steps.get(node.id)}
+          earlier={history.get(node.id)}
           run={run}
           canAct={!isRunning && !isInteractionLocked}
         />
@@ -103,23 +113,29 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
   messageId,
   node,
   state,
+  earlier,
   run,
   canAct,
 }: {
   messageId: string;
   node: WorkflowStepNode;
   state: WorkflowStepState | undefined;
+  /** Earlier passes a loop ran again, oldest first. */
+  earlier: WorkflowStepState[] | undefined;
   run: WorkflowRunState;
   canAct: boolean;
 }) {
   const rerunFrom = useChatRerunWorkflowFrom();
   const applyStep = useChatApplyWorkflowStep();
   const scrollToBottom = useChatScrollToBottom();
-  const modelId = state?.modelId ?? (node.type === "ai" ? node.model?.modelId : undefined);
+  const modelId = state?.modelId ?? (isModelNode(node) ? node.model?.modelId : undefined);
   const status = state?.status ?? "pending";
   const output = state?.output ?? "";
   const isActive = status === "running" || status === "waiting";
-  const isMessage = run.outputNodeId === node.id && run.status !== "running";
+  const isMessage =
+    run.outputNodeId === node.id && run.status !== "running" && run.outputIteration === undefined;
+  // A Decision hands on its input; the text belongs to the step before it.
+  const showsOutput = node.type !== "decision";
 
   return (
     <TraceCollapsible>
@@ -130,7 +146,7 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
               ? "running"
               : status === "error"
                 ? "error"
-                : status === "pending"
+                : status === "pending" || status === "inactive"
                   ? "pending"
                   : undefined
           }
@@ -138,7 +154,8 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
           <TraceIcon>
             <StepStatusIcon node={node} status={status} />
           </TraceIcon>
-          <TraceTitle>{node.name}</TraceTitle>
+          {/* The name stays whole; the model and details give way first. */}
+          <TraceTitle className="shrink-0">{node.name}</TraceTitle>
           <TraceDescription className="flex min-w-0 shrink items-center gap-1.5 truncate">
             <StepDescription node={node} state={state} modelId={modelId} isMessage={isMessage} />
           </TraceDescription>
@@ -146,7 +163,13 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="group/step flex flex-col gap-2">
         {state?.error ? <p className="text-xs text-destructive">{state.error}</p> : null}
-        {output ? (
+        {state?.retriedErrors?.length ? (
+          <p className="text-xs text-muted-foreground">
+            Tried again after: {state.retriedErrors.join(" · ")}
+          </p>
+        ) : null}
+        {node.type === "decision" && state?.decision ? <DecisionSummary state={state} /> : null}
+        {!showsOutput ? null : output ? (
           <Streamdown
             mode={isActive ? "streaming" : "static"}
             isAnimating={isActive}
@@ -155,11 +178,26 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
             {output}
           </Streamdown>
         ) : !state?.error ? (
-          <p className="text-xs">{status === "pending" ? "Not run." : "No output yet."}</p>
+          <p className="text-xs">
+            {status === "inactive"
+              ? "Not run: a Decision took the other branch."
+              : status === "pending"
+                ? "Not run."
+                : "No output yet."}
+          </p>
+        ) : null}
+        {earlier?.length ? (
+          <EarlierPasses
+            node={node}
+            passes={earlier}
+            messageId={messageId}
+            run={run}
+            canAct={canAct}
+          />
         ) : null}
         {/* Row actions show on hover (or keyboard focus), so the output reads first. */}
         <div className="-ml-2 flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/step:opacity-100 focus-within:opacity-100">
-          {canAct && output.trim() && !isMessage ? (
+          {canAct && showsOutput && output.trim() && !isMessage ? (
             <Button
               variant="ghost"
               size="xs"
@@ -200,6 +238,116 @@ const WorkflowStepRow = React.memo(function WorkflowStepRow({
   );
 });
 
+/** What a Decision answered and where the run went from there. */
+function DecisionSummary({ state }: { state: WorkflowStepState }) {
+  const decision = state.decision!;
+  return (
+    <div className="flex flex-col gap-0.5 text-[13px] leading-relaxed text-muted-foreground">
+      <p>
+        <span className="font-medium text-foreground/80">
+          {state.status === "skipped" ? "Disabled" : decision.answer ? "Yes" : "No"}
+        </span>
+        {decision.reason ? ` — ${decision.reason}` : null}
+      </p>
+      <p className="text-xs">
+        {/* A run the limit stopped already says so in the step's error. */}
+        {decision.loop && !decision.limitReached
+          ? `Looped back (${decision.loop.count} of ${decision.loop.max}).`
+          : decision.limitReached
+            ? state.status === "error"
+              ? null
+              : `Looped ${decision.loop?.max ?? 0} times, the most allowed, so it went on along ${
+                  decision.branch === "true" ? "Yes" : "No"
+                }.`
+            : `Went on along ${decision.branch === "true" ? "Yes" : "No"}.`}
+        {decision.method === "text" ? " Read from a plain-text answer." : null}
+      </p>
+    </div>
+  );
+}
+
+/** A step's earlier passes, each one a nested row; any can be used as the message. */
+function EarlierPasses({
+  node,
+  passes,
+  messageId,
+  run,
+  canAct,
+}: {
+  node: WorkflowStepNode;
+  passes: WorkflowStepState[];
+  messageId: string;
+  run: WorkflowRunState;
+  canAct: boolean;
+}) {
+  const applyStep = useChatApplyWorkflowStep();
+  return (
+    <Trace className="mt-1">
+      {passes.map((pass) => {
+        const iteration = pass.iteration ?? 1;
+        const isMessage =
+          run.outputNodeId === node.id &&
+          run.status !== "running" &&
+          run.outputIteration === iteration;
+        return (
+          <TraceCollapsible key={iteration}>
+            <TraceCollapsibleTrigger>
+              <TraceLine status={pass.status === "error" ? "error" : undefined}>
+                <TraceIcon>
+                  <StepStatusIcon node={node} status={pass.status} />
+                </TraceIcon>
+                <TraceTitle>Pass {iteration}</TraceTitle>
+                <TraceDescription className="truncate">
+                  {[
+                    node.type === "decision" && pass.decision
+                      ? pass.decision.answer
+                        ? "Yes"
+                        : "No"
+                      : null,
+                    pass.status === "stopped" ? "started over" : null,
+                    pass.status === "error" ? "failed" : null,
+                    isMessage ? "in message" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </TraceDescription>
+              </TraceLine>
+            </TraceCollapsibleTrigger>
+            <TraceCollapsibleContent className="group/pass flex flex-col gap-2">
+              {pass.error ? <p className="text-xs text-destructive">{pass.error}</p> : null}
+              {node.type === "decision" && pass.decision ? (
+                <DecisionSummary state={pass} />
+              ) : pass.output ? (
+                <Streamdown
+                  mode="static"
+                  className="text-[13px] leading-relaxed text-muted-foreground"
+                >
+                  {pass.output}
+                </Streamdown>
+              ) : (
+                <p className="text-xs">No output.</p>
+              )}
+              {canAct && node.type !== "decision" && pass.output.trim() && !isMessage ? (
+                <div className="-ml-2 flex opacity-0 transition-opacity duration-100 group-hover/pass:opacity-100 focus-within:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="text-muted-foreground"
+                    onClick={() => void applyStep(messageId, node.id, iteration)}
+                  >
+                    <HugeiconsIcon icon={Tick02Icon} data-icon="inline-start" />
+                    Use as message
+                  </Button>
+                </div>
+              ) : null}
+            </TraceCollapsibleContent>
+          </TraceCollapsible>
+        );
+      })}
+    </Trace>
+  );
+}
+
 function StepStatusIcon({
   node,
   status,
@@ -215,11 +363,13 @@ function StepStatusIcon({
         ? Alert02Icon
         : status === "stopped"
           ? StopCircleIcon
-          : status === "skipped"
+          : status === "skipped" || status === "inactive"
             ? ViewOffSlashIcon
             : node.type === "merge"
               ? MergeIcon
-              : AiMagicIcon;
+              : node.type === "decision"
+                ? GitBranchIcon
+                : AiMagicIcon;
   return <HugeiconsIcon icon={icon} />;
 }
 
@@ -236,8 +386,29 @@ function StepDescription({
 }) {
   const parts: string[] = [];
   if (state?.status === "skipped") parts.push("disabled");
+  if (state?.status === "inactive") parts.push("branch not taken");
+  if (node.type === "decision" && state?.decision && state.status !== "skipped") {
+    parts.push(
+      [
+        state.decision.answer ? "Yes" : "No",
+        state.decision.loop && !state.decision.limitReached
+          ? `loop ${state.decision.loop.count}/${state.decision.loop.max}`
+          : null,
+        state.decision.limitReached ? "loop limit" : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  }
+  if ((state?.iteration ?? 1) > 1 && node.type !== "decision") {
+    parts.push(`pass ${state!.iteration}`);
+  }
+  if ((state?.attempt ?? 1) > 1 && isModelNode(node)) {
+    parts.push(`try ${state!.attempt} of ${getStepRetries(node) + 1}`);
+  }
   if (state?.status === "stopped") parts.push(state.partial ? "stopped · partial" : "stopped");
-  if (state?.status === "error") {
+  // A Decision stopped by its loop limit already says "loop limit".
+  if (state?.status === "error" && !state.decision?.limitReached) {
     parts.push(
       ["failed", state.partial ? "partial" : null, state.continued ? "continued" : null]
         .filter(Boolean)
@@ -245,18 +416,18 @@ function StepDescription({
     );
   }
   if (state?.reused) parts.push("kept");
-  else if (state?.status === "done" && state.startedAt && state.endedAt && node.type === "ai") {
+  else if (state?.status === "done" && state.startedAt && state.endedAt && isModelNode(node)) {
     parts.push(formatDuration(state.endedAt - state.startedAt));
   }
 
   return (
     <>
-      {node.type === "ai" && modelId ? (
+      {isModelNode(node) && modelId ? (
         <WorkflowModelName modelId={modelId} className="shrink" />
       ) : null}
       {parts.length > 0 ? (
         <span className="truncate">
-          {node.type === "ai" && modelId ? "· " : ""}
+          {isModelNode(node) && modelId ? "· " : ""}
           {parts.join(" · ")}
         </span>
       ) : null}

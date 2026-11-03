@@ -3,11 +3,12 @@ import type { ModelMessage } from "ai";
 import { mergeSameRoleTurns } from "../chat/model-message-turns";
 import {
   getAncestorIds,
-  getIncomingMap,
+  getTextSource,
   isStepNode,
   renderTemplate,
   templateUsesInput,
   type WorkflowAiNode,
+  type WorkflowDecisionNode,
   type WorkflowGraph,
   type WorkflowNode,
 } from "./graph";
@@ -34,7 +35,7 @@ export interface StepRequest {
 export function getInputTag(parent: WorkflowNode | undefined): string {
   if (!parent) return "input";
   if (parent.type === "input") return "request";
-  if (parent.type === "ai" || parent.type === "merge") return parent.key;
+  if (isStepNode(parent)) return parent.key;
   return "input";
 }
 
@@ -59,7 +60,7 @@ export function getInputTag(parent: WorkflowNode | undefined): string {
  * - Turns of the same role in a row are merged, which some providers require.
  */
 export function buildStepRequest(
-  node: WorkflowAiNode,
+  node: Pick<WorkflowAiNode, "prompt" | "systemPrompt" | "includeContext" | "role">,
   input: string,
   parent: WorkflowNode | undefined,
   context: StepContext,
@@ -101,6 +102,22 @@ export function buildStepRequest(
   return messages.length > 0 ? { system, messages: mergeSameRoleTurns(messages), prefix } : null;
 }
 
+/**
+ * What a Decision sends: its input as a text to judge, in its tag, then the
+ * question, the same way an AI step with a prompt sends them. The model call
+ * adds how to answer. Null without a question.
+ */
+export function buildDecisionRequest(
+  node: WorkflowDecisionNode,
+  input: string,
+  parent: WorkflowNode | undefined,
+  context: StepContext,
+  steps: ReadonlyMap<string, string>,
+): StepRequest | null {
+  if (!node.prompt.trim()) return null;
+  return buildStepRequest({ ...node, role: "user" }, input, parent, context, steps);
+}
+
 function wrapInTag(tag: string, text: string): string {
   return `<${tag}>\n${text.trim()}\n</${tag}>`;
 }
@@ -112,9 +129,9 @@ function wrapInTag(tag: string, text: string): string {
  */
 export function previewStepRequest(graph: WorkflowGraph, nodeId: string): StepRequest | null {
   const node = graph.nodes.find((candidate) => candidate.id === nodeId);
-  if (node?.type !== "ai") return null;
+  if (node?.type !== "ai" && node?.type !== "decision") return null;
   const nodesById = new Map(graph.nodes.map((candidate) => [candidate.id, candidate]));
-  const parent = nodesById.get(getIncomingMap(graph).get(nodeId)?.[0] ?? "");
+  const parent = getTextSource(graph, nodeId);
   const outputOf = (step: WorkflowNode | undefined): string =>
     !step
       ? "[nothing is connected]"
@@ -128,14 +145,11 @@ export function previewStepRequest(graph: WorkflowGraph, nodeId: string): StepRe
     const ancestor = nodesById.get(id);
     if (ancestor && isStepNode(ancestor)) steps.set(ancestor.key, outputOf(ancestor));
   }
-  return buildStepRequest(
-    node,
-    outputOf(parent),
-    parent,
-    {
-      messages: [{ role: "user", content: "[the chat so far, ending with your message]" }],
-      instructions: "[the chat's instructions]",
-    },
-    steps,
-  );
+  const context: StepContext = {
+    messages: [{ role: "user", content: "[the chat so far, ending with your message]" }],
+    instructions: "[the chat's instructions]",
+  };
+  return node.type === "decision"
+    ? buildDecisionRequest(node, outputOf(parent), parent, context, steps)
+    : buildStepRequest(node, outputOf(parent), parent, context, steps);
 }

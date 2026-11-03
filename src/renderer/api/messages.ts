@@ -37,7 +37,11 @@ export const messagesApi = {
     return window.electronAPI.listPinnedBranches();
   },
 
-  applyWorkflowStepAsMessage(messageId: string, nodeId: string): Promise<HanokiUiMessage[]> {
-    return window.electronAPI.applyWorkflowStepAsMessage(messageId, nodeId);
+  applyWorkflowStepAsMessage(
+    messageId: string,
+    nodeId: string,
+    iteration?: number,
+  ): Promise<HanokiUiMessage[]> {
+    return window.electronAPI.applyWorkflowStepAsMessage(messageId, nodeId, iteration);
   },
 };

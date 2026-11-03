@@ -460,6 +460,11 @@
   stroke: color-mix(in oklch, var(--muted) 90%, transparent);
 }
 
+/* A loop goes back to an earlier step: dashed, so it doesn't read as one more forward pass. */
+.workflow-canvas .workflow-edge-loop .react-flow__edge-path {
+  stroke-dasharray: 5 4;
+}
+
 .workflow-canvas .react-flow__node {
   border-radius: var(--radius);
 }

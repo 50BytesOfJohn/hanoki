@@ -2,7 +2,7 @@ import type { HanokiUiMessage } from "../chat/message-metadata";
 import { normalizeAssistantTiptapParts } from "../tiptap/extensions";
 import { getStepPartId, type WorkflowRunState, type WorkflowStepState } from "./run";
 
-/** A workflow message as it is stored: the run, one part per step, then the reply text. */
+/** A workflow message as it is stored: the run, one part per step and pass, then the reply text. */
 export function buildWorkflowMessageParts(
   run: WorkflowRunState,
   steps: Iterable<WorkflowStepState>,
@@ -12,7 +12,7 @@ export function buildWorkflowMessageParts(
     { type: "data-workflowRun", id: run.runId, data: run },
     ...Array.from(steps, (step) => ({
       type: "data-workflowStep" as const,
-      id: getStepPartId(run.runId, step.nodeId),
+      id: getStepPartId(run.runId, step.nodeId, step.iteration),
       data: step,
     })),
   ];

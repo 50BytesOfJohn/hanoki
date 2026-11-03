@@ -5,10 +5,14 @@ import {
   createDefaultWorkflowGraph,
   createMergeTemplate,
   createUniqueStepKey,
+  createWorkflowDecisionNode,
   createWorkflowEdge,
   duplicateWorkflowStep,
   getMainPath,
+  getModelForPass,
   getNodesNotReachingOutput,
+  getOutputWriter,
+  getTextSource,
   getOrderedSteps,
   getStepWarnings,
   getTemplateReferences,
@@ -16,6 +20,8 @@ import {
   parseWorkflowGraph,
   renameStepKey,
   renderTemplate,
+  topologicalOrder,
+  type WorkflowAiNode,
   type WorkflowGraph,
 } from "./graph";
 import { selectWorkflowOutput, type WorkflowStepState } from "./run";
@@ -29,6 +35,16 @@ describe("parseWorkflowGraph", () => {
     expect(parseWorkflowGraph(createDefaultWorkflowGraph()).ok).toBe(true);
   });
 
+  it("keeps an AI step's pass models", () => {
+    const graph = createDefaultWorkflowGraph();
+    const draft = graph.nodes.find((node) => node.id === "draft") as WorkflowAiNode;
+    draft.passModels = [{ modelId: "b", reasoningEffort: "low" }];
+    const parsed = parseWorkflowGraph(graph);
+    expect(parsed.ok && parsed.value.nodes.find((node) => node.id === "draft")).toMatchObject({
+      passModels: [{ modelId: "b", reasoningEffort: "low" }],
+    });
+  });
+
   it("rejects a loop", () => {
     const graph = createDefaultWorkflowGraph();
     graph.edges.push(createWorkflowEdge("rewrite", "draft"));
@@ -36,7 +52,7 @@ describe("parseWorkflowGraph", () => {
     graph.edges = graph.edges.filter((edge) => edge.source !== "input");
     expect(parseWorkflowGraph(graph)).toEqual({
       ok: false,
-      error: "Workflows cannot contain loops.",
+      error: "Steps can only loop back from a Decision's Yes or No branch.",
     });
   });
 
@@ -54,6 +70,25 @@ describe("parseWorkflowGraph", () => {
   });
 });
 
+describe("getModelForPass", () => {
+  it("takes the step's model, then each pass model in turn, starting over after the last", () => {
+    const draft = createDefaultWorkflowGraph().nodes.find(
+      (node) => node.id === "draft",
+    ) as WorkflowAiNode;
+    const a = { modelId: "a", reasoningEffort: null };
+    const b = { modelId: "b", reasoningEffort: null };
+    expect(getModelForPass({ ...draft, model: a }, 3)).toBe(a);
+    const rotating = { ...draft, model: a, passModels: [b] };
+    expect([1, 2, 3, 4].map((pass) => getModelForPass(rotating, pass)?.modelId)).toEqual([
+      "a",
+      "b",
+      "a",
+      "b",
+    ]);
+    expect(getModelForPass({ ...rotating, model: null }, 1)).toBeNull();
+  });
+});
+
 describe("canConnect", () => {
   const graph = createDefaultWorkflowGraph();
 
@@ -65,7 +100,7 @@ describe("canConnect", () => {
   it("refuses connections that would loop", () => {
     expect(canConnect(graph, "rewrite", "merge")).toEqual({
       ok: false,
-      reason: "Loops are not supported.",
+      reason: "Only a Decision's Yes or No can loop back.",
     });
   });
 
@@ -162,7 +197,11 @@ describe("selectWorkflowOutput", () => {
       ["draft", done("draft", "draft text")],
       ["rewrite", done("rewrite", "final text")],
     ]);
-    expect(selectWorkflowOutput(graph, steps)).toEqual({ nodeId: "rewrite", text: "final text" });
+    expect(selectWorkflowOutput(graph, steps)).toEqual({
+      nodeId: "rewrite",
+      text: "final text",
+      reachedOutput: true,
+    });
   });
 
   it("falls back to the last finished AI step on the main path", () => {
@@ -172,7 +211,11 @@ describe("selectWorkflowOutput", () => {
       ["merge", done("merge", "merged")],
       ["rewrite", { nodeId: "rewrite", status: "stopped", output: "par", partial: true }],
     ]);
-    expect(selectWorkflowOutput(graph, steps)).toEqual({ nodeId: "draft", text: "draft text" });
+    expect(selectWorkflowOutput(graph, steps)).toEqual({
+      nodeId: "draft",
+      text: "draft text",
+      reachedOutput: false,
+    });
   });
 
   it("returns null when nothing finished", () => {
@@ -233,5 +276,101 @@ describe("getUnusedMergeInputs", () => {
     expect(getUnusedMergeInputs(graph, { ...merge, template: "" })).toEqual([]);
     expect(getUnusedMergeInputs(graph, { ...merge, template: "{{input}}" })).toEqual([]);
     expect(getStepWarnings(graph).size).toBe(0);
+  });
+});
+
+describe("decisions and loops", () => {
+  /** Input → Draft → Check; Yes loops back to Draft, No goes to Output. */
+  function retryGraph(): WorkflowGraph {
+    const base = createDefaultWorkflowGraph();
+    const input = base.nodes.find((node) => node.type === "input")!;
+    const output = base.nodes.find((node) => node.type === "output")!;
+    const draft = base.nodes.find((node) => node.id === "draft")!;
+    const check = { ...createWorkflowDecisionNode(base, { x: 0, y: 0 }, "Refused"), id: "check" };
+    check.prompt = "Did it refuse?";
+    return {
+      nodes: [input, draft, check, output],
+      edges: [
+        createWorkflowEdge("input", "draft"),
+        createWorkflowEdge("draft", "check"),
+        createWorkflowEdge("check", "draft", { sourceHandle: "true", loop: true }),
+        createWorkflowEdge("check", "output", { sourceHandle: "false" }),
+      ],
+    };
+  }
+
+  it("accepts a loop back from a Decision's branch", () => {
+    expect(parseWorkflowGraph(retryGraph())).toMatchObject({ ok: true });
+  });
+
+  it("needs a branch on every connection out of a Decision, and only there", () => {
+    const graph = retryGraph();
+    graph.edges[3] = createWorkflowEdge("check", "output");
+    expect(parseWorkflowGraph(graph).ok).toBe(false);
+    const other = retryGraph();
+    other.edges[0] = createWorkflowEdge("input", "draft", { sourceHandle: "true" });
+    expect(parseWorkflowGraph(other).ok).toBe(false);
+  });
+
+  it("rejects a loop flag on a connection that goes forward", () => {
+    const graph = retryGraph();
+    graph.edges[3] = createWorkflowEdge("check", "output", { sourceHandle: "false", loop: true });
+    expect(parseWorkflowGraph(graph).ok).toBe(false);
+  });
+
+  it("rejects a looping branch that also connects elsewhere", () => {
+    const graph = retryGraph();
+    graph.edges.push(createWorkflowEdge("check", "output", { sourceHandle: "true" }));
+    // Output now has two inputs; drop No's to reach the branch rule.
+    graph.edges = graph.edges.filter((edge) => edge.sourceHandle !== "false");
+    expect(parseWorkflowGraph(graph)).toEqual({
+      ok: false,
+      error: "A branch that loops back can't connect anywhere else.",
+    });
+  });
+
+  it("offers a loop only from a Decision's free branch, back to a step before it", () => {
+    const graph = retryGraph();
+    graph.edges = graph.edges.filter((edge) => !edge.loop);
+    expect(canConnect(graph, "check", "draft", "true")).toEqual({ ok: true, loop: true });
+    expect(canConnect(graph, "check", "draft", "false")).toMatchObject({ ok: false });
+    expect(canConnect(graph, "check", "draft")).toMatchObject({ ok: false });
+    expect(canConnect(retryGraph(), "check", "draft", "false")).toMatchObject({ ok: false });
+  });
+
+  it("keeps loops out of the run order and the main path", () => {
+    const graph = retryGraph();
+    expect(topologicalOrder(graph)?.map((node) => node.id)).toEqual([
+      "input",
+      "draft",
+      "check",
+      "output",
+    ]);
+    expect(getMainPath(graph).map((node) => node.id)).toEqual([
+      "output",
+      "check",
+      "draft",
+      "input",
+    ]);
+    expect(getOutputWriter(graph)?.id).toBe("draft");
+  });
+
+  it("sends the message from the step a Decision hands on", () => {
+    const steps = new Map<string, WorkflowStepState>([
+      ["draft", { nodeId: "draft", status: "done", output: "story" }],
+      ["check", { nodeId: "check", status: "done", output: "story" }],
+    ]);
+    expect(selectWorkflowOutput(retryGraph(), steps)).toEqual({
+      nodeId: "draft",
+      text: "story",
+      reachedOutput: true,
+    });
+  });
+
+  it("names a step's input after the step a Decision hands on", () => {
+    const graph = retryGraph();
+    graph.edges[3] = createWorkflowEdge("check", "rewrite", { sourceHandle: "false" });
+    graph.nodes.push(createDefaultWorkflowGraph().nodes.find((node) => node.id === "rewrite")!);
+    expect(getTextSource(graph, "rewrite")?.id).toBe("draft");
   });
 });

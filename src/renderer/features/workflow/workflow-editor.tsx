@@ -20,6 +20,7 @@ import { useHotkey, useHotkeys, type Hotkey } from "@tanstack/react-hotkeys";
 import {
   AiMagicIcon,
   Alert02Icon,
+  GitBranchIcon,
   HierarchyIcon,
   MergeIcon,
   Redo02Icon,
@@ -35,8 +36,10 @@ import { useWorkspaceStore } from "@/features/workspace/store";
 import {
   canConnect,
   createWorkflowAiNode,
+  createWorkflowDecisionNode,
   createWorkflowEdge,
   createWorkflowMergeNode,
+  getLoopEdge,
   duplicateWorkflowStep,
   getNodesNotReachingOutput,
   getStepWarnings,
@@ -58,7 +61,11 @@ import {
   useWorkflowSaveProblem,
   type UpdateWorkflowGraph,
 } from "./workflow-graph-store";
-import { WORKFLOW_NODE_TYPES, type WorkflowFlowNode } from "./workflow-flow-nodes";
+import {
+  WORKFLOW_EDGE_TYPES,
+  WORKFLOW_NODE_TYPES,
+  type WorkflowFlowNode,
+} from "./workflow-flow-nodes";
 import { WorkflowInspector } from "./workflow-inspector";
 import {
   findOpenWorkflowPosition,
@@ -196,14 +203,26 @@ function WorkflowCanvas({
 
   const edges = React.useMemo<Edge[]>(
     () =>
-      graph.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        selected: selectedEdgeIds.has(edge.id),
-        className: "workflow-edge",
-      })),
-    [graph.edges, selectedEdgeIds],
+      graph.edges.map((edge) => {
+        const decision = edge.loop ? graph.nodes.find((node) => node.id === edge.source) : null;
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+          selected: selectedEdgeIds.has(edge.id),
+          className: edge.loop ? "workflow-edge workflow-edge-loop" : "workflow-edge",
+          // A loop runs back against the flow, so it is drawn below the steps it skips.
+          ...(edge.loop
+            ? {
+                type: "workflowLoop",
+                label:
+                  decision?.type === "decision" ? `loop · up to ${decision.maxLoops}×` : "loop",
+              }
+            : {}),
+        };
+      }),
+    [graph.edges, graph.nodes, selectedEdgeIds],
   );
 
   const onNodesChange = React.useCallback(
@@ -266,20 +285,36 @@ function WorkflowCanvas({
   }, []);
 
   const isValidConnection = React.useCallback<IsValidConnection>(
-    (connection) => canConnect(graph, connection.source, connection.target).ok,
+    (connection) =>
+      canConnect(graph, connection.source, connection.target, connection.sourceHandle).ok,
     [graph],
   );
 
   const onConnect = React.useCallback(
     (connection: Connection) => {
-      updateGraph((current) =>
-        canConnect(current, connection.source, connection.target).ok
-          ? {
-              ...current,
-              edges: [...current.edges, createWorkflowEdge(connection.source, connection.target)],
-            }
-          : current,
-      );
+      updateGraph((current) => {
+        const check = canConnect(
+          current,
+          connection.source,
+          connection.target,
+          connection.sourceHandle,
+        );
+        if (!check.ok) return current;
+        const sourceHandle =
+          connection.sourceHandle === "true" || connection.sourceHandle === "false"
+            ? connection.sourceHandle
+            : undefined;
+        return {
+          ...current,
+          edges: [
+            ...current.edges,
+            createWorkflowEdge(connection.source, connection.target, {
+              ...(sourceHandle ? { sourceHandle } : {}),
+              loop: check.loop,
+            }),
+          ],
+        };
+      });
     },
     [updateGraph],
   );
@@ -306,7 +341,7 @@ function WorkflowCanvas({
     setSelectedNodeId(node.id);
   };
 
-  const addStep = (kind: "ai" | "merge") => {
+  const addStep = (kind: "ai" | "merge" | "decision") => {
     const bounds = containerRef.current?.getBoundingClientRect();
     const center = reactFlow.screenToFlowPosition({
       x: (bounds?.left ?? 0) + (bounds?.width ?? 0) / 2,
@@ -321,7 +356,9 @@ function WorkflowCanvas({
     insertStep(
       kind === "ai"
         ? createWorkflowAiNode(graph, position)
-        : createWorkflowMergeNode(graph, position),
+        : kind === "decision"
+          ? createWorkflowDecisionNode(graph, position)
+          : createWorkflowMergeNode(graph, position),
     );
   };
 
@@ -357,11 +394,15 @@ function WorkflowCanvas({
       x: Math.round(fromOutput ? drop.x : drop.x - size.width),
       y: Math.round(drop.y - size.height / 2),
     });
+    const handle = connection.fromHandle?.id;
+    const sourceHandle = handle === "true" || handle === "false" ? handle : undefined;
     const edge = fromOutput
-      ? createWorkflowEdge(connection.fromNode.id, node.id)
+      ? createWorkflowEdge(connection.fromNode.id, node.id, sourceHandle ? { sourceHandle } : {})
       : createWorkflowEdge(node.id, connection.fromNode.id);
     const withNode = { ...graph, nodes: [...graph.nodes, node] };
-    if (canConnect(withNode, edge.source, edge.target).ok) insertStep(node, [edge]);
+    if (canConnect(withNode, edge.source, edge.target, edge.sourceHandle).ok) {
+      insertStep(node, [edge]);
+    }
   };
 
   const tidyUp = () => {
@@ -423,6 +464,7 @@ function WorkflowCanvas({
         nodes={flowNodes}
         edges={edges}
         nodeTypes={WORKFLOW_NODE_TYPES}
+        edgeTypes={WORKFLOW_EDGE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
@@ -463,6 +505,25 @@ function WorkflowCanvas({
           <HugeiconsIcon icon={MergeIcon} data-icon="inline-start" />
           Merge
         </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[13px]"
+                onClick={() => addStep("decision")}
+              >
+                <HugeiconsIcon icon={GitBranchIcon} data-icon="inline-start" />
+                Decision
+              </Button>
+            }
+          />
+          <TooltipContent className="max-w-64">
+            Asks a model a yes/no question about its input and goes on along Yes or No. Connect a
+            branch back to an earlier step to loop, e.g. to retry a refused reply.
+          </TooltipContent>
+        </Tooltip>
         <Separator orientation="vertical" className="mx-0.5 h-4!" />
         <ToolbarIconButton
           label="Undo"
@@ -617,20 +678,24 @@ function toFlowNodes(
   return graph.nodes.map((node): WorkflowFlowNode => {
     const before = previousById.get(node.id);
     const warning = warnings.get(node.id) ?? null;
+    const loopBranch =
+      node.type === "decision" ? (getLoopEdge(graph, node.id)?.sourceHandle ?? null) : null;
     if (
       before &&
       before.data.node === node &&
-      ("warning" in before.data ? before.data.warning : null) === warning
+      ("warning" in before.data ? before.data.warning : null) === warning &&
+      ("loopBranch" in before.data ? (before.data.loopBranch ?? null) : null) === loopBranch
     ) {
       return before;
     }
-    return toFlowNode(node, warning, before);
+    return toFlowNode(node, warning, loopBranch, before);
   });
 }
 
 function toFlowNode(
   node: WorkflowNode,
   warning: string | null,
+  loopBranch: "true" | "false" | null,
   before: WorkflowFlowNode | undefined,
 ): WorkflowFlowNode {
   const shared = {
@@ -642,7 +707,7 @@ function toFlowNode(
     ...(before?.dragging ? { dragging: true } : {}),
   };
   if (isStepNode(node)) {
-    return { ...shared, type: "workflowStep", data: { node, warning } };
+    return { ...shared, type: "workflowStep", data: { node, warning, loopBranch } };
   }
   return { ...shared, type: "workflowEndpoint", deletable: false, data: { node } };
 }

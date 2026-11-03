@@ -1,8 +1,10 @@
-import type {
-  WorkflowAiNode,
-  WorkflowGraph,
-  WorkflowModelOverride,
-  WorkflowModelRef,
+import {
+  getPassModels,
+  isModelNode,
+  type WorkflowGraph,
+  type WorkflowModelNode,
+  type WorkflowModelOverride,
+  type WorkflowModelRef,
 } from "./graph";
 
 /**
@@ -40,7 +42,7 @@ export function formatWorkflowModelUnavailable(reason: WorkflowModelUnavailableR
  * own model. Null means it runs with the chat's model.
  */
 export function getStepPinnedModel(
-  node: Pick<WorkflowAiNode, "model">,
+  node: Pick<WorkflowModelNode, "model">,
   override: WorkflowModelOverride | null | undefined,
 ): WorkflowModelRef | null {
   if (override === "chat") return null;
@@ -55,9 +57,9 @@ export interface UnavailableWorkflowStep {
 }
 
 /**
- * Enabled AI steps that would run with a model that can't run. Disabled steps
- * pass their input through and `skip` (e.g. steps a rerun keeps) don't call a
- * model, so neither blocks a run. Steps on the chat's model are left to the
+ * Enabled model steps (AI steps and Decisions) that would run with a model
+ * that can't run, on any pass. Disabled steps pass their input through and
+ * `skip` (e.g. steps a rerun keeps) don't call a model, so neither blocks a run. Steps on the chat's model are left to the
  * chat's own model check.
  */
 export function findUnavailableWorkflowSteps({
@@ -73,12 +75,17 @@ export function findUnavailableWorkflowSteps({
 }): UnavailableWorkflowStep[] {
   const unavailable: UnavailableWorkflowStep[] = [];
   for (const node of graph.nodes) {
-    if (node.type !== "ai" || node.disabled || skip?.has(node.id)) continue;
-    const model = getStepPinnedModel(node, overrides?.[node.id]);
-    if (!model) continue;
-    const reason = getReason(model.modelId);
-    if (reason)
+    if (!isModelNode(node) || node.disabled || skip?.has(node.id)) continue;
+    const models = [
+      getStepPinnedModel(node, overrides?.[node.id]),
+      ...(node.type === "ai" ? getPassModels(node) : []),
+    ];
+    for (const model of models) {
+      const reason = model ? getReason(model.modelId) : null;
+      if (!model || !reason) continue;
       unavailable.push({ nodeId: node.id, name: node.name, modelId: model.modelId, reason });
+      break;
+    }
   }
   return unavailable;
 }

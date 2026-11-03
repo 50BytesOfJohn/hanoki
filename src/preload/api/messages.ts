@@ -32,7 +32,9 @@ export function createMessagesApi(): MessagesApi {
     setMessagePinned: (messageId, pinned) =>
       invokeIpc(IPC_CHANNELS.messages.setPinned, messageId, pinned),
     listPinnedBranches: () => invokeIpc(IPC_CHANNELS.messages.listPinned),
-    applyWorkflowStepAsMessage: (messageId, nodeId) =>
-      invokeIpc(IPC_CHANNELS.messages.applyWorkflowStep, messageId, nodeId),
+    applyWorkflowStepAsMessage: (messageId, nodeId, iteration) =>
+      iteration === undefined
+        ? invokeIpc(IPC_CHANNELS.messages.applyWorkflowStep, messageId, nodeId)
+        : invokeIpc(IPC_CHANNELS.messages.applyWorkflowStep, messageId, nodeId, iteration),
   };
 }

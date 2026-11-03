@@ -3,12 +3,27 @@ import { type } from "arktype";
 import type { ReasoningEffort } from "../models/reasoning";
 
 /**
- * A workflow is a small DAG that a chat request runs through before its result
- * lands in the chat. One Input and one Output; AI steps call a model; Merge
- * steps join several outputs with a template. Fan-out (one output feeding
- * several steps) runs branches in parallel. No loops.
+ * A workflow is a small graph that a chat request runs through before its
+ * result lands in the chat. One Input and one Output; AI steps call a model;
+ * Merge steps join several outputs with a template; Decision steps ask a model
+ * a yes/no question and go on along their Yes or No branch. Fan-out (one
+ * output feeding several steps) runs branches in parallel.
+ *
+ * Without its loop connections the graph is a DAG. A loop connection leaves a
+ * Decision's branch and goes back to a step before it: taking that branch runs
+ * the steps from there again, up to the Decision's loop limit.
  */
-export type WorkflowNodeType = "input" | "output" | "ai" | "merge";
+export type WorkflowNodeType = "input" | "output" | "ai" | "merge" | "decision";
+
+/** A Decision's two outputs: Yes (`true`) and No (`false`). */
+export type WorkflowBranch = "true" | "false";
+
+/**
+ * What a Decision does when it would loop once more than allowed: `stop` ends
+ * the run (the message keeps the last finished text), `continue` takes the
+ * other branch, going on with the last attempt.
+ */
+export type WorkflowLoopLimitMode = "stop" | "continue";
 
 /**
  * Which role the step's input is sent as: a text to work on (`user`), the
@@ -66,6 +81,14 @@ export interface WorkflowAiNode extends WorkflowNodeBase {
   disabled: boolean;
   /** Absent is `stop`; graphs saved before the setting existed have none. */
   onFailure?: WorkflowFailureMode;
+  /** Extra tries after an error or a reply with no text; absent is none. */
+  retries?: number;
+  /**
+   * Models for the passes a loop runs this step again: pass 2 uses the first,
+   * pass 3 the second, and so on, starting over at `model` after the last.
+   * Absent or empty keeps `model` on every pass.
+   */
+  passModels?: WorkflowModelRef[];
 }
 
 export interface WorkflowMergeNode extends WorkflowNodeBase {
@@ -77,13 +100,38 @@ export interface WorkflowMergeNode extends WorkflowNodeBase {
   disabled: boolean;
 }
 
-export type WorkflowStepNode = WorkflowAiNode | WorkflowMergeNode;
+export interface WorkflowDecisionNode extends WorkflowNodeBase {
+  type: "decision";
+  name: string;
+  key: string;
+  /** Null uses the chat's model. */
+  model: WorkflowModelRef | null;
+  systemPrompt: string;
+  /** The yes/no question asked about the input. */
+  prompt: string;
+  includeContext: boolean;
+  /** How many times the branch that loops back may be taken in one run. */
+  maxLoops: number;
+  onLoopLimit: WorkflowLoopLimitMode;
+  /** Extra tries after an error or an answer that isn't yes or no; absent is none. */
+  retries?: number;
+  /** A disabled Decision answers without a model: the branch that doesn't loop, else No. */
+  disabled: boolean;
+}
+
+/** Steps that call a model. */
+export type WorkflowModelNode = WorkflowAiNode | WorkflowDecisionNode;
+export type WorkflowStepNode = WorkflowAiNode | WorkflowMergeNode | WorkflowDecisionNode;
 export type WorkflowNode = WorkflowInputNode | WorkflowOutputNode | WorkflowStepNode;
 
 export interface WorkflowEdge {
   id: string;
   source: string;
   target: string;
+  /** Which branch of a Decision the connection leaves from; absent for other steps. */
+  sourceHandle?: WorkflowBranch;
+  /** Goes back to a step before its Decision: taking it runs the steps from there again. */
+  loop?: boolean;
 }
 
 export interface WorkflowGraph {
@@ -94,6 +142,10 @@ export interface WorkflowGraph {
 export const WORKFLOW_MAX_NODES = 64;
 export const WORKFLOW_MAX_TEXT_LENGTH = 100_000;
 export const WORKFLOW_KEY_PATTERN = /^[a-z0-9_]{1,40}$/;
+export const WORKFLOW_MAX_RETRIES = 5;
+export const WORKFLOW_MAX_LOOPS = 20;
+export const WORKFLOW_DEFAULT_MAX_LOOPS = 3;
+export const WORKFLOW_MAX_PASS_MODELS = 8;
 export const DEFAULT_WORKFLOW_TITLE = "New workflow";
 
 const textSchema = type(`string <= ${WORKFLOW_MAX_TEXT_LENGTH}`);
@@ -136,6 +188,8 @@ const nodeSchema = type({
     role: "'natural'|'user'|'assistant'",
     disabled: "boolean",
     "onFailure?": "'stop'|'continue'",
+    "retries?": `0 <= number.integer <= ${WORKFLOW_MAX_RETRIES}`,
+    "passModels?": modelRefSchema.array().atMostLength(WORKFLOW_MAX_PASS_MODELS),
   })
   .or({
     "+": "delete",
@@ -145,6 +199,22 @@ const nodeSchema = type({
     name: nameSchema,
     key: keySchema,
     template: textSchema,
+    disabled: "boolean",
+  })
+  .or({
+    "+": "delete",
+    id: "0 < string <= 64",
+    type: "'decision'",
+    position: positionSchema,
+    name: nameSchema,
+    key: keySchema,
+    model: modelRefSchema.or("null"),
+    systemPrompt: textSchema,
+    prompt: textSchema,
+    includeContext: "boolean",
+    maxLoops: `1 <= number.integer <= ${WORKFLOW_MAX_LOOPS}`,
+    onLoopLimit: "'stop'|'continue'",
+    "retries?": `0 <= number.integer <= ${WORKFLOW_MAX_RETRIES}`,
     disabled: "boolean",
   });
 
@@ -156,6 +226,8 @@ const graphSchema = type({
     id: "0 < string <= 160",
     source: "0 < string <= 64",
     target: "0 < string <= 64",
+    "sourceHandle?": "'true'|'false'",
+    "loop?": "boolean",
   })
     .array()
     .atMostLength(WORKFLOW_MAX_NODES * 4),
@@ -163,7 +235,11 @@ const graphSchema = type({
 
 type ParseWorkflowGraphResult = { ok: true; value: WorkflowGraph } | { ok: false; error: string };
 
-/** Validates shape and structure: one Input, one Output, known edge ends, valid fan-in, no cycles. */
+/**
+ * Validates shape and structure: one Input, one Output, known edge ends, valid
+ * fan-in, branches only out of Decisions, loops only back from a Decision's
+ * branch, and no cycles otherwise.
+ */
 export function parseWorkflowGraph(input: unknown): ParseWorkflowGraphResult {
   const parsed = graphSchema(input);
   if (parsed instanceof type.errors) {
@@ -188,12 +264,12 @@ export function getWorkflowGraphProblem(graph: WorkflowGraph): string | null {
     if (!node.name.trim()) return "A step has no name.";
     if (node.name.length > 80) return `${label} has a name longer than 80 characters.`;
     const texts: [string, string][] =
-      node.type === "ai"
-        ? [
-            ["prompt", node.prompt],
+      node.type === "merge"
+        ? [["template", node.template]]
+        : [
+            [node.type === "decision" ? "question" : "prompt", node.prompt],
             ["system prompt", node.systemPrompt],
-          ]
-        : [["template", node.template]];
+          ];
     for (const [field, text] of texts) {
       if (text.length > WORKFLOW_MAX_TEXT_LENGTH) {
         return `${label} has a ${field} longer than ${WORKFLOW_MAX_TEXT_LENGTH.toLocaleString("en")} characters.`;
@@ -230,9 +306,17 @@ function getStructuralError(graph: WorkflowGraph): string | null {
     if (!source || !target) return `Connection "${edge.id}" points at a missing node.`;
     if (source.type === "output") return "Output cannot connect onwards.";
     if (target.type === "input") return "Nothing can connect into Input.";
-    const pair = `${edge.source}->${edge.target}`;
+    if ((source.type === "decision") !== (edge.sourceHandle !== undefined)) {
+      return "Only Decision steps connect from a Yes or No branch, and they always do.";
+    }
+    const pair = `${edge.source}:${edge.sourceHandle ?? ""}->${edge.target}`;
     if (pairs.has(pair) || edge.source === edge.target) return "Connections must be unique.";
     pairs.add(pair);
+    if (edge.loop) {
+      if (source.type !== "decision") return "Only a Decision's branch can loop back.";
+      if (target.type === "output") return "A loop can't go back to Output.";
+      continue;
+    }
     const count = (incomingCount.get(edge.target) ?? 0) + 1;
     incomingCount.set(edge.target, count);
     if (count > 1 && target.type !== "merge") {
@@ -240,15 +324,85 @@ function getStructuralError(graph: WorkflowGraph): string | null {
     }
   }
 
-  return topologicalOrder(graph) ? null : "Workflows cannot contain loops.";
+  if (!topologicalOrder(graph)) {
+    return "Steps can only loop back from a Decision's Yes or No branch.";
+  }
+
+  const loopsPerDecision = new Map<string, number>();
+  for (const edge of graph.edges) {
+    if (!edge.loop) continue;
+    if (!getAncestorIds(graph, edge.source).has(edge.target)) {
+      return "A loop must go back to a step that runs before its Decision.";
+    }
+    const loops = (loopsPerDecision.get(edge.source) ?? 0) + 1;
+    loopsPerDecision.set(edge.source, loops);
+    if (loops > 1) return "A Decision can loop back from one branch only.";
+    const shared = graph.edges.some(
+      (other) =>
+        other !== edge && other.source === edge.source && other.sourceHandle === edge.sourceHandle,
+    );
+    if (shared) return "A branch that loops back can't connect anywhere else.";
+  }
+  return null;
 }
 
 export function getFailureMode(node: WorkflowAiNode): WorkflowFailureMode {
   return node.onFailure ?? "stop";
 }
 
+export function getStepRetries(node: WorkflowModelNode): number {
+  return node.retries ?? 0;
+}
+
+export function getPassModels(node: WorkflowAiNode): WorkflowModelRef[] {
+  return node.passModels ?? [];
+}
+
+/**
+ * The model an AI step runs with on `iteration` (from 1): its own model on the
+ * first pass, then each of its pass models in turn, starting over after the
+ * last. Null is the chat's model.
+ */
+export function getModelForPass(node: WorkflowAiNode, iteration = 1): WorkflowModelRef | null {
+  const rotation = [node.model, ...getPassModels(node)];
+  return rotation[(Math.max(1, iteration) - 1) % rotation.length] ?? null;
+}
+
 export function isStepNode(node: WorkflowNode): node is WorkflowStepNode {
-  return node.type === "ai" || node.type === "merge";
+  return node.type === "ai" || node.type === "merge" || node.type === "decision";
+}
+
+/** Steps that call a model: AI steps and Decisions. */
+export function isModelNode(node: WorkflowNode): node is WorkflowModelNode {
+  return node.type === "ai" || node.type === "decision";
+}
+
+/** A Decision's loop connection, if one of its branches loops back. */
+export function getLoopEdge(graph: WorkflowGraph, decisionId: string): WorkflowEdge | undefined {
+  return graph.edges.find((edge) => edge.loop && edge.source === decisionId);
+}
+
+/**
+ * The branch a disabled Decision takes: the one that doesn't loop back, else
+ * No, so disabling a "retry until it works" check lets the run through.
+ */
+export function getDisabledDecisionBranch(
+  graph: WorkflowGraph,
+  decisionId: string,
+): WorkflowBranch {
+  return getLoopEdge(graph, decisionId)?.sourceHandle === "false" ? "true" : "false";
+}
+
+export function getOtherBranch(branch: WorkflowBranch): WorkflowBranch {
+  return branch === "true" ? "false" : "true";
+}
+
+/**
+ * The steps a loop runs again: its target and every step after it, the
+ * Decision that loops included.
+ */
+export function getLoopBody(graph: WorkflowGraph, edge: WorkflowEdge): Set<string> {
+  return new Set([edge.target, ...getDescendantIds(graph, edge.target)]);
 }
 
 export function getNodeLabel(node: WorkflowNode): string {
@@ -257,20 +411,24 @@ export function getNodeLabel(node: WorkflowNode): string {
   return node.name;
 }
 
-/** Incoming source ids per node, in connection order. */
+/**
+ * Incoming source ids per node, in connection order. Loop connections are
+ * left out here and in every other walk of the graph: they don't carry text,
+ * they only run steps again.
+ */
 export function getIncomingMap(graph: WorkflowGraph): Map<string, string[]> {
   const incoming = new Map<string, string[]>(graph.nodes.map((node) => [node.id, []]));
-  for (const edge of graph.edges) incoming.get(edge.target)?.push(edge.source);
+  for (const edge of graph.edges) if (!edge.loop) incoming.get(edge.target)?.push(edge.source);
   return incoming;
 }
 
 function getOutgoingMap(graph: WorkflowGraph): Map<string, string[]> {
   const outgoing = new Map<string, string[]>(graph.nodes.map((node) => [node.id, []]));
-  for (const edge of graph.edges) outgoing.get(edge.source)?.push(edge.target);
+  for (const edge of graph.edges) if (!edge.loop) outgoing.get(edge.source)?.push(edge.target);
   return outgoing;
 }
 
-/** Kahn's algorithm, stable on node order; null when the graph has a cycle. */
+/** Kahn's algorithm over the connections that aren't loops, stable on node order; null on a cycle. */
 export function topologicalOrder(graph: WorkflowGraph): WorkflowNode[] | null {
   const incoming = getIncomingMap(graph);
   const outgoing = getOutgoingMap(graph);
@@ -290,6 +448,22 @@ export function topologicalOrder(graph: WorkflowGraph): WorkflowNode[] | null {
   }
 
   return order.length === graph.nodes.length ? order : null;
+}
+
+/**
+ * Where the text a step receives comes from: its input, looking through
+ * Decisions, which hand on their own input unchanged.
+ */
+export function getTextSource(graph: WorkflowGraph, nodeId: string): WorkflowNode | undefined {
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const incoming = getIncomingMap(graph);
+  let source = nodesById.get(incoming.get(nodeId)?.[0] ?? "");
+  const seen = new Set<string>();
+  while (source?.type === "decision" && !seen.has(source.id)) {
+    seen.add(source.id);
+    source = nodesById.get(incoming.get(source.id)?.[0] ?? "") ?? source;
+  }
+  return source;
 }
 
 /** Every node upstream of `nodeId`, following connections backwards. */
@@ -314,29 +488,60 @@ function walk(neighbours: Map<string, string[]>, start: string): Set<string> {
   return seen;
 }
 
-export type WorkflowConnectionCheck = { ok: true } | { ok: false; reason: string };
+export type WorkflowConnectionCheck = { ok: true; loop: boolean } | { ok: false; reason: string };
 
-/** Whether the editor may add `source → target`. */
+/**
+ * Whether the editor may add `source → target`, leaving from `sourceHandle`
+ * (a Decision's branch). A connection back to a step before a Decision's
+ * branch is a loop.
+ */
 export function canConnect(
   graph: WorkflowGraph,
   source: string,
   target: string,
+  sourceHandle?: string | null,
 ): WorkflowConnectionCheck {
   const sourceNode = graph.nodes.find((node) => node.id === source);
   const targetNode = graph.nodes.find((node) => node.id === target);
   if (!sourceNode || !targetNode || source === target) return { ok: false, reason: "Invalid" };
   if (sourceNode.type === "output") return { ok: false, reason: "Output is the end." };
   if (targetNode.type === "input") return { ok: false, reason: "Input is the start." };
-  if (graph.edges.some((edge) => edge.source === source && edge.target === target)) {
+  const handle = sourceNode.type === "decision" ? parseBranch(sourceHandle) : undefined;
+  if (sourceNode.type === "decision" && !handle) return { ok: false, reason: "Invalid" };
+  if (
+    graph.edges.some(
+      (edge) => edge.source === source && edge.target === target && edge.sourceHandle === handle,
+    )
+  ) {
     return { ok: false, reason: "Already connected." };
   }
-  if (targetNode.type !== "merge" && graph.edges.some((edge) => edge.target === target)) {
+  const loopEdge = handle ? getLoopEdge(graph, source) : undefined;
+  if (handle && loopEdge?.sourceHandle === handle) {
+    return { ok: false, reason: "This branch already loops back." };
+  }
+
+  if (getAncestorIds(graph, source).has(target)) {
+    if (sourceNode.type !== "decision") {
+      return { ok: false, reason: "Only a Decision's Yes or No can loop back." };
+    }
+    if (targetNode.type === "output") return { ok: false, reason: "Can't loop to Output." };
+    if (loopEdge) return { ok: false, reason: "This Decision already loops back." };
+    if (graph.edges.some((edge) => edge.source === source && edge.sourceHandle === handle)) {
+      return { ok: false, reason: "A branch that loops can't connect anywhere else." };
+    }
+    return { ok: true, loop: true };
+  }
+  if (
+    targetNode.type !== "merge" &&
+    graph.edges.some((edge) => edge.target === target && !edge.loop)
+  ) {
     return { ok: false, reason: "Only Merge accepts several inputs." };
   }
-  if (source === target || getAncestorIds(graph, source).has(target)) {
-    return { ok: false, reason: "Loops are not supported." };
-  }
-  return { ok: true };
+  return { ok: true, loop: false };
+}
+
+function parseBranch(handle: string | null | undefined): WorkflowBranch | undefined {
+  return handle === "true" || handle === "false" ? handle : undefined;
 }
 
 /** Step nodes whose result never reaches Output; they still run. */
@@ -388,7 +593,9 @@ export function getStepWarnings(graph: WorkflowGraph): Map<string, string> {
   for (const node of graph.nodes) {
     if (!isStepNode(node)) continue;
     const unused = node.type === "merge" ? getUnusedMergeInputs(graph, node) : [];
-    if (unused.length > 0) {
+    if (node.type === "decision" && !node.disabled && !node.prompt.trim()) {
+      warnings.set(node.id, "Ask a question. Without one the Decision fails.");
+    } else if (unused.length > 0) {
       const names = unused.map((source) => `“${source.name}”`).join(" and ");
       warnings.set(
         node.id,
@@ -440,6 +647,18 @@ export function getMainPath(graph: WorkflowGraph): WorkflowNode[] {
   }
 
   return path;
+}
+
+/**
+ * The step whose text reaches Output: Output's input, looking through
+ * Decisions, which hand on their input. Undefined when Input feeds Output.
+ */
+export function getOutputWriter(graph: WorkflowGraph): WorkflowStepNode | undefined {
+  const [, ...path] = getMainPath(graph);
+  const writer = path.find((node) => node.type !== "decision");
+  if (writer && isStepNode(writer)) return writer;
+  const last = path.at(-1);
+  return last && isStepNode(last) ? last : undefined;
 }
 
 const TEMPLATE_PATTERN = /\{\{\s*(input|step\.([a-z0-9_]+))\s*\}\}/g;
@@ -514,6 +733,27 @@ export function createWorkflowAiNode(
   };
 }
 
+export function createWorkflowDecisionNode(
+  graph: WorkflowGraph,
+  position: WorkflowPosition,
+  name = "Decision",
+): WorkflowDecisionNode {
+  return {
+    id: crypto.randomUUID(),
+    type: "decision",
+    position,
+    name,
+    key: createUniqueStepKey(name, graph),
+    model: null,
+    systemPrompt: "",
+    prompt: "",
+    includeContext: false,
+    maxLoops: WORKFLOW_DEFAULT_MAX_LOOPS,
+    onLoopLimit: "stop",
+    disabled: false,
+  };
+}
+
 export function createWorkflowMergeNode(
   graph: WorkflowGraph,
   position: WorkflowPosition,
@@ -530,14 +770,26 @@ export function createWorkflowMergeNode(
   };
 }
 
-export function createWorkflowEdge(source: string, target: string): WorkflowEdge {
-  return { id: `${source}->${target}`, source, target };
+export function createWorkflowEdge(
+  source: string,
+  target: string,
+  options: { sourceHandle?: WorkflowBranch; loop?: boolean } = {},
+): WorkflowEdge {
+  const { sourceHandle, loop } = options;
+  return {
+    id: sourceHandle ? `${source}:${sourceHandle}->${target}` : `${source}->${target}`,
+    source,
+    target,
+    ...(sourceHandle ? { sourceHandle } : {}),
+    ...(loop ? { loop: true } : {}),
+  };
 }
 
 /**
  * The first use case, ready to run: a draft, a review of it that checks it
- * against the conversation (e.g. for repeats), and a rewrite that sees both. The draft is the Merge's primary input, so
- * stopping during the rewrite keeps the draft.
+ * against the conversation (e.g. for repeats), and a rewrite that sees both.
+ * The draft is the Merge's primary input, so stopping during the rewrite keeps
+ * the draft.
  */
 export function createDefaultWorkflowGraph(): WorkflowGraph {
   const input: WorkflowInputNode = { id: "input", type: "input", position: { x: 0, y: 160 } };
@@ -626,7 +878,7 @@ export function renameStepKey(
   return {
     ...graph,
     nodes: graph.nodes.map((node) => {
-      if (node.type === "ai") {
+      if (node.type === "ai" || node.type === "decision") {
         return {
           ...node,
           ...(node.id === nodeId ? { key: nextKey } : {}),
@@ -667,7 +919,13 @@ export function duplicateWorkflowStep(
     key: createUniqueStepKey(name, graph),
   };
   const incoming = graph.edges
-    .filter((edge) => edge.target === nodeId)
-    .map((edge) => createWorkflowEdge(edge.source, node.id));
+    .filter((edge) => edge.target === nodeId && !edge.loop)
+    .map((edge) =>
+      createWorkflowEdge(
+        edge.source,
+        node.id,
+        edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {},
+      ),
+    );
   return { node, graph: { nodes: [...graph.nodes, node], edges: [...graph.edges, ...incoming] } };
 }

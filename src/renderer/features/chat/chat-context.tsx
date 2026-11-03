@@ -62,7 +62,7 @@ type ChatContextState = {
   /** Reruns a workflow message from `nodeId`, keeping the steps before it. */
   rerunWorkflowFrom: (messageId: string, nodeId: string) => Promise<void>;
   /** Adds a new version of the message with `nodeId`'s output as its text. */
-  applyWorkflowStep: (messageId: string, nodeId: string) => Promise<void>;
+  applyWorkflowStep: (messageId: string, nodeId: string, iteration?: number) => Promise<void>;
   switchBranch: (branchId: string) => Promise<void>;
   startEditingMessage: (messageId: string) => void;
   stopEditingMessage: () => void;
@@ -308,7 +308,7 @@ function createChatContextStore({
         body: { workflow: { rerun: { sourceMessageId: messageId, nodeId } } },
       });
     },
-    applyWorkflowStep: async (messageId, nodeId) => {
+    applyWorkflowStep: async (messageId, nodeId, iteration) => {
       const { editingMessageId, continuingMessageId } = get();
       const status = transportRefs.getStatus?.() ?? "ready";
       if (
@@ -321,7 +321,9 @@ function createChatContextStore({
         return;
       }
       transportRefs.markTabTouched?.();
-      transportRefs.setMessages(await messagesApi.applyWorkflowStepAsMessage(messageId, nodeId));
+      transportRefs.setMessages(
+        await messagesApi.applyWorkflowStepAsMessage(messageId, nodeId, iteration),
+      );
     },
     continueMessage: async (messageId) => {
       const {

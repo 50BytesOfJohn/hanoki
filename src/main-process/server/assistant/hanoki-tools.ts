@@ -756,7 +756,8 @@ export function createHanokiTools({
               : {}),
             steps: getOrderedSteps(row.data.graph).map((step) => ({
               name: step.name,
-              kind: step.type === "ai" ? "AI step" : "Merge",
+              kind:
+                step.type === "ai" ? "AI step" : step.type === "decision" ? "Decision" : "Merge",
               disabled: step.disabled,
             })),
           };

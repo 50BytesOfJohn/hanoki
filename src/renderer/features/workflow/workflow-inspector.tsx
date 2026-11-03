@@ -17,18 +17,31 @@ import {
   createUniqueStepKey,
   getAncestorIds,
   getFailureMode,
+  getLoopBody,
+  getLoopEdge,
+  getPassModels,
   getMainPath,
+  getStepRetries,
   getTemplateReferences,
+  getTextSource,
   getUnusedMergeInputs,
+  isModelNode,
   isStepNode,
   renameStepKey,
   WORKFLOW_KEY_PATTERN,
+  WORKFLOW_MAX_LOOPS,
+  WORKFLOW_MAX_PASS_MODELS,
+  WORKFLOW_MAX_RETRIES,
   WORKFLOW_MAX_TEXT_LENGTH,
   type WorkflowAiNode,
+  type WorkflowDecisionNode,
   type WorkflowFailureMode,
   type WorkflowGraph,
   type WorkflowInputRole,
+  type WorkflowLoopLimitMode,
   type WorkflowMergeNode,
+  type WorkflowModelNode,
+  type WorkflowModelRef,
   type WorkflowNode,
   type WorkflowStepNode,
 } from "@shared/workflow/graph";
@@ -55,8 +68,13 @@ const FAILURE_MODE_DESCRIPTIONS = {
     "The run goes on; the steps after this one get whatever it wrote, which may be nothing.",
 } satisfies Record<WorkflowFailureMode, string>;
 
+const LOOP_LIMIT_DESCRIPTIONS = {
+  stop: "The run stops. The message keeps the last finished text, e.g. the last attempt.",
+  continue: "The run goes on along the other branch with the last attempt.",
+} satisfies Record<WorkflowLoopLimitMode, string>;
+
 type UpdateNode = (
-  patch: Partial<WorkflowAiNode> | Partial<WorkflowMergeNode>,
+  patch: Partial<WorkflowAiNode> | Partial<WorkflowMergeNode> | Partial<WorkflowDecisionNode>,
   options?: UpdateWorkflowGraphOptions,
 ) => void;
 
@@ -199,24 +217,24 @@ function StepFields({
         isStepNode(candidate) && ancestors.has(candidate.id),
     );
   }, [graph, node.id]);
-  const template = node.type === "ai" ? node.prompt : node.template;
+  const template = node.type === "merge" ? node.template : node.prompt;
   const unknownReferences = getTemplateReferences(
-    node.type === "ai" ? `${node.prompt}\n${node.systemPrompt}` : node.template,
+    node.type === "merge" ? node.template : `${node.prompt}\n${node.systemPrompt}`,
   ).filter((key) => !variables.some((variable) => variable.key === key));
   const isMainPathMerge =
     node.type === "merge" && getMainPath(graph).some((candidate) => candidate.id === node.id);
   const unusedInputs = node.type === "merge" ? getUnusedMergeInputs(graph, node) : [];
-  const inputTag = React.useMemo(() => {
-    const parentId = graph.edges.find((edge) => edge.target === node.id)?.source;
-    return getInputTag(graph.nodes.find((candidate) => candidate.id === parentId));
-  }, [graph, node.id]);
+  const inputTag = React.useMemo(
+    () => getInputTag(getTextSource(graph, node.id)),
+    [graph, node.id],
+  );
 
   const insertVariable = (token: string) => {
     const element = promptRef.current;
     const start = element?.selectionStart ?? template.length;
     const end = element?.selectionEnd ?? template.length;
     const next = template.slice(0, start) + token + template.slice(end);
-    updateNode(node.type === "ai" ? { prompt: next } : { template: next });
+    updateNode(node.type === "merge" ? { template: next } : { prompt: next });
     requestAnimationFrame(() => {
       element?.focus();
       element?.setSelectionRange(start + token.length, start + token.length);
@@ -263,7 +281,7 @@ function StepFields({
 
       <StepKeyField graph={graph} node={node} updateGraph={updateGraph} />
 
-      {node.type === "ai" ? (
+      {isModelNode(node) ? (
         <>
           <InspectorField label="Model">
             <WorkflowModelPicker
@@ -276,13 +294,25 @@ function StepFields({
             />
           </InspectorField>
 
+          {node.type === "ai" ? (
+            <PassModelsField graph={graph} node={node} updateNode={updateNode} />
+          ) : null}
+
           <SwitchRow
             label="Include chat context"
-            description="On: the step sees the conversation and the chat's instructions, like a normal reply, then its input. Off: only its input."
+            description={
+              node.type === "decision"
+                ? "On: the question is asked with the conversation and the chat's instructions before the input. Off: only the input. Off is cheaper and usually enough."
+                : "On: the step sees the conversation and the chat's instructions, like a normal reply, then its input. Off: only its input."
+            }
             checked={node.includeContext}
             onCheckedChange={(includeContext) => updateNode({ includeContext })}
           />
+        </>
+      ) : null}
 
+      {node.type === "ai" ? (
+        <>
           <InspectorField label="Send input as" description={INPUT_ROLE_DESCRIPTIONS[node.role]}>
             <ToggleGroup
               size="sm"
@@ -307,7 +337,11 @@ function StepFields({
               </ToggleGroupItem>
             </ToggleGroup>
           </InspectorField>
+        </>
+      ) : null}
 
+      {isModelNode(node) ? (
+        <>
           <InspectorField label="System prompt" htmlFor={`${id}-system`}>
             <Textarea
               id={`${id}-system`}
@@ -327,30 +361,37 @@ function StepFields({
       ) : null}
 
       <InspectorField
-        label={node.type === "ai" ? "Prompt" : "Template"}
+        label={node.type === "ai" ? "Prompt" : node.type === "decision" ? "Question" : "Template"}
         htmlFor={`${id}-prompt`}
         description={
           node.type === "ai"
             ? `Sent after the input, which arrives in <${inputTag}> tags. Use {{input}} to place it yourself instead.`
-            : isMainPathMerge
-              ? "Empty joins the inputs in connection order. The first step it uses is the main path when a run stops early."
-              : "Empty joins the inputs in connection order."
+            : node.type === "decision"
+              ? `A yes/no question about the input, which arrives in <${inputTag}> tags. The Decision hands its input on unchanged along the branch it answers.`
+              : isMainPathMerge
+                ? "Empty joins the inputs in connection order. The first step it uses is the main path when a run stops early."
+                : "Empty joins the inputs in connection order."
         }
+        invalid={node.type === "decision" && !node.disabled && !node.prompt.trim()}
       >
         <Textarea
           ref={promptRef}
           id={`${id}-prompt`}
           className="max-h-80 min-h-20 font-mono text-xs leading-relaxed"
           placeholder={
-            node.type === "ai" ? "What should this step do?" : "{{step.draft}}\n\n{{step.review}}"
+            node.type === "ai"
+              ? "What should this step do?"
+              : node.type === "decision"
+                ? `Did the text in the <${inputTag}> tags refuse the request instead of doing it?`
+                : "{{step.draft}}\n\n{{step.review}}"
           }
           maxLength={WORKFLOW_MAX_TEXT_LENGTH}
           value={template}
           onChange={(event) =>
             updateNode(
-              node.type === "ai"
-                ? { prompt: event.target.value }
-                : { template: event.target.value },
+              node.type === "merge"
+                ? { template: event.target.value }
+                : { prompt: event.target.value },
               { coalesceKey: `${node.id}:prompt` },
             )
           }
@@ -392,7 +433,13 @@ function StepFields({
         ) : null}
       </InspectorField>
 
-      {node.type === "ai" ? <RequestPreview graph={graph} nodeId={node.id} /> : null}
+      {isModelNode(node) ? <RequestPreview graph={graph} nodeId={node.id} /> : null}
+
+      {node.type === "decision" ? (
+        <LoopFields graph={graph} node={node} updateNode={updateNode} />
+      ) : null}
+
+      {isModelNode(node) ? <RetriesField node={node} updateNode={updateNode} /> : null}
 
       {node.type === "ai" ? (
         <InspectorField
@@ -421,11 +468,221 @@ function StepFields({
 
       <SwitchRow
         label="Disabled"
-        description="A disabled step passes its input through unchanged."
+        description={
+          node.type === "decision"
+            ? "A disabled Decision asks nothing and goes on along the branch that doesn't loop, else No."
+            : "A disabled step passes its input through unchanged."
+        }
         checked={node.disabled}
         onCheckedChange={(disabled) => updateNode({ disabled })}
       />
     </>
+  );
+}
+
+function LoopFields({
+  graph,
+  node,
+  updateNode,
+}: {
+  graph: WorkflowGraph;
+  node: WorkflowDecisionNode;
+  updateNode: UpdateNode;
+}) {
+  const id = React.useId();
+  const loopEdge = getLoopEdge(graph, node.id);
+  if (!loopEdge) {
+    return (
+      <InspectorNote>
+        To loop, connect Yes or No back to a step before this one: taking that branch runs the steps
+        from there again, e.g. to retry a reply the model refused.
+      </InspectorNote>
+    );
+  }
+  const target = graph.nodes.find((candidate) => candidate.id === loopEdge.target);
+  const branch = loopEdge.sourceHandle === "true" ? "Yes" : "No";
+  return (
+    <>
+      <InspectorField
+        label="Max loops"
+        htmlFor={`${id}-loops`}
+        description={`${branch} goes back to “${target && isStepNode(target) ? target.name : "an earlier step"}” at most ${node.maxLoops} ${
+          node.maxLoops === 1 ? "time" : "times"
+        }, so those steps run up to ${node.maxLoops + 1} times.`}
+      >
+        <NumberInput
+          id={`${id}-loops`}
+          value={node.maxLoops}
+          min={1}
+          max={WORKFLOW_MAX_LOOPS}
+          onChange={(maxLoops) => updateNode({ maxLoops })}
+        />
+      </InspectorField>
+      <InspectorField
+        label={`If it's still ${branch}`}
+        description={LOOP_LIMIT_DESCRIPTIONS[node.onLoopLimit]}
+      >
+        <ToggleGroup
+          size="sm"
+          variant="outline"
+          spacing={0}
+          value={[node.onLoopLimit]}
+          onValueChange={(value: string[]) => {
+            const mode = value[0];
+            if (mode === "stop" || mode === "continue") updateNode({ onLoopLimit: mode });
+          }}
+        >
+          <ToggleGroupItem value="stop" className="h-7 px-3 text-xs">
+            Stop workflow
+          </ToggleGroupItem>
+          <ToggleGroupItem value="continue" className="h-7 px-3 text-xs">
+            Take {branch === "Yes" ? "No" : "Yes"}
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </InspectorField>
+    </>
+  );
+}
+
+/**
+ * The models a loop's later passes run this step with, e.g. other models to
+ * try when the first one refused.
+ */
+function PassModelsField({
+  graph,
+  node,
+  updateNode,
+}: {
+  graph: WorkflowGraph;
+  node: WorkflowAiNode;
+  updateNode: UpdateNode;
+}) {
+  const passModels = getPassModels(node);
+  const inLoop = graph.edges.some((edge) => edge.loop && getLoopBody(graph, edge).has(node.id));
+  const setPassModels = (next: WorkflowModelRef[]) =>
+    updateNode({ passModels: next.length > 0 ? next : undefined });
+  return (
+    <InspectorField
+      label="Models on later passes"
+      description={
+        !inLoop
+          ? "Used when a Decision's loop runs this step again. This step isn't in a loop yet."
+          : passModels.length === 0
+            ? "Each pass a loop runs uses the model above. Add models to switch on each pass, e.g. to try another model after a refusal."
+            : `Pass ${passModels.length + 2} starts over with the model above.`
+      }
+    >
+      <ol className="-mx-2 flex flex-col">
+        {passModels.map((model, index) => (
+          <li key={index} className="flex min-w-0 items-center gap-1">
+            <span className="w-12 shrink-0 pl-2 text-xs text-muted-foreground tabular-nums">
+              Pass {index + 2}
+            </span>
+            <WorkflowModelPicker
+              value={model}
+              presets={[]}
+              activePresetKey={null}
+              onSelectPreset={() => {}}
+              onSelectModel={(next) =>
+                setPassModels(passModels.map((current, at) => (at === index ? next : current)))
+              }
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Remove the model for pass ${index + 2}`}
+              onClick={() => setPassModels(passModels.filter((_, at) => at !== index))}
+            >
+              <HugeiconsIcon icon={Cancel01Icon} />
+            </Button>
+          </li>
+        ))}
+        {passModels.length < WORKFLOW_MAX_PASS_MODELS ? (
+          <li className="flex min-w-0 items-center gap-1">
+            <span className="w-12 shrink-0 pl-2 text-xs text-muted-foreground tabular-nums">
+              Pass {passModels.length + 2}
+            </span>
+            <WorkflowModelPicker
+              value={null}
+              presets={[]}
+              activePresetKey={null}
+              onSelectPreset={() => {}}
+              onSelectModel={(next) => setPassModels([...passModels, next])}
+              placeholder={passModels.length === 0 ? "Same model" : "Add model"}
+              className="min-w-0 flex-1"
+            />
+          </li>
+        ) : null}
+      </ol>
+    </InspectorField>
+  );
+}
+
+function RetriesField({ node, updateNode }: { node: WorkflowModelNode; updateNode: UpdateNode }) {
+  const id = React.useId();
+  const retries = getStepRetries(node);
+  return (
+    <InspectorField
+      label="Retries"
+      htmlFor={`${id}-retries`}
+      description={
+        node.type === "decision"
+          ? "Asks again after an error or an answer that isn't yes or no."
+          : "Tries again after an error or a reply with no text, before the step fails. Busy providers are always waited out."
+      }
+    >
+      <NumberInput
+        id={`${id}-retries`}
+        value={retries}
+        min={0}
+        max={WORKFLOW_MAX_RETRIES}
+        onChange={(next) => updateNode({ retries: next })}
+      />
+    </InspectorField>
+  );
+}
+
+/** A whole number kept in range; empty or invalid text leaves the value as it was. */
+function NumberInput({
+  id,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  id: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = React.useState(String(value));
+  const [synced, setSynced] = React.useState(value);
+  if (synced !== value) {
+    setSynced(value);
+    setDraft(String(value));
+  }
+  return (
+    <Input
+      id={id}
+      type="number"
+      inputMode="numeric"
+      className="h-7 w-20 text-[13px]"
+      min={min}
+      max={max}
+      step={1}
+      value={draft}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        const next = Number(event.target.value);
+        if (event.target.value.trim() && Number.isInteger(next) && next >= min && next <= max) {
+          onChange(next);
+        }
+      }}
+      onBlur={() => setDraft(String(value))}
+    />
   );
 }
 

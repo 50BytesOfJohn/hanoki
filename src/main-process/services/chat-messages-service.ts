@@ -9,7 +9,12 @@ import {
 } from "@shared/tiptap/document";
 import { getTiptapMessageDisplayText } from "@shared/tiptap/extensions";
 import { buildWorkflowMessageParts } from "@shared/workflow/message-parts";
-import { getWorkflowRun, getWorkflowSteps } from "@shared/workflow/run";
+import {
+  getAllWorkflowStepPasses,
+  getWorkflowRun,
+  getWorkflowStepHistory,
+  getWorkflowSteps,
+} from "@shared/workflow/run";
 import { createUuidV7 } from "../db/uuidv7";
 import { getChatById, getChatCurrentBranchId, setChatCurrentBranch } from "../chat-tree/repository";
 import {
@@ -35,7 +40,11 @@ export interface ChatMessagesService {
   deleteMessage(messageId: string, scope: DeleteMessageScope): HanokiUiMessage[];
   setMessagePinned(messageId: string, pinned: boolean): void;
   listPinnedBranches(): PinnedBranchSummary[];
-  applyWorkflowStepAsMessage(messageId: string, nodeId: string): HanokiUiMessage[];
+  applyWorkflowStepAsMessage(
+    messageId: string,
+    nodeId: string,
+    iteration?: number,
+  ): HanokiUiMessage[];
 }
 
 function toChatMessage(message: MessageRow, fallbackParentId: string | null): HanokiUiMessage {
@@ -203,7 +212,11 @@ export function createChatMessagesService(): ChatMessagesService {
       return results;
     },
 
-    applyWorkflowStepAsMessage(messageId: string, nodeId: string): HanokiUiMessage[] {
+    applyWorkflowStepAsMessage(
+      messageId: string,
+      nodeId: string,
+      iteration?: number,
+    ): HanokiUiMessage[] {
       const source = getMessageById(messageId);
       if (!source || source.role !== "assistant") {
         throw new Error(`Message "${messageId}" does not exist.`);
@@ -211,8 +224,13 @@ export function createChatMessagesService(): ChatMessagesService {
       // SAFETY: stored message parts are UI message parts; this only reads the workflow ones.
       const message = { parts: source.parts as HanokiUiMessage["parts"] };
       const run = getWorkflowRun(message);
-      const steps = getWorkflowSteps(message);
-      const step = steps.get(nodeId);
+      const latest = getWorkflowSteps(message).get(nodeId);
+      const step =
+        iteration === undefined || iteration === (latest?.iteration ?? 1)
+          ? latest
+          : getWorkflowStepHistory(message)
+              .get(nodeId)
+              ?.find((pass) => (pass.iteration ?? 1) === iteration);
       if (!run || !step?.output.trim()) {
         throw new Error("That step has no output to use.");
       }
@@ -227,9 +245,15 @@ export function createChatMessagesService(): ChatMessagesService {
         role: "assistant",
         // Picking a step settles the run: a stopped or failed status would no
         // longer describe this version.
+        // Every pass of every step is kept, a loop's earlier ones included.
         parts: buildWorkflowMessageParts(
-          { ...run, status: "done", outputNodeId: nodeId },
-          steps.values(),
+          {
+            ...run,
+            status: "done",
+            outputNodeId: nodeId,
+            ...(step === latest ? {} : { outputIteration: step.iteration ?? 1 }),
+          },
+          getAllWorkflowStepPasses(message),
           step.output,
         ),
         metadata: {

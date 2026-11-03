@@ -740,7 +740,12 @@ export interface IpcApi {
   setMessagePinned: (messageId: string, pinned: boolean) => Promise<void>;
   listPinnedBranches: () => Promise<PinnedBranchSummary[]>;
   /** Adds a new version of a workflow message that uses `nodeId`'s output as its text. */
-  applyWorkflowStepAsMessage: (messageId: string, nodeId: string) => Promise<HanokiUiMessage[]>;
+  /** `iteration` picks an earlier pass of a step a loop ran again; absent is its latest. */
+  applyWorkflowStepAsMessage: (
+    messageId: string,
+    nodeId: string,
+    iteration?: number,
+  ) => Promise<HanokiUiMessage[]>;
   createFolder: (
     workspaceId: string,
     name: string,

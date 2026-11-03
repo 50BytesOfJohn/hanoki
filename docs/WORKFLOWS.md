@@ -19,8 +19,9 @@ A workflow is a graph of nodes connected by edges, built in a visual editor.
 - **Input** is where the request enters. **Output** is what becomes the chat message.
 - **AI node** has a model, a system prompt and a prompt. It takes one incoming connection.
 - **Merge node** combines several outputs into one using a text template, e.g. `{{step.draft}}\n\n{{step.review}}`. It's the only node that accepts multiple incoming connections. It has no model.
+- **Decision node** asks a model a yes/no question about its input and goes on along its **Yes** or **No** output. It hands its input on unchanged, so the steps after it work on the text it judged, not on its answer. Steps only the other branch reaches don't run ("branch not taken"); a Merge after both branches joins whatever ran.
 - **Parallel** isn't a node type. Connecting one node's output to several nodes runs those branches at the same time. Branches can have several steps of their own before they're merged.
-- **No loops** for now.
+- **Loops** start at a Decision: connect its Yes or No back to a step before it. Taking that branch runs every step from there again (see below).
 - **Unconnected nodes are allowed.** A node that doesn't lead to Output still runs, and its result is saved in the run, e.g. a side note. The editor shows a small warning about nodes not connected to Output.
 - A node can be **disabled** without deleting it.
 
@@ -31,6 +32,28 @@ A workflow is a graph of nodes connected by edges, built in a visual editor.
   - On: the node gets the normal chat context, the same as a regular message, plus the outputs of the nodes before it.
 - **Role:** whether the node's input is sent as a user or an assistant message. This gives control over how a model treats earlier output, e.g. as a text to review or as its own draft to continue.
 - **Model:** use the chat's model (default), or pin a specific model.
+- **Models on later passes:** when a loop runs the step again, pass 2 uses the first model in this list, pass 3 the second, and so on; after the last it starts over with the step's own model. Pass N uses `[model, ...list][(N − 1) % length]`. The typical use: the draft was refused, so the retry goes to another model. Each pass in the run shows the model it ran with. A chat's model override replaces only the step's own model (pass 1 and every restart), not the list.
+
+- **Retries:** after an error or a reply with no text, try again up to N times (0–5) before the step fails. The partial text of a failed try is dropped. Provider limits (429, overloaded) are always waited out and don't count.
+
+### Decisions
+
+- A Decision has a model (the chat's by default), a **question**, an optional system prompt and **Include chat context** (off by default: judging the text alone is cheaper and usually enough).
+- Its input goes in a tag named after the step that wrote it, the same as an AI step's (`<draft>`), so the question can say "Did the text in the `<draft>` tags refuse the request?". A Decision is looked through: the step after it gets `<draft>` too.
+- **How it's asked:** with a JSON schema (`{ reason, answer }`) through AI SDK structured output. On OpenRouter this is `response_format`, and the request asks OpenRouter to route only to endpoints that honor it (`provider.require_parameters`). Models OpenRouter lists without `structured_outputs`/`response_format`, and any model whose structured answer fails, are asked to reply YES or NO instead, which is then parsed. The run shows which way was used and the model's one-line reason.
+- Decisions ask with temperature 0 where the model takes one.
+- **Retries** apply to a Decision too: an error, or an answer that isn't yes or no, asks again.
+- A **disabled** Decision asks nothing and goes on along the branch that doesn't loop, else No.
+- Why not `experimental_decide`: AI SDK 7's decision API (native decision models such as TypeSafe's Jev or OpenAI's Luna) takes its state as content parts, not chat turns, and the OpenRouter provider has no decision models. On OpenRouter, Jev (`typesafe/jev-router`) and Luna are chat models with structured outputs, so they work as Decision models as they are. Native decision models can be added behind the same `decide` call later.
+
+### Loops
+
+- A loop goes from a Decision's Yes or No back to a step that runs before it. Only one branch of a Decision can loop, and a branch that loops connects nowhere else.
+- Taking the loop runs its target and every step after it again: a new **pass** of each. A step still writing when the loop starts over (e.g. a side branch) is stopped and runs again too.
+- **Max loops** (1–20, default 3) caps how often the branch is taken; 3 means the steps run up to 4 times. **If it's still Yes/No** after that: **Stop workflow** (the run ends as "didn't finish" and the message keeps the last finished text, e.g. the last attempt) or **take the other branch** (go on with the last attempt).
+- A Decision inside another loop starts counting again whenever the outer loop runs it over.
+- Loop connections don't carry text; the step a loop goes back to reads the same input as before. The typical use: retry a draft the model refused. Draft → Decision "Did it refuse?" → Yes loops back to Draft, No goes on.
+- Every pass is kept on the message. A step's row shows its latest pass; earlier ones are listed under it, and any of them can be used as the message.
 
 ### How a step's input is sent
 
@@ -90,7 +113,8 @@ When a chat has a workflow selected, a right sidebar shows a simple version of i
 
 ## Later
 
-- Loops, e.g. "review until the reviewer says OK, max 3".
+- Loops that feed something back, e.g. "review until the reviewer says OK, max 3" with the review handed to the rewrite.
+- Native decision models (`experimental_decide`) for providers that offer them.
 - Image generation steps.
 - Agent steps with tools.
 - A per-provider concurrency queue.

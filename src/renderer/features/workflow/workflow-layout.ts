@@ -9,10 +9,12 @@ export interface WorkflowNodeSize {
 
 /** Sizes of the node views before React Flow has measured them. */
 const STEP_SIZE: WorkflowNodeSize = { width: 224, height: 84 };
+const DECISION_SIZE: WorkflowNodeSize = { width: 224, height: 128 };
 const ENDPOINT_SIZE: WorkflowNodeSize = { width: 180, height: 34 };
 const STACK_OFFSET = 24;
 
 export function getDefaultNodeSize(type: WorkflowNodeType): WorkflowNodeSize {
+  if (type === "decision") return DECISION_SIZE;
   return type === "ai" || type === "merge" ? STEP_SIZE : ENDPOINT_SIZE;
 }
 
@@ -31,7 +33,8 @@ export function tidyWorkflowLayout(
     // Dagre writes the layout into the label, so each node gets its own.
     dagreGraph.setNode(node.id, { ...(sizes.get(node.id) ?? getDefaultNodeSize(node.type)) });
   }
-  for (const edge of graph.edges) dagreGraph.setEdge(edge.source, edge.target);
+  // Loops run back against the flow; laying them out would pull steps out of order.
+  for (const edge of graph.edges) if (!edge.loop) dagreGraph.setEdge(edge.source, edge.target);
   layout(dagreGraph);
 
   // Dagre places node centres; React Flow positions are top-left corners.

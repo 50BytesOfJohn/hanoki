@@ -9,3 +9,12 @@ const INPUT_ROLE_LABELS = {
 export function formatInputRole(role: WorkflowInputRole): string {
   return INPUT_ROLE_LABELS[role];
 }
+
+export function formatRetries(retries: number): string {
+  return retries === 1 ? "Retries once" : `Retries ${retries}×`;
+}
+
+/** For a step that switches models on a loop's later passes. */
+export function formatPassModels(count: number): string {
+  return `${count + 1} models by pass`;
+}
