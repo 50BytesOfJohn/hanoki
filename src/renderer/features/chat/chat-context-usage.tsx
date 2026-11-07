@@ -7,8 +7,10 @@ import {
   ContextContentBody,
   ContextContentFooter,
   ContextContentHeader,
+  ContextIcon,
   ContextTrigger,
   ContextUsageRow,
+  ContextValue,
   formatTokens,
 } from "@/components/ai-elements/context";
 import { useChatContextUsage, useChatId, useChatModelId } from "@/features/chat/chat-context";
@@ -44,7 +46,10 @@ export function ChatContextUsage() {
 
   return (
     <Context usedTokens={usage?.used ?? null} maxTokens={maxTokens} isApproximate={isApproximate}>
-      <ContextTrigger />
+      <ContextTrigger>
+        <ContextValue className="@max-sm/composer-tools:hidden" />
+        <ContextIcon />
+      </ContextTrigger>
       <ContextContent>
         <ContextContentHeader />
         {usage ? (

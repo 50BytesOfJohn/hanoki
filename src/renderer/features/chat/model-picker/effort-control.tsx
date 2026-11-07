@@ -117,7 +117,7 @@ export function EffortControl({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger render={<span className="inline-flex" />}>
+      <ContextMenuTrigger render={<span className="inline-flex shrink-0" />}>
         <Popover open={open} onOpenChange={onOpenChange}>
           <Tooltip>
             <PopoverTrigger
@@ -136,7 +136,9 @@ export function EffortControl({
               }
             >
               <EffortBars effort={shownValue} offered={offered} />
-              <EffortLabel effort={shownValue} />
+              <span className="@max-lg/composer-tools:hidden">
+                <EffortLabel effort={shownValue} />
+              </span>
             </PopoverTrigger>
             <TooltipContent className="flex items-center gap-2">
               Effort

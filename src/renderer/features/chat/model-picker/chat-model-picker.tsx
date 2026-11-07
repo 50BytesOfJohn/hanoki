@@ -186,7 +186,7 @@ export function ChatModelPicker() {
                           variant="ghost"
                           size="sm"
                           aria-label="Model"
-                          className="max-w-64 min-w-0 gap-2 px-2 text-[13px] font-normal text-foreground data-popup-open:bg-hover"
+                          className="max-w-64 min-w-0 shrink gap-2 px-2 text-[13px] font-normal text-foreground data-popup-open:bg-hover"
                         />
                       }
                     />

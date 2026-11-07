@@ -114,7 +114,8 @@ export function ChatWorkflowMenu() {
                   disabled={isInteractionLocked}
                   className={cn(
                     "text-foreground data-popup-open:bg-hover",
-                    workflowId && "max-w-48 gap-1.5 px-2 text-[13px] font-normal",
+                    workflowId &&
+                      "max-w-48 min-w-0 shrink gap-1.5 px-2 text-[13px] font-normal @max-xl/composer-tools:w-7 @max-xl/composer-tools:shrink-0 @max-xl/composer-tools:px-0 @max-xl/composer-tools:[&>svg]:mx-0!",
                     blockReason && "text-warning",
                   )}
                 />
@@ -123,7 +124,9 @@ export function ChatWorkflowMenu() {
           }
         >
           <HugeiconsIcon icon={FlowConnectionIcon} />
-          {workflowId ? <span className="truncate">{activeTitle}</span> : null}
+          {workflowId ? (
+            <span className="truncate @max-xl/composer-tools:hidden">{activeTitle}</span>
+          ) : null}
         </DropdownMenuTrigger>
         <TooltipContent className="max-w-72">
           {blockReason

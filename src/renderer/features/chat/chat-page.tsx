@@ -456,12 +456,12 @@ function ActiveChatContent() {
                   />
                   <InputGroupAddon
                     align="block-end"
-                    className="flex w-full items-center gap-1.5 px-2 py-0"
+                    className="@container/composer-tools flex w-full min-w-0 items-center gap-1.5 px-2 py-0"
                   >
                     <ChatToolsMenu />
                     <ChatWorkflowMenu />
                     <ChatModelPicker />
-                    <div className="ml-auto flex items-center gap-1.5">
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
                       <ChatContextUsage />
                       <SumiPromptAction
                         prompt={inputText}
@@ -503,6 +503,7 @@ function ActiveChatContent() {
                               type="submit"
                               aria-label="Send"
                               size="sm"
+                              className="@max-lg/composer-tools:w-7 @max-lg/composer-tools:px-0 @max-lg/composer-tools:[&>svg]:mx-0!"
                               disabled={
                                 !modelId ||
                                 !inputText.trim() ||
@@ -511,7 +512,7 @@ function ActiveChatContent() {
                               }
                             >
                               <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
-                              Send
+                              <span className="@max-lg/composer-tools:hidden">Send</span>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-72">
