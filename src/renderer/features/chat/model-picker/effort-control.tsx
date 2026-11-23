@@ -1,5 +1,4 @@
 import * as React from "react";
-import { formatForDisplay } from "@tanstack/react-hotkeys";
 import {
   formatReasoningEffort,
   getEffortBarCount,
@@ -17,7 +16,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -284,7 +282,7 @@ function EffortPanel({
         <Field orientation="horizontal" className="w-auto gap-2">
           <FieldLabel htmlFor={switchId} className="text-xs font-normal text-muted-foreground">
             Default
-            <Kbd className="bg-transparent">{formatForDisplay("Backspace")}</Kbd>
+            <HotkeyKbd className="bg-transparent" hotkey="Backspace" />
           </FieldLabel>
           <Switch
             id={switchId}

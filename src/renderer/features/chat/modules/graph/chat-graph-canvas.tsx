@@ -12,7 +12,7 @@ import type { HanokiUiMessage } from "@shared/chat/message-metadata";
 import { NODE_HEIGHT, NODE_WIDTH, buildChatGraphLayout } from "./chat-graph-layout";
 import { ChatGraphNodeView } from "./chat-graph-node";
 
-import "@xyflow/react/dist/style.css";
+import "@xyflow/react/style.css";
 
 const nodeTypes = {
   message: ChatGraphNodeView,
@@ -83,9 +83,9 @@ export function ChatGraphCanvas({
     <div className="h-full w-full">
       <ReactFlow
         key={messages.at(-1)?.id ?? "empty"}
-        colorMode="dark"
+        forceColorMode="dark"
         fitView
-        fitViewOptions={{ duration: 300, padding: 0.28 }}
+        fitViewOptions={{ duration: 300, padding: "11%" }}
         edges={edges}
         elementsSelectable={false}
         maxZoom={1.6}

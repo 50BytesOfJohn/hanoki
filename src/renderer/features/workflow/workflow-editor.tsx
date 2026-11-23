@@ -1,6 +1,5 @@
 import * as React from "react";
 import {
-  applyNodeChanges,
   Background,
   Controls,
   getViewportForBounds,
@@ -9,9 +8,9 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
-  type EdgeChange,
   type IsValidConnection,
-  type NodeChange,
+  type OnEdgesChange,
+  type OnNodesChange,
   type OnConnectEnd,
   type OnDelete,
   type OnSelectionChangeFunc,
@@ -74,9 +73,9 @@ import {
   type WorkflowNodeSize,
 } from "./workflow-layout";
 
-import "@xyflow/react/dist/style.css";
+import "@xyflow/react/style.css";
 
-const FIT_VIEW_OPTIONS = { padding: 0.2, maxZoom: 1.1 };
+const FIT_VIEW_OPTIONS = { padding: "8%", maxZoom: 1.1 } as const;
 const DELETE_KEYS = ["Backspace", "Delete"];
 const NEW_STEP_GAP = 24;
 const MIN_NEW_STEP_DRAG = 48;
@@ -225,15 +224,13 @@ function WorkflowCanvas({
     [graph.edges, graph.nodes, selectedEdgeIds],
   );
 
-  const onNodesChange = React.useCallback(
-    (changes: NodeChange<WorkflowFlowNode>[]) => {
-      setFlowNodes((current) => applyNodeChanges(changes, current));
+  const onNodesChange = React.useCallback<OnNodesChange<WorkflowFlowNode>>(
+    (changes) => {
+      setFlowNodes((current) => changes.applyTo(current));
       // A drag commits once, when it ends, so it is one undo step. Removals go through onDelete.
       const moved = new Map<string, { x: number; y: number }>();
-      for (const change of changes) {
-        if (change.type === "position" && change.position && !change.dragging) {
-          moved.set(change.id, change.position);
-        }
+      for (const change of changes.getByType("position")) {
+        if (change.position && !change.dragging) moved.set(change.id, change.position);
       }
       if (moved.size === 0) return;
       updateGraph((current) => ({
@@ -248,12 +245,12 @@ function WorkflowCanvas({
   );
 
   // Edges are derived from the graph, so their selection is kept here.
-  const onEdgesChange = React.useCallback((changes: EdgeChange[]) => {
-    if (!changes.some((change) => change.type === "select")) return;
+  const onEdgesChange = React.useCallback<OnEdgesChange>((changes) => {
+    const selections = changes.getByType("select");
+    if (selections.length === 0) return;
     setSelectedEdgeIds((current) => {
       const next = new Set(current);
-      for (const change of changes) {
-        if (change.type !== "select") continue;
+      for (const change of selections) {
         if (change.selected) next.add(change.id);
         else next.delete(change.id);
       }
@@ -378,11 +375,9 @@ function WorkflowCanvas({
   };
 
   // Letting go of a new connection on empty canvas adds a step there, already connected.
-  const onConnectEnd: OnConnectEnd = (event, connection) => {
-    if (connection.isValid || connection.toNode || !connection.fromNode) return;
-    const pointer = "changedTouches" in event ? event.changedTouches[0] : event;
-    if (!pointer) return;
-    const drop = reactFlow.screenToFlowPosition({ x: pointer.clientX, y: pointer.clientY });
+  const onConnectEnd: OnConnectEnd = (_event, connection) => {
+    if (connection.isValid || connection.toNode || !connection.fromNode || !connection.to) return;
+    const drop = connection.to;
     // A twitch on a handle is not a request for a new step.
     if (Math.hypot(drop.x - connection.from.x, drop.y - connection.from.y) < MIN_NEW_STEP_DRAG) {
       return;
@@ -460,7 +455,7 @@ function WorkflowCanvas({
   return (
     <div ref={containerRef} className="relative min-h-0 flex-1">
       <ReactFlow<WorkflowFlowNode>
-        colorMode="dark"
+        forceColorMode="dark"
         nodes={flowNodes}
         edges={edges}
         nodeTypes={WORKFLOW_NODE_TYPES}

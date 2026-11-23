@@ -1,4 +1,4 @@
-import { formatForDisplay, type Hotkey } from "@tanstack/react-hotkeys";
+import { useFormatForDisplay, type Hotkey } from "@tanstack/react-hotkeys";
 import type { ProviderInfo, ProviderModelInfo } from "@shared/ipc";
 import { formatReasoningEffort, type ReasoningEffort } from "@shared/models/reasoning";
 
@@ -87,9 +87,11 @@ export function HotkeyRangeKbd({
   to: number;
   className?: string;
 }) {
+  const formatForDisplay = useFormatForDisplay();
   return <Kbd className={className}>{`${formatForDisplay(hotkey)}–${to}`}</Kbd>;
 }
 
 export function HotkeyKbd({ hotkey, className }: { hotkey: Hotkey; className?: string }) {
+  const formatForDisplay = useFormatForDisplay();
   return <Kbd className={className}>{formatForDisplay(hotkey)}</Kbd>;
 }
