@@ -1,9 +1,9 @@
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import started from "electron-squirrel-startup";
 import { installApplicationMenu, setUnreadChatCount } from "./main-process/app/application-menu";
 import { bootstrapBackend } from "./main-process/app/bootstrap-backend";
 import { createMainWindow } from "./main-process/app/create-main-window";
+import { handleSquirrelStartup } from "./main-process/app/squirrel-startup";
 import { getUpdateState, initUpdater } from "./main-process/app/updater";
 import { closeAppDatabase } from "./main-process/db/database";
 import { registerIpcHandlers } from "./main-process/ipc";
@@ -34,7 +34,7 @@ if (process.platform === "win32") {
 }
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
+if (handleSquirrelStartup()) {
   app.quit();
 }
 
