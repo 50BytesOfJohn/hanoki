@@ -6,6 +6,14 @@ import { messages } from "../db/schema";
 export type MessageTableRow = typeof messages.$inferSelect;
 export type MessageRole = "system" | "user" | "assistant";
 
+interface MessageTreeNode {
+  id: string;
+  parentId: string | null;
+  createdAt: number;
+}
+
+const MESSAGE_IN_CLAUSE_CHUNK_SIZE = 500;
+
 export interface MessageRow {
   id: string;
   chatId: string;
@@ -37,46 +45,57 @@ export interface UpsertMessageInput {
  * Messages are returned in conversation order: root first, leaf last.
  */
 export function listMessagesByChatId(chatId: string, branchId?: string | null): MessageRow[] {
-  const allMessages = loadAllMessagesByChatId(chatId);
+  // Query only lightweight tree columns first so inactive branches never read or
+  // JSON-parse `parts` / `metadata` blobs during chat opens or branch switches.
+  const allNodes = loadMessageTreeNodesByChatId(chatId);
 
-  if (allMessages.length === 0) {
+  if (allNodes.length === 0) {
     return [];
   }
 
-  const { childrenByParentId, messageMap } = buildMessageIndexes(allMessages);
+  const { childrenByParentId, nodeMap } = buildMessageNodeIndexes(allNodes);
 
   // Find the leaf from which we will trace back to the root.
-  let leafMessage: MessageTableRow | undefined;
+  let leafNode: MessageTreeNode | undefined;
 
   if (branchId != null) {
-    const branchMessage = messageMap.get(branchId);
-    if (!branchMessage) {
+    const branchNode = nodeMap.get(branchId);
+    if (!branchNode) {
       throw new Error(`Branch message "${branchId}" does not exist in chat "${chatId}".`);
     }
-    leafMessage = findLatestLeafInSubtree(branchId, allMessages, childrenByParentId);
+    leafNode = findLatestLeafInSubtree(branchId, allNodes, childrenByParentId);
   } else {
-    leafMessage = findLatestLeaf(allMessages, childrenByParentId);
+    leafNode = findLatestLeaf(allNodes, childrenByParentId);
   }
 
-  if (!leafMessage) {
+  if (!leafNode) {
     return [];
   }
 
   // Trace path from leaf back to root.
-  const path: MessageTableRow[] = [];
-  let current: MessageTableRow | undefined = leafMessage;
+  const pathIds: string[] = [];
+  let current: MessageTreeNode | undefined = leafNode;
   const visited = new Set<string>(); // guard against corrupt parent cycles
 
   while (current !== undefined && !visited.has(current.id)) {
     visited.add(current.id);
-    path.push(current);
-    current = current.parentId != null ? messageMap.get(current.parentId) : undefined;
+    pathIds.push(current.id);
+    current = current.parentId != null ? nodeMap.get(current.parentId) : undefined;
   }
 
   // Reverse so the path runs root → leaf.
-  path.reverse();
+  pathIds.reverse();
 
-  return addSiblingMetadata(path, childrenByParentId);
+  const pathRowsById = loadMessagesByIds(pathIds);
+  const pathRows: MessageTableRow[] = [];
+  for (const id of pathIds) {
+    const row = pathRowsById.get(id);
+    if (row) {
+      pathRows.push(row);
+    }
+  }
+
+  return addSiblingMetadata(pathRows, childrenByParentId);
 }
 
 export function listAllMessagesByChatId(chatId: string): MessageRow[] {
@@ -86,7 +105,7 @@ export function listAllMessagesByChatId(chatId: string): MessageRow[] {
     return [];
   }
 
-  const { childrenByParentId } = buildMessageIndexes(allMessages);
+  const { childrenByParentId } = buildMessageNodeIndexes(allMessages);
   return addSiblingMetadata(allMessages, childrenByParentId);
 }
 
@@ -180,13 +199,21 @@ export function deleteMessageSubtree(
   scope: "message" | "branch",
 ): DeleteMessageSubtreeResult {
   const db = getAppDatabase();
-  const target = db.select().from(messages).where(eq(messages.id, messageId)).get();
+  const target = db
+    .select({
+      id: messages.id,
+      chatId: messages.chatId,
+      parentId: messages.parentId,
+    })
+    .from(messages)
+    .where(eq(messages.id, messageId))
+    .get();
   if (!target) {
     throw new Error(`Message "${messageId}" does not exist.`);
   }
 
-  const allMessages = loadAllMessagesByChatId(target.chatId);
-  const { childrenByParentId } = buildMessageIndexes(allMessages);
+  const allNodes = loadMessageTreeNodesByChatId(target.chatId);
+  const { childrenByParentId } = buildMessageNodeIndexes(allNodes);
 
   const rootIds =
     scope === "branch"
@@ -206,9 +233,12 @@ export function deleteMessageSubtree(
     }
   }
 
-  db.delete(messages)
-    .where(inArray(messages.id, [...deletedIds]))
-    .run();
+  const idsToDelete = [...deletedIds];
+  for (let offset = 0; offset < idsToDelete.length; offset += MESSAGE_IN_CLAUSE_CHUNK_SIZE) {
+    db.delete(messages)
+      .where(inArray(messages.id, idsToDelete.slice(offset, offset + MESSAGE_IN_CLAUSE_CHUNK_SIZE)))
+      .run();
+  }
 
   return { chatId: target.chatId, parentId: target.parentId, deletedIds };
 }
@@ -220,10 +250,10 @@ export function deleteMessageSubtree(
  * `allMessages` must be sorted ascending by createdAt so iterating in reverse
  * yields the latest message first.
  */
-function findLatestLeaf(
-  allMessages: MessageTableRow[],
-  childrenByParentId: Map<string | null, MessageTableRow[]>,
-): MessageTableRow | undefined {
+function findLatestLeaf<T extends MessageTreeNode>(
+  allMessages: readonly T[],
+  childrenByParentId: Map<string | null, T[]>,
+): T | undefined {
   // Iterate newest → oldest; return the first message that has no children.
   for (let i = allMessages.length - 1; i >= 0; i--) {
     const msg = allMessages[i]!;
@@ -241,11 +271,11 @@ function findLatestLeaf(
  * Performs a depth-first traversal of the subtree rooted at `rootId`, then
  * picks the latest leaf by createdAt among all discovered leaf nodes.
  */
-function findLatestLeafInSubtree(
+function findLatestLeafInSubtree<T extends MessageTreeNode>(
   rootId: string,
-  allMessages: MessageTableRow[],
-  childrenByParentId: Map<string | null, MessageTableRow[]>,
-): MessageTableRow | undefined {
+  allMessages: readonly T[],
+  childrenByParentId: Map<string | null, T[]>,
+): T | undefined {
   // Collect all descendant IDs (including rootId itself).
   const descendants = new Set<string>();
   const stack: string[] = [rootId];
@@ -312,6 +342,37 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function loadMessageTreeNodesByChatId(chatId: string): MessageTreeNode[] {
+  return getAppDatabase()
+    .select({
+      id: messages.id,
+      parentId: messages.parentId,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .where(eq(messages.chatId, chatId))
+    .orderBy(asc(messages.createdAt), asc(messages.id))
+    .all();
+}
+
+function loadMessagesByIds(ids: readonly string[]): Map<string, MessageTableRow> {
+  const rowsById = new Map<string, MessageTableRow>();
+  if (ids.length === 0) {
+    return rowsById;
+  }
+
+  const db = getAppDatabase();
+  for (let offset = 0; offset < ids.length; offset += MESSAGE_IN_CLAUSE_CHUNK_SIZE) {
+    const chunk = ids.slice(offset, offset + MESSAGE_IN_CLAUSE_CHUNK_SIZE);
+    const rows = db.select().from(messages).where(inArray(messages.id, chunk)).all();
+    for (const row of rows) {
+      rowsById.set(row.id, row);
+    }
+  }
+
+  return rowsById;
+}
+
 function loadAllMessagesByChatId(chatId: string): MessageTableRow[] {
   return getAppDatabase()
     .select()
@@ -321,30 +382,32 @@ function loadAllMessagesByChatId(chatId: string): MessageTableRow[] {
     .all();
 }
 
-function buildMessageIndexes(allMessages: MessageTableRow[]): {
-  childrenByParentId: Map<string | null, MessageTableRow[]>;
-  messageMap: Map<string, MessageTableRow>;
+function buildMessageNodeIndexes<T extends MessageTreeNode>(
+  allNodes: readonly T[],
+): {
+  childrenByParentId: Map<string | null, T[]>;
+  nodeMap: Map<string, T>;
 } {
-  const messageMap = new Map<string, MessageTableRow>();
-  const childrenByParentId = new Map<string | null, MessageTableRow[]>();
+  const nodeMap = new Map<string, T>();
+  const childrenByParentId = new Map<string | null, T[]>();
 
-  for (const message of allMessages) {
-    messageMap.set(message.id, message);
+  for (const node of allNodes) {
+    nodeMap.set(node.id, node);
 
-    const siblings = childrenByParentId.get(message.parentId) ?? [];
-    siblings.push(message);
-    childrenByParentId.set(message.parentId, siblings);
+    const siblings = childrenByParentId.get(node.parentId) ?? [];
+    siblings.push(node);
+    childrenByParentId.set(node.parentId, siblings);
   }
 
   return {
     childrenByParentId,
-    messageMap,
+    nodeMap,
   };
 }
 
 function addSiblingMetadata(
   rows: readonly MessageTableRow[],
-  childrenByParentId: Map<string | null, MessageTableRow[]>,
+  childrenByParentId: Map<string | null, readonly MessageTreeNode[]>,
 ): MessageRow[] {
   return rows.map((message) => {
     const row = toMessageRow(message);

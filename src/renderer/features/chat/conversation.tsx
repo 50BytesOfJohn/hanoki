@@ -85,19 +85,31 @@ interface MessageErrorBoundaryProps {
 }
 
 /** A malformed message must not take down the whole chat route, only its own bubble. */
-export function MessageErrorBoundary({ children, messageId, resetKey }: MessageErrorBoundaryProps) {
+export const MessageErrorBoundary = React.memo(function MessageErrorBoundary({
+  children,
+  messageId,
+  resetKey,
+}: MessageErrorBoundaryProps) {
+  const getResetKey = React.useCallback(() => resetKey, [resetKey]);
+  const handleCatch = React.useCallback<
+    NonNullable<React.ComponentProps<typeof CatchBoundary>["onCatch"]>
+  >(
+    (renderError) => {
+      console.error(`[chat] Failed to render message "${messageId}".`, renderError);
+    },
+    [messageId],
+  );
+
   return (
     <CatchBoundary
-      getResetKey={() => resetKey}
+      getResetKey={getResetKey}
       errorComponent={MessageRenderError}
-      onCatch={(renderError) => {
-        console.error(`[chat] Failed to render message "${messageId}".`, renderError);
-      }}
+      onCatch={handleCatch}
     >
       {children}
     </CatchBoundary>
   );
-}
+});
 
 function MessageRenderError({ error }: ErrorComponentProps) {
   const message = error instanceof Error ? error.message : String(error);

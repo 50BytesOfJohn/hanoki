@@ -1094,10 +1094,23 @@ function areMessagesEquivalent(currentMessage: HanokiUiMessage, nextMessage: Han
     return true;
   }
 
+  if (
+    currentMessage.id !== nextMessage.id ||
+    currentMessage.role !== nextMessage.role ||
+    currentMessage.parts.length !== nextMessage.parts.length
+  ) {
+    return false;
+  }
+
+  const partsEqual =
+    currentMessage.parts === nextMessage.parts ||
+    JSON.stringify(currentMessage.parts) === JSON.stringify(nextMessage.parts);
+  if (!partsEqual) {
+    return false;
+  }
+
   return (
-    currentMessage.id === nextMessage.id &&
-    currentMessage.role === nextMessage.role &&
-    JSON.stringify(currentMessage.parts) === JSON.stringify(nextMessage.parts) &&
+    currentMessage.metadata === nextMessage.metadata ||
     JSON.stringify(currentMessage.metadata ?? null) === JSON.stringify(nextMessage.metadata ?? null)
   );
 }

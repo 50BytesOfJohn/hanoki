@@ -28,7 +28,7 @@ export function bootstrapStorage(): StorageBootstrapResult {
     ensureDefaultWorkspace();
   }
 
-  const workspaces = listWorkspaces();
+  const workspaces = createdDefaultWorkspace ? listWorkspaces() : discoveredWorkspaces;
   const workspacesRootDir = ensureWorkspaceRootDirectory();
 
   for (const workspace of workspaces) {

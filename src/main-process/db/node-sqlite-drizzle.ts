@@ -35,22 +35,24 @@ const mapResultRow = (
 
 type PreparedQueryConfig = Omit<PreparedQueryConfigBase, "statement" | "run">;
 
+const STATEMENT_CACHE_MAX_SIZE = 256;
+const CACHEABLE_SQL_PREFIX =
+  /^(?:select|insert|update|delete|with|replace|begin|commit|rollback)\b/i;
+
 export class NodeSQLiteDatabase<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > extends BaseSQLiteDatabase<"sync", StatementResultingChanges, TSchema> {
   static readonly [entityKind]: string = "NodeSQLiteDatabase";
 
-  migrate(config: MigrationConfig, baselineExistingDatabase = false): void {
+  migrate(config: MigrationConfig, baselineExistingDatabase = false): boolean {
     const { dialect, session } = this as unknown as {
       dialect: SQLiteSyncDialect;
-      session: SQLiteSession<
-        "sync",
-        StatementResultingChanges,
-        Record<string, unknown>,
-        TablesRelationalConfig
-      >;
+      session: NodeSQLiteSession<Record<string, unknown>, TablesRelationalConfig>;
     };
     const migrations = readMigrationFiles(config);
+    const migrationsTable = config.migrationsTable ?? "__drizzle_migrations";
+    const beforeCount = session.getAppliedMigrationCount(migrationsTable);
+
     if (baselineExistingDatabase) {
       const baselineMigration = migrations[0];
       if (!baselineMigration) {
@@ -60,6 +62,10 @@ export class NodeSQLiteDatabase<
       dialect.migrate([marker], session, config);
     }
     dialect.migrate(migrations, session, config);
+    session.clearStatementCache();
+
+    const afterCount = session.getAppliedMigrationCount(migrationsTable);
+    return baselineExistingDatabase || afterCount > beforeCount;
   }
 }
 
@@ -70,6 +76,7 @@ class NodeSQLiteSession<
   static readonly [entityKind]: string = "NodeSQLiteSession";
 
   private readonly logger: Logger;
+  private readonly statementCache = new Map<string, StatementSync>();
 
   constructor(
     private readonly client: DatabaseSync,
@@ -81,6 +88,49 @@ class NodeSQLiteSession<
     this.logger = options.logger ?? new NoopLogger();
   }
 
+  private getPreparedStatement(sqlText: string): StatementSync {
+    if (!CACHEABLE_SQL_PREFIX.test(sqlText.trimStart())) {
+      return this.client.prepare(sqlText);
+    }
+
+    const cached = this.statementCache.get(sqlText);
+    if (cached) {
+      // Refresh recency for LRU eviction.
+      this.statementCache.delete(sqlText);
+      this.statementCache.set(sqlText, cached);
+      return cached;
+    }
+
+    const stmt = this.client.prepare(sqlText);
+    if (this.statementCache.size >= STATEMENT_CACHE_MAX_SIZE) {
+      const oldestKey = this.statementCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.statementCache.delete(oldestKey);
+      }
+    }
+    this.statementCache.set(sqlText, stmt);
+    return stmt;
+  }
+
+  clearStatementCache(): void {
+    this.statementCache.clear();
+  }
+
+  getAppliedMigrationCount(migrationsTable: string): number {
+    const tableExists = this.client
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(migrationsTable);
+    if (!tableExists) {
+      return 0;
+    }
+
+    const safeIdentifier = migrationsTable.replaceAll('"', '""');
+    const row = this.client.prepare(`SELECT count(*) AS count FROM "${safeIdentifier}"`).get() as
+      | { count?: number }
+      | undefined;
+    return typeof row?.count === "number" ? row.count : 0;
+  }
+
   prepareQuery<T extends Omit<PreparedQueryConfig, "run">>(
     query: Query,
     fields: SelectedFieldsOrdered | undefined,
@@ -89,7 +139,7 @@ class NodeSQLiteSession<
     customResultMapper?: (rows: unknown[][]) => unknown,
   ): NodeSQLitePreparedQuery<T> {
     return new NodeSQLitePreparedQuery(
-      this.client.prepare(query.sql),
+      this.getPreparedStatement(query.sql),
       query,
       this.logger,
       fields,

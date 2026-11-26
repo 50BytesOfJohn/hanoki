@@ -418,7 +418,9 @@ export function MessageContextMenu({
         {children}
       </TextContextMenu>
 
-      <DeleteMessageDialog message={message} open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
+      {isDeleteOpen ? (
+        <DeleteMessageDialog message={message} open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
+      ) : null}
     </>
   );
 }

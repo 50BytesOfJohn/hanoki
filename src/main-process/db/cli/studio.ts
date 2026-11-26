@@ -1,7 +1,8 @@
-import { getAppDatabasePath, initializeAppDatabase } from "../database";
+import { closeAppDatabase, getAppDatabasePath, initializeAppDatabase } from "../database";
 import { spawn } from "node:child_process";
 
 initializeAppDatabase();
+closeAppDatabase();
 const appDbPath = getAppDatabasePath();
 
 const env: Record<string, string> = {};

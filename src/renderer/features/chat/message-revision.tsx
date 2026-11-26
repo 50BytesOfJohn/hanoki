@@ -96,6 +96,10 @@ export function RegenerateWithNotePopover({
   const scrollToBottom = useChatScrollToBottom();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+  if (!composer.isOpen) {
+    return null;
+  }
+
   return (
     <Popover
       open={composer.isOpen}

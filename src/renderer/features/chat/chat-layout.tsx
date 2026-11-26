@@ -55,15 +55,13 @@ import {
 import { ChatToolbar } from "@/features/chat/chat-toolbar";
 import { ChatViewHotkeys } from "@/features/chat/chat-view-hotkeys";
 import { getItemQueryOptions } from "@/queries/items";
-import { TerminalPane } from "@/features/terminal/terminal-pane";
 import {
   MARKDOWN_MODES,
   MARKDOWN_MODE_IDS,
-  MarkdownPane,
   MarkdownPaneProvider,
   useMarkdownPane,
   type MarkdownMode,
-} from "@/features/markdown/markdown-pane";
+} from "@/features/markdown/markdown-pane-context";
 import { sumiSettingsQueryOptions } from "@/queries/settings";
 import { useOpenChatView } from "@/features/chat/use-chat-view";
 import { useIsWorkspaceHydrated, useWorkspaceStore } from "@/features/workspace/store";
@@ -78,19 +76,40 @@ import {
   type ItemType,
   type TabStateItem,
 } from "@shared/ipc";
-import { WorkflowEditorPane } from "@/features/workflow/workflow-editor";
 import { findPaneByItemId, type PaneDropPosition } from "@/features/workspace/store/layout-tree";
 import { CHAT_DRAG_FORMAT } from "./chat-tabs";
 import { PaneDropOverlay, type PaneDropIntent } from "./chat-pane-drop-overlay";
 import { ChatNewTabPage } from "./chat-new-tab-page";
 import { ChatPaneProvider } from "./chat-pane-context";
 import { ActiveChatView } from "./chat-page";
-import { ChatGraphPage } from "./modules/graph/chat-graph-page";
-import { PinnedBranchesPage } from "./modules/pinned-branches/pinned-branches-page";
-import { ChatSettingsPage } from "./chat-settings-page";
 import { isReplaceableItemTitle } from "@shared/markdown/title-source";
 import { generateSumiItemTitle } from "../items/sumi-item-title-generation";
 import "@/stores/preview-tab-retention";
+
+// Split heavy pane views (xterm, xyflow/dagre, Tiptap StarterKit, secondary chat views)
+// out of the initial `/chat` layout chunk so app startup only parses what it renders.
+const TerminalPane = React.lazy(() =>
+  import("@/features/terminal/terminal-pane").then((mod) => ({ default: mod.TerminalPane })),
+);
+const MarkdownPane = React.lazy(() =>
+  import("@/features/markdown/markdown-pane").then((mod) => ({ default: mod.MarkdownPane })),
+);
+const WorkflowEditorPane = React.lazy(() =>
+  import("@/features/workflow/workflow-editor").then((mod) => ({
+    default: mod.WorkflowEditorPane,
+  })),
+);
+const ChatGraphPage = React.lazy(() =>
+  import("./modules/graph/chat-graph-page").then((mod) => ({ default: mod.ChatGraphPage })),
+);
+const PinnedBranchesPage = React.lazy(() =>
+  import("./modules/pinned-branches/pinned-branches-page").then((mod) => ({
+    default: mod.PinnedBranchesPage,
+  })),
+);
+const ChatSettingsPage = React.lazy(() =>
+  import("./chat-settings-page").then((mod) => ({ default: mod.ChatSettingsPage })),
+);
 
 export type NativeChatDrag =
   | { kind: "unsupported" }
@@ -135,8 +154,42 @@ function ChatLayoutFrame() {
   const activeTabId = useWorkspaceStore((state) => state.activeTabId);
   const movePane = useWorkspaceStore((state) => state.movePane);
   const isHydrated = useIsWorkspaceHydrated();
+  // Defer mounting inactive persisted tabs until the user visits them; once visited,
+  // they stay mounted so switching back is instant.
+  const [visitedTabIds, setVisitedTabIds] = React.useState<ReadonlySet<string>>(() =>
+    activeTabId ? new Set([activeTabId]) : new Set(),
+  );
   const [draggedPaneId, setDraggedPaneId] = React.useState<string | null>(null);
   const [nativeDrag, setNativeDrag] = React.useState<NativeChatDrag | null>(null);
+
+  React.useEffect(() => {
+    setVisitedTabIds((previous) => {
+      const openIds = new Set(tabs.map((tab) => tab.id));
+      let changed = false;
+
+      if (activeTabId && openIds.has(activeTabId) && !previous.has(activeTabId)) {
+        changed = true;
+      }
+      if (!changed) {
+        for (const id of previous) {
+          if (!openIds.has(id)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (!changed) return previous;
+
+      const next = new Set<string>();
+      for (const id of previous) {
+        if (openIds.has(id)) next.add(id);
+      }
+      if (activeTabId && openIds.has(activeTabId)) {
+        next.add(activeTabId);
+      }
+      return next;
+    });
+  }, [activeTabId, tabs]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor),
@@ -189,6 +242,9 @@ function ChatLayoutFrame() {
             <div className="relative h-full min-h-0 w-full min-w-0">
               {tabs.map((tab) => {
                 const isActive = tab.id === activeTabId;
+                if (!isActive && !visitedTabIds.has(tab.id)) {
+                  return null;
+                }
                 return (
                   <TabPanel
                     key={tab.id}
@@ -402,17 +458,51 @@ function ItemPane({
   );
 }
 
+const PANE_FALLBACK = <div className="flex-1" />;
+
 function PaneContent({ tabId, pane }: { tabId: string; pane: ItemPaneState }) {
-  if (pane.itemType === "terminal") return <TerminalPane itemId={pane.itemId} />;
-  if (pane.itemType === "markdown") return <MarkdownPane itemId={pane.itemId} />;
+  if (pane.itemType === "terminal") {
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <TerminalPane itemId={pane.itemId} />
+      </React.Suspense>
+    );
+  }
+  if (pane.itemType === "markdown") {
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <MarkdownPane itemId={pane.itemId} />
+      </React.Suspense>
+    );
+  }
   if (pane.itemType === "workflow") {
-    return <WorkflowEditorPane workflowId={pane.itemId} tabId={tabId} paneId={pane.id} />;
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <WorkflowEditorPane workflowId={pane.itemId} tabId={tabId} paneId={pane.id} />
+      </React.Suspense>
+    );
   }
   if (pane.view === "/chat/graph") {
-    return <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />;
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <ChatGraphPage chatId={pane.itemId} graphMessageId={pane.graphMessageId} />
+      </React.Suspense>
+    );
   }
-  if (pane.view === "/chat/pinned-branches") return <PinnedBranchesPage chatId={pane.itemId} />;
-  if (pane.view === "/chat/settings") return <ChatSettingsPage chatId={pane.itemId} />;
+  if (pane.view === "/chat/pinned-branches") {
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <PinnedBranchesPage chatId={pane.itemId} />
+      </React.Suspense>
+    );
+  }
+  if (pane.view === "/chat/settings") {
+    return (
+      <React.Suspense fallback={PANE_FALLBACK}>
+        <ChatSettingsPage chatId={pane.itemId} />
+      </React.Suspense>
+    );
+  }
   return <ActiveChatView chatId={pane.itemId} />;
 }
 

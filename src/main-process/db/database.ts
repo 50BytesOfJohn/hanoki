@@ -43,7 +43,9 @@ function getMigrationsDirectory(): string {
 }
 
 export function initializeAppDatabase(): void {
-  const { sqlite, db } = openDatabase(getAppDatabasePath());
+  closeAppDatabase();
+  const opened = openDatabase(getAppDatabasePath());
+  const { sqlite, db } = opened;
 
   try {
     const tableNames = new Set(
@@ -60,21 +62,35 @@ export function initializeAppDatabase(): void {
 
     const baselineExistingDatabase = tableNames.has("items") && !tableNames.has(MIGRATIONS_TABLE);
 
+    let didApplyMigrations = false;
     sqlite.exec("PRAGMA foreign_keys = OFF;");
     try {
-      db.migrate({ migrationsFolder: getMigrationsDirectory() }, baselineExistingDatabase);
+      didApplyMigrations = db.migrate(
+        { migrationsFolder: getMigrationsDirectory() },
+        baselineExistingDatabase,
+      );
     } finally {
       sqlite.exec("PRAGMA foreign_keys = ON;");
     }
 
-    const violations = sqlite.prepare("PRAGMA foreign_key_check").all();
-    if (violations.length > 0) {
-      throw new Error(
-        `Database migration introduced foreign key violations: ${violations.length}.`,
-      );
+    // `PRAGMA foreign_key_check` scans every row of every table with foreign keys.
+    // Run it only when migrations actually mutated the schema (foreign_keys = ON
+    // enforces referential integrity during normal operation).
+    if (didApplyMigrations) {
+      const violations = sqlite.prepare("PRAGMA foreign_key_check").all();
+      if (violations.length > 0) {
+        throw new Error(
+          `Database migration introduced foreign key violations: ${violations.length}.`,
+        );
+      }
     }
-  } finally {
+
+    // Keep the initialized connection as the long-lived singleton instead of
+    // closing it and immediately reopening SQLite + WAL on the next query.
+    connection = opened;
+  } catch (error) {
     sqlite.close();
+    throw error;
   }
 }
 
@@ -90,11 +106,16 @@ export function getAppDatabase(): AppDatabase {
 }
 
 /**
- * Closes the app SQLite connection. Call this from the `before-quit`
+ * Closes the app SQLite connection. Call this from the `will-quit`
  * app event to ensure WAL checkpointing completes cleanly.
  */
 export function closeAppDatabase(): void {
   if (connection) {
+    try {
+      connection.sqlite.exec("PRAGMA optimize;");
+    } catch {
+      // Best-effort planner statistics refresh on shutdown.
+    }
     connection.sqlite.close();
     connection = null;
   }

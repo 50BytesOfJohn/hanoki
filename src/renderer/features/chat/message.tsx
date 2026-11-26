@@ -287,7 +287,9 @@ const DeleteMessageButton = React.memo(function DeleteMessageButton({
         <HugeiconsIcon icon={Delete02Icon} />
       </Button>
 
-      <DeleteMessageDialog message={message} open={isOpen} onOpenChange={setIsOpen} />
+      {isOpen ? (
+        <DeleteMessageDialog message={message} open={isOpen} onOpenChange={setIsOpen} />
+      ) : null}
     </>
   );
 });
@@ -296,10 +298,7 @@ interface AssistantMessageInfoButtonProps {
   message: HanokiUiMessage;
 }
 
-const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButton({
-  message,
-}: AssistantMessageInfoButtonProps) {
-  const [isOpen, setIsOpen] = React.useState(false);
+function useMessageInfoNames(message: HanokiUiMessage): MessageInfoNames {
   const modelId = message.metadata?.model;
   const providerId = message.metadata?.provider;
   const { data: providers = [] } = useQuery({
@@ -314,7 +313,7 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
     ...listProviderModelsQueryOptions(providerRecord?.id ?? ""),
     enabled: Boolean(modelId && providerRecord),
   });
-  const names = React.useMemo<MessageInfoNames>(() => {
+  return React.useMemo<MessageInfoNames>(() => {
     const modelRecord = providerModels.find((item) => item.id === modelId);
     return {
       modelName: modelRecord
@@ -324,12 +323,19 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
       providerName: providerRecord?.displayName ?? formatKnownValue(providerId),
     };
   }, [providerModels, modelId, providerRecord, providerId]);
-  const summary = React.useMemo(() => getMessageInfoSummary(message, names), [message, names]);
-  const details = React.useMemo(() => getMessageInfoDetails(message, names), [message, names]);
+}
+
+// Keep queries, model lookups, Intl formatting, and JSON serialization out of the
+// closed message path — a long chat renders dozens of assistant rows at once.
+const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButton({
+  message,
+}: AssistantMessageInfoButtonProps) {
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false);
 
   return (
     <>
-      <PreviewCard>
+      <PreviewCard open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
         <PreviewCardTrigger
           render={
             <Button
@@ -337,69 +343,97 @@ const AssistantMessageInfoButton = React.memo(function AssistantMessageInfoButto
               size="icon-sm"
               variant="ghost"
               className={TOOLBAR_BUTTON_CLASS}
-              onClick={() => setIsOpen(true)}
+              onClick={() => setIsDialogOpen(true)}
             />
           }
         >
           <HugeiconsIcon icon={InformationCircleIcon} />
         </PreviewCardTrigger>
         <PreviewCardPopup sideOffset={10} className="w-auto p-3">
-          <AssistantMessageInfoTooltip summary={summary} />
+          {isPreviewOpen ? <AssistantMessageInfoTooltip message={message} /> : null}
         </PreviewCardPopup>
       </PreviewCard>
 
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Message Information</DialogTitle>
-            <DialogDescription>
-              Stored metadata and message payload for this assistant response.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex min-h-0 flex-col gap-5 overflow-y-auto scrollbar">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {details.primary.map((item) => (
-                <MessageInfoField key={item.label} label={item.label} value={item.value} />
-              ))}
-            </div>
-
-            <Separator />
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              {details.tokens.map((item) => (
-                <MessageInfoField key={item.label} label={item.label} value={item.value} />
-              ))}
-            </div>
-
-            <Separator />
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {details.branch.map((item) => (
-                <MessageInfoField key={item.label} label={item.label} value={item.value} />
-              ))}
-            </div>
-
-            <MessageInfoJson title="Metadata" value={message.metadata ?? null} />
-            <MessageInfoJson title="Parts" value={message.parts} />
-          </div>
-
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => setIsOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {isDialogOpen ? (
+        <AssistantMessageInfoDialog
+          message={message}
+          open={isDialogOpen}
+          onOpenChange={setIsDialogOpen}
+        />
+      ) : null}
     </>
   );
 });
 
-interface AssistantMessageInfoTooltipProps {
-  summary: MessageInfoSummary;
+interface AssistantMessageInfoDialogProps {
+  message: HanokiUiMessage;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-function AssistantMessageInfoTooltip({ summary }: AssistantMessageInfoTooltipProps) {
+function AssistantMessageInfoDialog({
+  message,
+  open,
+  onOpenChange,
+}: AssistantMessageInfoDialogProps) {
+  const names = useMessageInfoNames(message);
+  const details = React.useMemo(() => getMessageInfoDetails(message, names), [message, names]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Message Information</DialogTitle>
+          <DialogDescription>
+            Stored metadata and message payload for this assistant response.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex min-h-0 flex-col gap-5 overflow-y-auto scrollbar">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {details.primary.map((item) => (
+              <MessageInfoField key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {details.tokens.map((item) => (
+              <MessageInfoField key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {details.branch.map((item) => (
+              <MessageInfoField key={item.label} label={item.label} value={item.value} />
+            ))}
+          </div>
+
+          <MessageInfoJson title="Metadata" value={message.metadata ?? null} />
+          <MessageInfoJson title="Parts" value={message.parts} />
+        </div>
+
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface AssistantMessageInfoTooltipProps {
+  message: HanokiUiMessage;
+}
+
+function AssistantMessageInfoTooltip({ message }: AssistantMessageInfoTooltipProps) {
+  const names = useMessageInfoNames(message);
+  const summary = React.useMemo(() => getMessageInfoSummary(message, names), [message, names]);
+
   return (
     <div className="flex w-72 flex-col gap-3 p-1">
       <div className="flex items-start justify-between gap-3">
@@ -940,7 +974,10 @@ const AssistantMessage = React.memo(function AssistantMessage({
     () => (isAnimating ? "" : getTiptapMessageDisplayText(message)),
     [isAnimating, message],
   );
-  const runs = groupAssistantParts(message.parts, isAnimating);
+  const runs = React.useMemo(
+    () => groupAssistantParts(message.parts, isAnimating),
+    [message.parts, isAnimating],
+  );
   const hasWorkflowRun = message.parts.some((part) => part.type === "data-workflowRun");
   const streamingWorkflowText =
     hasWorkflowRun && isAnimating && runs.length === 0 ? getStreamingWorkflowText(message) : null;
@@ -1249,17 +1286,40 @@ function formatTokenTotal(tokens: ChatMessageMetadata["tokens"] | undefined): st
   return `${total.toLocaleString()} tokens`;
 }
 
+const costFormatters = new Map<string, Intl.NumberFormat>();
+let cachedTimestampFormatter: Intl.DateTimeFormat | null = null;
+
+function getCostFormatter(currency: string, isMicroCost: boolean): Intl.NumberFormat {
+  const key = `${currency}:${isMicroCost ? "micro" : "std"}`;
+  let formatter = costFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: isMicroCost ? 6 : 2,
+      maximumFractionDigits: isMicroCost ? 6 : 4,
+    });
+    costFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+function getTimestampFormatter(): Intl.DateTimeFormat {
+  if (!cachedTimestampFormatter) {
+    cachedTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }
+  return cachedTimestampFormatter;
+}
+
 function formatCost(value: number | null | undefined, currency: string | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "Unknown";
   }
 
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: currency || "USD",
-    minimumFractionDigits: value < 0.01 ? 6 : 2,
-    maximumFractionDigits: value < 0.01 ? 6 : 4,
-  }).format(value);
+  return getCostFormatter(currency || "USD", value < 0.01).format(value);
 }
 
 function formatDuration(value: number | null | undefined): string {
@@ -1279,8 +1339,5 @@ function formatTimestamp(value: number | null | undefined): string {
     return "Unknown";
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return getTimestampFormatter().format(new Date(value));
 }
