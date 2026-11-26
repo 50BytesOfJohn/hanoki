@@ -1050,9 +1050,7 @@ async function fetchSdkProviderModelsForSync(
     fetchJsonWithTimeout(request, `${providerName} model fetch`),
     // The catalog only enriches the list; sync without it rather than fail.
     catalogRequest
-      ? fetchJsonWithTimeout(catalogRequest, `${providerName} catalog fetch`).catch(
-          () => undefined,
-        )
+      ? fetchJsonWithTimeout(catalogRequest, `${providerName} catalog fetch`).catch(() => undefined)
       : undefined,
   ]);
   return parseModels(body, catalogBody);
