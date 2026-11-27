@@ -13,6 +13,7 @@ export type ProviderId =
   | "huggingface"
   | "featherless"
   | "outrun"
+  | "saygm"
   | "openai-compatible"
   | "ollama";
 
@@ -136,6 +137,11 @@ export const SUPPORTED_PROVIDERS: readonly SupportedProviderDefinition[] = [
     "outrun",
     "Outrun",
     "Use a prepaid Outrun API key to access GPT, Claude, Gemini, DeepSeek, GLM and more.",
+  ),
+  createApiKeyProviderDefinition(
+    "saygm",
+    "SayGM",
+    "Use a prepaid SayGM API key to access GPT, Claude, Gemini, GLM, Qwen, Kimi and more.",
   ),
   {
     id: "codex",

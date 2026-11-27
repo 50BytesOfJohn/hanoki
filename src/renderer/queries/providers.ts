@@ -14,3 +14,14 @@ export function listProviderModelsQueryOptions(providerId: string) {
     queryFn: () => providerApi.listModels(providerId),
   });
 }
+
+export function providerBalanceQueryOptions(providerId: string) {
+  return queryOptions({
+    queryKey: queryKeys.providers.balance(providerId),
+    queryFn: () => providerApi.getBalance(providerId),
+    // Spending moves it, so refresh whenever the page is looked at again.
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+}

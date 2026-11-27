@@ -103,6 +103,7 @@ export const IPC_CHANNELS = {
     save: "providers:save",
     updateSecrets: "providers:updateSecrets",
     delete: "providers:delete",
+    getBalance: "providers:getBalance",
   },
   models: {
     list: "models:list",
@@ -583,6 +584,12 @@ export interface ProviderCredentialTestResult {
   message: string;
 }
 
+/** Remaining prepaid credit, in USD. `spent` is null when the provider doesn't report it. */
+export interface ProviderBalance {
+  balance: number;
+  spent: number | null;
+}
+
 export interface ProviderInfo {
   id: string;
   displayName: string;
@@ -797,6 +804,8 @@ export interface IpcApi {
   saveProvider: (input: SaveProviderInput) => Promise<SaveProviderResult>;
   updateProviderSecrets: (input: UpdateProviderSecretsInput) => Promise<ProviderInfo>;
   deleteProvider: (providerId: string) => Promise<void>;
+  /** Null for providers that don't report a balance. */
+  getProviderBalance: (providerId: string) => Promise<ProviderBalance | null>;
   /** Every active model, enabled or not, with picker preferences. */
   listModels: () => Promise<ProviderModelInfo[]>;
   listRecentModels: () => Promise<RecentModelUsage[]>;

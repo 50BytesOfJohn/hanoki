@@ -12,6 +12,7 @@
  * one, so the menu offers only what actually changes the request.
  */
 import type { ProviderId } from "../providers/catalog";
+import { getSayGmReasoningEfforts } from "../providers/saygm";
 import { getModelCapabilities } from "./model-details";
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -57,6 +58,8 @@ const REASONING_EFFORTS_BY_PROVIDER = {
   // Claude goes through the Anthropic adapter, everything else through `reasoning_effort`;
   // these three are what both sides accept.
   outrun: ["low", "medium", "high"],
+  // Decided per model by the route it is called over; see `getSayGmReasoningEfforts`.
+  saygm: ["low", "medium", "high"],
   // Passed through verbatim as `reasoning_effort`; stick to the widely accepted values.
   "openai-compatible": ["low", "medium", "high"],
   codex: ["low", "medium", "high", "xhigh"],
@@ -65,7 +68,7 @@ const REASONING_EFFORTS_BY_PROVIDER = {
 /**
  * The efforts to offer for one model.
  *
- * Codex is the only provider that publishes per-model levels. Everyone else
+ * Codex and SayGM publish per-model levels. Everyone else
  * either advertises capabilities (OpenRouter, Anthropic, Ollama, Mistral…) —
  * in which case a model without `reasoning` gets nothing — or reports no
  * capabilities at all (OpenAI, DeepSeek, Together…), where guessing from the
@@ -75,6 +78,10 @@ export function getModelReasoningEfforts(
   providerId: ProviderId,
   metadata: Record<string, unknown> | null | undefined,
 ): ReasoningEffort[] {
+  if (providerId === "saygm") {
+    return getSayGmReasoningEfforts(metadata);
+  }
+
   const codexLevels = readCodexReasoningLevels(metadata);
   if (codexLevels.length > 0) {
     return codexLevels;

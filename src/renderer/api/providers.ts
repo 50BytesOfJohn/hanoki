@@ -28,6 +28,9 @@ export const providerApi = {
   delete(providerId: string) {
     return window.electronAPI.deleteProvider(providerId);
   },
+  getBalance(providerId: string) {
+    return window.electronAPI.getProviderBalance(providerId);
+  },
   updateModel(modelId: string, input: UpdateModelInput) {
     return window.electronAPI.updateModel(modelId, input);
   },

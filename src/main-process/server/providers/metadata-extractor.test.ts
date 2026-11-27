@@ -89,6 +89,26 @@ describe("buildResponseMetadata", () => {
 
     expect(metadata).not.toHaveProperty("contextUsage");
   });
+
+  it("uses the cost SayGM billed instead of the list-price estimate", () => {
+    const usage = {
+      ...createUsage({ input: 100, output: 25, cached: 0, reasoning: 0 }),
+      raw: { prompt_tokens: 100, completion_tokens: 25, cost_nano_usd: 41_250 },
+    };
+
+    expect(buildResponseMetadata(usage, "saygm", model, 500, "stop").cost).toEqual({
+      total: 0.00004125,
+      currency: "USD",
+    });
+  });
+
+  it("falls back to the estimate when SayGM reported no cost", () => {
+    const usage = createUsage({ input: 100, output: 25, cached: 0, reasoning: 0 });
+
+    expect(buildResponseMetadata(usage, "saygm", model, 500, "stop").cost?.total).toBeCloseTo(
+      0.00015,
+    );
+  });
 });
 
 describe("mergeLanguageModelUsage", () => {
@@ -99,6 +119,20 @@ describe("mergeLanguageModelUsage", () => {
     expect(mergeLanguageModelUsage(first, second)).toEqual(
       createUsage({ input: 250, output: 25, cached: 50, reasoning: 5 }),
     );
+  });
+
+  it("sums billed costs across steps only when every step has one", () => {
+    const step = (raw: Record<string, number>) => ({
+      ...createUsage({ input: 10, output: 1, cached: 0, reasoning: 0 }),
+      raw,
+    });
+
+    expect(
+      mergeLanguageModelUsage(step({ cost_nano_usd: 1_000 }), step({ costNanoUsd: 2_500 })).raw,
+    ).toEqual({ cost_nano_usd: 3_500 });
+    expect(
+      mergeLanguageModelUsage(step({ cost_nano_usd: 1_000 }), step({ prompt_tokens: 10 })),
+    ).not.toHaveProperty("raw");
   });
 });
 

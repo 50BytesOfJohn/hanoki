@@ -30,6 +30,10 @@ function buildLanguageModelResolvers(): Record<ProviderId, LanguageModelResolver
     huggingface: createApiKeyLanguageModelResolver("huggingface"),
     featherless: createApiKeyLanguageModelResolver("featherless"),
     outrun: createApiKeyLanguageModelResolver("outrun"),
+    saygm: async (input) => {
+      const { createSayGmLanguageModelForRow } = await import("./resolvers/saygm-language-model");
+      return createSayGmLanguageModelForRow(input);
+    },
     ollama: async (input) => {
       const { createOllamaLanguageModel } = await import("./resolvers/ollama-language-model");
       return createOllamaLanguageModel(input);

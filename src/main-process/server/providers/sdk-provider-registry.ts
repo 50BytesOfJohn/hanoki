@@ -1,5 +1,13 @@
+import type { LanguageModelV4, SharedV4ProviderOptions } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
+import type { ProviderBalance } from "@shared/ipc";
 import type { ProviderId } from "@shared/providers/catalog";
+import {
+  SAYGM_API_ORIGIN,
+  getSayGmApiRoute,
+  getSayGmReasoningEfforts,
+  parseSayGmCreditBalance,
+} from "@shared/providers/saygm";
 import type { SyncProviderModelInput } from "../../models/repository";
 
 type ActiveModelLifecycleStatus = SyncProviderModelInput["lifecycleStatus"];
@@ -18,6 +26,9 @@ interface SdkProviderRegistryEntry {
   buildCatalogRequest?: () => ProviderRequestSpec;
   /** `catalogBody` is absent during credential tests and when the catalog fetch failed. */
   parseModels: (body: unknown, catalogBody?: unknown) => SyncProviderModelInput[];
+  /** For prepaid providers that report the key's remaining credit. */
+  buildBalanceRequest?: (apiKey: string) => ProviderRequestSpec;
+  parseBalance?: (body: unknown) => ProviderBalance;
 }
 
 export const sdkProviderRegistry = {
@@ -319,7 +330,137 @@ export const sdkProviderRegistry = {
       return parseOutrunModels(body, catalogBody);
     },
   },
+  saygm: {
+    createLanguageModel(apiKey, providerModelId) {
+      return createSayGmLanguageModel(apiKey, providerModelId, undefined);
+    },
+    buildModelsRequest(apiKey) {
+      // The catalog is public, but a bad key still gets a 401, which the credential test needs.
+      return buildBearerRequest(`${SAYGM_API_ORIGIN}/v1/models`, apiKey);
+    },
+    parseModels(body) {
+      return parseSayGmModels(body);
+    },
+    buildBalanceRequest(apiKey) {
+      return buildBearerRequest(`${SAYGM_API_ORIGIN}/v1/credits`, apiKey);
+    },
+    parseBalance(body) {
+      return parseSayGmCreditBalance(body);
+    },
+  },
 } satisfies Record<ApiKeyProviderId, SdkProviderRegistryEntry>;
+
+/**
+ * Each SayGM model goes over the format that carries the most of it; see
+ * `getSayGmApiRoute`. `metadata` is the stored catalog entry, which names the
+ * formats a model accepts.
+ */
+export async function createSayGmLanguageModel(
+  apiKey: string,
+  providerModelId: string,
+  metadata: Record<string, unknown> | undefined,
+): Promise<LanguageModel> {
+  const baseURL = `${SAYGM_API_ORIGIN}/v1`;
+
+  switch (getSayGmApiRoute(providerModelId, metadata)) {
+    case "messages": {
+      const { createAnthropic } = await import("@ai-sdk/anthropic");
+      return createAnthropic({ apiKey, baseURL })(providerModelId);
+    }
+    case "responses": {
+      const { createOpenAI } = await import("@ai-sdk/openai");
+      // Without a summary request, Responses thinks silently.
+      return withDefaultProviderOptions(
+        createOpenAI({ apiKey, baseURL }).responses(providerModelId),
+        {
+          openai: { reasoningSummary: "auto" },
+        },
+      );
+    }
+    case "gemini": {
+      const { createGoogle } = await import("@ai-sdk/google");
+      // SayGM drops thought text today; asking costs nothing and shows it if that changes.
+      return withDefaultProviderOptions(
+        createGoogle({ apiKey, baseURL: `${SAYGM_API_ORIGIN}/v1beta` })(providerModelId),
+        { google: { thinkingConfig: { includeThoughts: true } } },
+      );
+    }
+    default: {
+      const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
+      return createOpenAICompatible({
+        name: "saygm",
+        baseURL,
+        apiKey,
+        includeUsage: true,
+      }).chatModel(providerModelId);
+    }
+  }
+}
+
+async function withDefaultProviderOptions(
+  model: LanguageModelV4,
+  providerOptions: SharedV4ProviderOptions,
+): Promise<LanguageModel> {
+  const { defaultSettingsMiddleware, wrapLanguageModel } = await import("ai");
+  return wrapLanguageModel({
+    model,
+    middleware: defaultSettingsMiddleware({ settings: { providerOptions } }),
+  });
+}
+
+/** USD per million tokens, in billionths of a dollar. */
+const NANO_USD_PER_MTOK_TO_USD_PER_TOKEN = 1e-15;
+
+/**
+ * `/v1/models` lists image and video models too; only those with a chat
+ * format are kept. Prices are stored the OpenRouter way (USD per token) so
+ * the picker shows them and replies get a cost estimate when the billed
+ * cost is missing.
+ */
+function parseSayGmModels(body: unknown): SyncProviderModelInput[] {
+  const rawModels: Record<string, unknown>[] = [];
+
+  for (const rawEntry of extractArrayFromResponse(body, ["data"], "SayGM")) {
+    const rawModel = readRecord(rawEntry);
+    const id = readTrimmedString(rawModel?.id);
+    if (!rawModel || !id || rawModel.available === false) {
+      continue;
+    }
+    if (getSayGmApiRoute(id, rawModel) === null) {
+      continue;
+    }
+
+    const dimensions = readRecord(readRecord(rawModel.pricing)?.dimensions);
+    const perToken = (key: string) => {
+      const value = dimensions?.[key];
+      return typeof value === "number" ? value * NANO_USD_PER_MTOK_TO_USD_PER_TOKEN : undefined;
+    };
+    const capabilities = readRecord(rawModel.capabilities);
+
+    rawModels.push({
+      ...rawModel,
+      // Keep the catalog's own price block; `pricing` is what the app reads.
+      saygm_pricing: rawModel.pricing,
+      pricing: {
+        prompt: perToken("input_per_mtok_ndollars"),
+        completion: perToken("output_per_mtok_ndollars"),
+        input_cache_read: perToken("cache_read_per_mtok_ndollars"),
+      },
+      supported_parameters: [
+        ...(capabilities?.tools === true ? ["tools"] : []),
+        ...(getSayGmReasoningEfforts(rawModel).length > 0 ? ["reasoning"] : []),
+      ],
+    });
+  }
+
+  return normalizeModelList("saygm", rawModels, {
+    getDisplayName(rawModel, providerModelId) {
+      const name = readTrimmedString(rawModel.display_name) ?? providerModelId;
+      // "-tee" models run in a confidential enclave and share the plain model's name.
+      return rawModel.confidential === true ? `${name} (TEE)` : name;
+    },
+  });
+}
 
 const OUTRUN_API_URL = "https://api.outrun.to/v1";
 

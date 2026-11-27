@@ -10,6 +10,7 @@ type ProvidersApi = Pick<
   | "saveProvider"
   | "updateProviderSecrets"
   | "deleteProvider"
+  | "getProviderBalance"
 >;
 
 export function createProvidersApi(): ProvidersApi {
@@ -21,5 +22,6 @@ export function createProvidersApi(): ProvidersApi {
     saveProvider: (input) => invokeIpc(IPC_CHANNELS.providers.save, input),
     updateProviderSecrets: (input) => invokeIpc(IPC_CHANNELS.providers.updateSecrets, input),
     deleteProvider: (providerId) => invokeIpc(IPC_CHANNELS.providers.delete, providerId),
+    getProviderBalance: (providerId) => invokeIpc(IPC_CHANNELS.providers.getBalance, providerId),
   };
 }

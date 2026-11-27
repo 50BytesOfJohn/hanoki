@@ -1,5 +1,6 @@
 import {
   IPC_CHANNELS,
+  type ProviderBalance,
   type ProviderInfo,
   type ProviderCredentialTestInput,
   type ProviderCredentialTestResult,
@@ -171,5 +172,12 @@ export function registerProvidersIpcModule(
     channel: IPC_CHANNELS.providers.delete,
     parseArgs: parseProviderRecordIdArg,
     handler: ({ services }, _event, providerId) => services.providers.deleteProvider(providerId),
+  });
+
+  registerInvokeHandler<[string], ProviderBalance | null>(context, registeredChannels, {
+    channel: IPC_CHANNELS.providers.getBalance,
+    parseArgs: parseProviderRecordIdArg,
+    handler: ({ services }, _event, providerId) =>
+      services.providers.getProviderBalance(providerId),
   });
 }

@@ -1,6 +1,7 @@
 import type { LanguageModelUsage } from "ai";
 import type { ProviderId } from "@shared/providers/catalog";
 import type { ChatMessageMetadata } from "@shared/chat/message-metadata";
+import { readSayGmBilledCost } from "@shared/providers/saygm";
 import type { ModelTableRow } from "../../models/repository";
 import { extractOpenRouterMetadata } from "./resolvers/openrouter-metadata";
 import { extractOllamaMetadata } from "./resolvers/ollama-metadata";
@@ -12,7 +13,16 @@ type ProviderMetadataAdapter = (
 const providerAdapters: Partial<Record<ProviderId, ProviderMetadataAdapter>> = {
   openrouter: extractOpenRouterMetadata,
   ollama: extractOllamaMetadata,
+  saygm: extractSayGmMetadata,
 };
+
+/** SayGM reports what it actually charged, which beats estimating from list prices. */
+function extractSayGmMetadata(
+  usage: LanguageModelUsage,
+): Partial<Omit<ChatMessageMetadata, "parentId">> {
+  const billed = readSayGmBilledCost(usage.raw);
+  return billed === null ? {} : { cost: { total: billed, currency: "USD" } };
+}
 
 /**
  * Build response metadata from known request details and any available AI SDK usage data.
@@ -56,6 +66,12 @@ export function buildResponseMetadata(
   };
 }
 
+/**
+ * Sums two steps' usage. The AI SDK drops `raw` when it does this itself, so
+ * a billed cost carried there (SayGM) is summed here and kept as
+ * `raw.cost_nano_usd`; it is dropped unless every step reported one, so a
+ * partial sum never passes for the whole.
+ */
 export function mergeLanguageModelUsage(
   current: LanguageModelUsage | undefined,
   next: LanguageModelUsage,
@@ -64,7 +80,15 @@ export function mergeLanguageModelUsage(
     return next;
   }
 
+  const currentBilled = readSayGmBilledCost(current.raw);
+  const nextBilled = readSayGmBilledCost(next.raw);
+  const raw =
+    currentBilled !== null && nextBilled !== null
+      ? { cost_nano_usd: Math.round((currentBilled + nextBilled) * 1e9) }
+      : undefined;
+
   return {
+    ...(raw ? { raw } : {}),
     inputTokens: addTokenCounts(current.inputTokens, next.inputTokens),
     inputTokenDetails: {
       noCacheTokens: addTokenCounts(

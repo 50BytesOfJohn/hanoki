@@ -5,6 +5,7 @@
  * shared abstractions that leak provider-specific behavior.
  */
 import type {
+  ProviderBalance,
   ProviderInfo,
   ProviderCredentialTestInput,
   ProviderCredentialTestResult,
@@ -66,6 +67,7 @@ export interface ProviderService {
   saveProvider(input: SaveProviderInput): Promise<SaveProviderResult>;
   updateProviderSecrets(input: UpdateProviderSecretsInput): Promise<ProviderInfo>;
   deleteProvider(providerId: string): void;
+  getProviderBalance(providerId: string): Promise<ProviderBalance | null>;
   syncProvidersOnStartup(): Promise<void>;
 }
 
@@ -252,6 +254,27 @@ export function createProviderService(options?: ProviderServiceOptions): Provide
       }
 
       deleteStoredProvider(providerId);
+    },
+
+    async getProviderBalance(providerId) {
+      const providerRow = getProviderById(providerId);
+      if (!providerRow) {
+        throw AppError.notFound(`Provider "${providerId}" not found.`);
+      }
+
+      const { providerDef, parsedConfig } = await resolveProviderRuntimeContext(providerRow);
+      const providerEntry = getSdkProviderRegistryEntry(providerDef.id);
+      if (!providerEntry?.buildBalanceRequest || !providerEntry.parseBalance) {
+        return null;
+      }
+
+      const body = await fetchJsonWithTimeout(
+        providerEntry.buildBalanceRequest(
+          getRequiredParsedSecretConfigValue(parsedConfig, "apiKey"),
+        ),
+        `${getProviderName(providerDef.id)} balance fetch`,
+      );
+      return providerEntry.parseBalance(body);
     },
 
     async syncProvidersOnStartup() {

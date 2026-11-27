@@ -556,6 +556,9 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
     // The stream reports failures as an `error` chunk rather than by rejecting,
     // so `onEnd` still runs afterwards; this is how it knows not to persist.
     let streamErrorMessage: string | null = null;
+    // Summed from `finish-step` parts rather than read off `finish`, whose
+    // `totalUsage` loses each step's raw usage and the billed cost in it.
+    let streamedStepUsage: LanguageModelUsage | undefined;
 
     return result.toUIMessageStreamResponse({
       consumeSseStream: consumeStream,
@@ -583,6 +586,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         // Read in stream order so it is always set before `finish` arrives.
         if (part.type === "finish-step") {
           lastStepUsage = part.usage;
+          streamedStepUsage = mergeLanguageModelUsage(streamedStepUsage, part.usage);
           return undefined;
         }
         if (part.type === "start") {
@@ -598,7 +602,7 @@ export function createChatRoute(options?: CreateChatRouteOptions) {
         }
         if (part.type === "finish") {
           capturedResponseMetadata = buildResponseMetadata(
-            part.totalUsage,
+            streamedStepUsage ?? part.totalUsage,
             provider.catalogId as ProviderId,
             model,
             Date.now() - startTime,

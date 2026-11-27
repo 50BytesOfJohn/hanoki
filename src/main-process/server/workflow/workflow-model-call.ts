@@ -22,7 +22,7 @@ import { getProviderById } from "../../providers/repository";
 import { resolveProviderRuntimeContext } from "../../providers/runtime-config";
 import { buildChatProviderOptions } from "../providers/chat-provider-options";
 import { createLanguageModel } from "../providers/language-model-factory";
-import { buildResponseMetadata } from "../providers/metadata-extractor";
+import { buildResponseMetadata, mergeLanguageModelUsage } from "../providers/metadata-extractor";
 import { getChatStreamErrorMessage } from "../chat-stream-error";
 import type {
   WorkflowDecisionCall,
@@ -192,7 +192,7 @@ export function createWorkflowModelCaller(temperature: number | undefined) {
       ...toModelResult(
         step,
         buildResponseMetadata(
-          addUsage(usage, result.totalUsage),
+          mergeLanguageModelUsage(usage, result.totalUsage),
           step.providerId,
           step.model,
           Date.now() - startedAt,
@@ -287,21 +287,6 @@ function getErrorUsage(error: unknown): LanguageModelUsage | undefined {
     return (error as { usage?: LanguageModelUsage }).usage;
   }
   return undefined;
-}
-
-function addUsage(
-  first: LanguageModelUsage | undefined,
-  second: LanguageModelUsage,
-): LanguageModelUsage {
-  if (!first) return second;
-  const add = (a: number | undefined, b: number | undefined) =>
-    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
-  return {
-    ...second,
-    inputTokens: add(first.inputTokens, second.inputTokens),
-    outputTokens: add(first.outputTokens, second.outputTokens),
-    totalTokens: add(first.totalTokens, second.totalTokens),
-  };
 }
 
 async function resolveStepModel(
