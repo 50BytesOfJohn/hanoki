@@ -14,6 +14,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { InputGroup, InputGroupAddon } from "@/components/ui/input-group";
 import {
   DropdownMenu,
@@ -28,9 +29,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { toastManager } from "@/components/ui/toast";
 import {
   useChatCanStop,
   ChatContextProvider,
+  useChatEditingMessageId,
   useChatRegenerateMessage,
   useChatIsInteractionLocked,
   useChatIsStreaming,
@@ -53,6 +56,22 @@ import { listEnabledModelsQueryOptions } from "@/queries/models";
 import { globalChatSettingsQueryOptions } from "@/queries/settings";
 import { useSystemStore, selectAiServerPort, selectAiServerReady } from "@/stores/system-store";
 import {
+  enqueue,
+  moveToFront,
+  removeItem,
+  restoreItem,
+  toQueuePreview,
+  updateItem,
+} from "@/stores/chat-queue";
+import {
+  getChatQueue,
+  resumeChatQueue,
+  setChatQueueHold,
+  updateChatQueue,
+  useChatQueue,
+} from "@/stores/chat-queue-store";
+import { createUuidV7 } from "@shared/uuidv7";
+import {
   createEmptyTiptapDocument,
   createTiptapDocumentFromText,
   createTiptapMessageParts,
@@ -60,6 +79,7 @@ import {
   type TiptapDocument,
 } from "@shared/tiptap/document";
 import { ChatContextUsage } from "./chat-context-usage";
+import { ChatMessageQueue } from "./chat-message-queue";
 import { ChatMessageHotkeys } from "./chat-message-hotkeys";
 import { useWorkspaceStore } from "../workspace/store";
 import { Conversation } from "./conversation";
@@ -182,6 +202,14 @@ function ActiveChatContent() {
   });
   const inputRef = React.useRef(input);
   const composerEditorRef = React.useRef<Editor | null>(null);
+  // A queued message open in the composer. The draft it displaced waits in `stash` and comes
+  // back on save or cancel, so editing a queued message never costs the user what they typed.
+  const [queueEdit, setQueueEdit] = React.useState<{
+    id: string;
+    stash: TiptapDocument;
+  } | null>(null);
+  const queueEditRef = React.useRef(queueEdit);
+  queueEditRef.current = queueEdit;
   const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const saveDraft = useDebouncedCallback(
     (document: TiptapDocument) => useWorkspaceStore.getState().setChatDraft(chatId, document),
@@ -191,7 +219,10 @@ function ActiveChatContent() {
     (document: TiptapDocument) => {
       inputRef.current = document;
       setInput(document);
-      saveDraft(document);
+      // While a queued message is open, the saved draft stays the stashed one.
+      if (!queueEditRef.current) {
+        saveDraft(document);
+      }
       // Typing is engagement: a half-written prompt shouldn't vanish with its preview tab.
       useWorkspaceStore.getState().keepItem(chatId);
     },
@@ -201,7 +232,14 @@ function ActiveChatContent() {
   // Convert legacy string drafts on load and flush on unmount so fast chat switches keep edits.
   React.useEffect(() => {
     useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current);
-    return () => useWorkspaceStore.getState().setChatDraft(chatId, inputRef.current);
+    return () => {
+      const edit = queueEditRef.current;
+      useWorkspaceStore.getState().setChatDraft(chatId, edit?.stash ?? inputRef.current);
+      // Leaving mid-edit keeps the queued message as it was, and lets the queue move again.
+      if (edit && getChatQueue(chatId).editingId === edit.id) {
+        updateChatQueue(chatId, (queue) => ({ ...queue, editingId: null }));
+      }
+    };
   }, [chatId]);
   const modelId = useChatModelId();
   const getMessages = useChatGetMessages();
@@ -210,10 +248,17 @@ function ActiveChatContent() {
   const stopChat = useChatStop();
   const canStop = useChatCanStop();
   const isInteractionLocked = useChatIsInteractionLocked();
+  const isEditingSentMessage = useChatEditingMessageId() !== null;
+  const queue = useChatQueue(chatId);
   // A workflow that can't run (deleted, unreadable, or a step's model gone)
   // would fail the request after the composer clears; fix it first.
   const workflowBlockReason = useChatWorkflowStatus(chatId).blockReason;
   const isWorkflowBlocked = workflowBlockReason !== null;
+
+  React.useEffect(() => {
+    setChatQueueHold(chatId, "workflow-blocked", isWorkflowBlocked);
+    return () => setChatQueueHold(chatId, "workflow-blocked", false);
+  }, [chatId, isWorkflowBlocked]);
   const isStreaming = useChatIsStreaming();
   const isActiveTab = useIsActiveChatTab();
   const isActivePane = useIsActiveChatPane();
@@ -315,15 +360,126 @@ function ActiveChatContent() {
     void stopChat();
   }, [canStop, stopChat]);
 
+  const focusComposer = React.useCallback(() => {
+    requestAnimationFrame(() => composerEditorRef.current?.commands.focus("end"));
+  }, []);
+
+  const endQueueEdit = React.useCallback(() => {
+    const edit = queueEditRef.current;
+    if (!edit) {
+      return;
+    }
+    queueEditRef.current = null;
+    setQueueEdit(null);
+    updateInput(edit.stash);
+    updateChatQueue(chatId, (current) =>
+      current.editingId === edit.id ? { ...current, editingId: null } : current,
+    );
+    focusComposer();
+  }, [chatId, focusComposer, updateInput]);
+
+  const startQueueEdit = React.useCallback(
+    (id: string) => {
+      const item = getChatQueue(chatId).items.find((candidate) => candidate.id === id);
+      if (!item || isEditingSentMessage) {
+        return;
+      }
+      // Switching straight to another queued message keeps the original draft stashed.
+      const stash = queueEditRef.current?.stash ?? inputRef.current;
+      const edit = { id, stash };
+      queueEditRef.current = edit;
+      setQueueEdit(edit);
+      updateInput(item.document);
+      updateChatQueue(chatId, (current) => ({ ...current, editingId: id }));
+      focusComposer();
+    },
+    [chatId, focusComposer, isEditingSentMessage, updateInput],
+  );
+
+  // A queued message removed or sent from elsewhere ends its edit.
+  React.useEffect(() => {
+    if (queueEdit && !queue.items.some((item) => item.id === queueEdit.id)) {
+      endQueueEdit();
+    }
+  }, [endQueueEdit, queue.items, queueEdit]);
+
+  const removeQueued = React.useCallback(
+    (id: string) => {
+      const current = getChatQueue(chatId);
+      const index = current.items.findIndex((item) => item.id === id);
+      const item = current.items[index];
+      if (!item) {
+        return;
+      }
+      updateChatQueue(chatId, (latest) => removeItem(latest, id));
+      toastManager.add({
+        title: "Queued message removed",
+        actionProps: {
+          children: "Undo",
+          onClick: () => updateChatQueue(chatId, (latest) => restoreItem(latest, item, index)),
+        },
+      });
+    },
+    [chatId],
+  );
+
+  const sendQueuedNow = React.useCallback(
+    (id: string) => {
+      // Order is the point of a queue: "send now" jumps this one ahead and lets it go at once.
+      updateChatQueue(chatId, (current) => ({
+        ...moveToFront(current, id),
+        pausedBy: null,
+      }));
+      if (canStop) {
+        void stopChat({ pauseQueue: false });
+      }
+    },
+    [canStop, chatId, stopChat],
+  );
+
   const submitMessage = React.useCallback(() => {
+    const edit = queueEditRef.current;
+    if (edit) {
+      if (!parsedInput.ok) {
+        return false;
+      }
+      const text = toQueuePreview(parsedInput.value.displayText);
+      // Saving an emptied message drops it, just like the row's remove button.
+      updateChatQueue(chatId, (current) =>
+        text
+          ? updateItem(current, edit.id, {
+              document: parsedInput.value.document,
+              preview: text,
+            })
+          : removeItem(current, edit.id),
+      );
+      endQueueEdit();
+      return true;
+    }
+
     if (
       !modelId ||
       !parsedInput.ok ||
       !parsedInput.value.displayText.trim() ||
-      isInteractionLocked ||
+      isEditingSentMessage ||
       isWorkflowBlocked
     ) {
       return false;
+    }
+
+    // While a reply generates, or earlier messages are still waiting their turn, new ones line
+    // up behind them. A paused queue doesn't hold back what the user sends next.
+    const current = getChatQueue(chatId);
+    if (canStop || (current.items.length > 0 && current.pausedBy === null)) {
+      updateChatQueue(chatId, (latest) =>
+        enqueue(latest, {
+          id: createUuidV7(),
+          document: parsedInput.value.document,
+          preview: toQueuePreview(parsedInput.value.displayText),
+        }),
+      );
+      updateInput(createEmptyTiptapDocument());
+      return true;
     }
 
     scrollToBottom();
@@ -336,8 +492,11 @@ function ActiveChatContent() {
     updateInput(createEmptyTiptapDocument());
     return true;
   }, [
+    canStop,
+    chatId,
+    endQueueEdit,
     getMessages,
-    isInteractionLocked,
+    isEditingSentMessage,
     isWorkflowBlocked,
     modelId,
     parsedInput,
@@ -345,6 +504,33 @@ function ActiveChatContent() {
     sendMessage,
     updateInput,
   ]);
+
+  const handleComposerKeyDown = React.useCallback(
+    (event: KeyboardEvent, editor: { isEmpty: boolean }) => {
+      if (event.key === "Escape" && queueEditRef.current) {
+        endQueueEdit();
+        return true;
+      }
+      // The terminal-agent convention: Up in an empty prompt reopens the last queued message.
+      if (
+        event.key === "ArrowUp" &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        editor.isEmpty &&
+        !queueEditRef.current
+      ) {
+        const last = getChatQueue(chatId).items.at(-1);
+        if (last) {
+          startQueueEdit(last.id);
+          return true;
+        }
+      }
+      return false;
+    },
+    [chatId, endQueueEdit, startQueueEdit],
+  );
 
   useHotkey(
     STOP_GENERATION_HOTKEY,
@@ -435,6 +621,16 @@ function ActiveChatContent() {
                 </div>
               ) : null}
 
+              <ChatMessageQueue
+                queue={queue}
+                isBusy={canStop}
+                blockReason={workflowBlockReason}
+                onSendNow={sendQueuedNow}
+                onEdit={startQueueEdit}
+                onRemove={removeQueued}
+                onResume={() => resumeChatQueue(chatId)}
+              />
+
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -445,14 +641,31 @@ function ActiveChatContent() {
                   disabled, and the Send button is disabled whenever the prompt is
                   empty — which made the sticky composer translucent over messages. */}
                 <InputGroup className="flex-col gap-1.5 rounded-xl border-border bg-surface-secondary dark:bg-surface-secondary has-disabled:opacity-100 has-disabled:bg-surface-secondary dark:has-disabled:bg-surface-secondary py-2 shadow-lg shadow-black/20 transition-colors duration-100 has-[[data-slot=input-group-control]:focus-visible]:border-focus/50 has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+                  {queueEdit ? (
+                    <div className="flex h-6 items-center gap-2 px-3 text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">Editing queued message</span>
+                      <Button type="button" size="xs" variant="ghost" onClick={endQueueEdit}>
+                        Cancel
+                        <Kbd>Esc</Kbd>
+                      </Button>
+                    </div>
+                  ) : null}
                   <ChatComposerEditor
                     ref={composerEditorRef}
                     document={input}
-                    disabled={isInteractionLocked}
+                    disabled={isEditingSentMessage}
                     submitBehavior={submitBehavior}
                     workspaceId={workspaceId}
+                    placeholder={
+                      queueEdit
+                        ? "Save it empty to remove it from the queue"
+                        : canStop
+                          ? "Queue a follow-up…"
+                          : undefined
+                    }
                     onChange={updateInput}
                     onSubmit={submitMessage}
+                    onKeyDown={handleComposerKeyDown}
                   />
                   <InputGroupAddon
                     align="block-end"
@@ -470,22 +683,31 @@ function ActiveChatContent() {
                         editorRef={composerEditorRef}
                         onReplace={(text) => updateInput(createTiptapDocumentFromText(text))}
                       />
-                      {canStop ? (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                aria-label="Stop"
-                                size="icon-sm"
-                                type="button"
-                                onClick={stopGeneration}
-                              />
-                            }
-                          >
-                            <HugeiconsIcon icon={Cancel01Icon} />
-                          </TooltipTrigger>
-                          <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
-                        </Tooltip>
+                      {queueEdit ? (
+                        <Button type="submit" size="sm">
+                          Save
+                        </Button>
+                      ) : canStop ? (
+                        inputText.trim() ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  type="submit"
+                                  aria-label="Queue"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="@max-lg/composer-tools:w-7 @max-lg/composer-tools:px-0 @max-lg/composer-tools:[&>svg]:mx-0!"
+                                  disabled={!modelId || isEditingSentMessage || isWorkflowBlocked}
+                                />
+                              }
+                            >
+                              <HugeiconsIcon icon={SentIcon} data-icon="inline-start" />
+                              <span className="@max-lg/composer-tools:hidden">Queue</span>
+                            </TooltipTrigger>
+                            <TooltipContent>Sends when the reply finishes</TooltipContent>
+                          </Tooltip>
+                        ) : null
                       ) : (
                         <Tooltip>
                           {/* A disabled button gets no pointer events, so the wrapper
@@ -507,7 +729,7 @@ function ActiveChatContent() {
                               disabled={
                                 !modelId ||
                                 !inputText.trim() ||
-                                isInteractionLocked ||
+                                isEditingSentMessage ||
                                 isWorkflowBlocked
                               }
                             >
@@ -520,6 +742,23 @@ function ActiveChatContent() {
                           </TooltipContent>
                         </Tooltip>
                       )}
+                      {canStop ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                aria-label="Stop"
+                                size="icon-sm"
+                                type="button"
+                                onClick={stopGeneration}
+                              />
+                            }
+                          >
+                            <HugeiconsIcon icon={Cancel01Icon} />
+                          </TooltipTrigger>
+                          <TooltipContent>Stop {STOP_GENERATION_SHORTCUT_LABEL}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
                     </div>
                   </InputGroupAddon>
                 </InputGroup>

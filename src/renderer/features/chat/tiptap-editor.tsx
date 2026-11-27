@@ -81,6 +81,9 @@ interface ChatComposerEditorProps {
   workspaceId: string | null;
   onChange: (document: TiptapDocument) => void;
   onSubmit: () => boolean;
+  /** Keys the composer leaves alone; return true to claim one. Not called while a picker is open. */
+  onKeyDown?: (event: KeyboardEvent, editor: { isEmpty: boolean }) => boolean;
+  placeholder?: string;
   ref?: React.Ref<Editor | null>;
 }
 
@@ -91,12 +94,16 @@ export function ChatComposerEditor({
   workspaceId,
   onChange,
   onSubmit,
+  onKeyDown,
+  placeholder = "Ask anything…",
   ref,
 }: ChatComposerEditorProps) {
   const submitBehaviorRef = React.useRef(submitBehavior);
   const onSubmitRef = React.useRef(onSubmit);
+  const onKeyDownRef = React.useRef(onKeyDown);
   submitBehaviorRef.current = submitBehavior;
   onSubmitRef.current = onSubmit;
+  onKeyDownRef.current = onKeyDown;
   mentionBridge.workspaceId = workspaceId;
 
   const editor = useEditor({
@@ -114,13 +121,22 @@ export function ChatComposerEditor({
           "min-h-[1.75rem] max-h-[24rem] overflow-y-auto whitespace-pre-wrap px-3 py-1 text-[0.9375rem] leading-7 outline-none scrollbar",
       },
       handleKeyDown: (_view, event) => {
-        if (event.isComposing || event.key !== "Enter" || event.shiftKey) {
+        if (event.isComposing) {
           return false;
         }
         const suggestionState = toolSuggestionPluginKey.getState(_view.state) as
           | { active?: boolean }
           | undefined;
         if (suggestionState?.active) {
+          return false;
+        }
+        const { doc } = _view.state;
+        const isEmpty = doc.childCount === 1 && doc.firstChild?.childCount === 0;
+        if (onKeyDownRef.current?.(event, { isEmpty })) {
+          event.preventDefault();
+          return true;
+        }
+        if (event.key !== "Enter" || event.shiftKey) {
           return false;
         }
 
@@ -182,7 +198,7 @@ export function ChatComposerEditor({
     <div className="relative w-full" data-chat-composer-input="true">
       {isEmpty ? (
         <span className="pointer-events-none absolute left-3 top-1 text-[0.9375rem] leading-7 text-muted-foreground">
-          Ask anything…
+          {placeholder}
         </span>
       ) : null}
       <EditorContent editor={editor} />

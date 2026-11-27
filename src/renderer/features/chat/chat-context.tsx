@@ -17,6 +17,12 @@ import {
   useChatStore,
 } from "@/stores/chat-store";
 import {
+  pauseChatQueue,
+  registerChatQueueSender,
+  setChatQueueHold,
+  setChatQueueModelId,
+} from "@/stores/chat-queue-store";
+import {
   getBranchCost,
   getLatestContextUsage,
   type BranchCost,
@@ -26,7 +32,11 @@ import { appendContinuationParts, getContinuationParts } from "@shared/chat/cont
 import { normalizeChatMessageMetadata, type HanokiUiMessage } from "@shared/chat/message-metadata";
 import type { ChatRevisionRequest } from "@shared/chat/revision";
 import type { DeleteMessageScope, EditMessageBehavior } from "@shared/ipc";
-import { parseTiptapDocument, type TiptapDocument } from "@shared/tiptap/document";
+import {
+  createTiptapMessageParts,
+  parseTiptapDocument,
+  type TiptapDocument,
+} from "@shared/tiptap/document";
 
 type ChatSendMessage = Chat<HanokiUiMessage>["sendMessage"];
 type ChatRegenerate = Chat<HanokiUiMessage>["regenerate"];
@@ -46,7 +56,8 @@ type ChatContextState = {
   setModelId: (modelId: string | null) => void;
   sendMessage: ChatSendMessage;
   respondToToolApproval: (input: { id: string; approved: boolean; reason?: string }) => void;
-  stopGeneration: () => Promise<void>;
+  /** Stops the reply. Queued messages pause unless `pauseQueue` is false. */
+  stopGeneration: (options?: { pauseQueue?: boolean }) => Promise<void>;
   regenerateMessage: (options?: Parameters<ChatRegenerate>[0]) => ReturnType<ChatRegenerate>;
   continueMessage: (messageId: string) => Promise<void>;
   openRevisionComposer: (messageId: string) => void;
@@ -136,8 +147,13 @@ function createChatContextStore({
 
         return { ...current, modelId };
       }),
-    stopGeneration: async () => {
+    stopGeneration: async (options) => {
       const { continuingMessageId } = get();
+
+      // Stopping takes control back: queued messages wait until the user resumes them.
+      if (options?.pauseQueue !== false) {
+        pauseChatQueue(chatId, "stopped");
+      }
 
       if (continuingMessageId !== null) {
         transportRefs.stopContinuation?.();
@@ -278,7 +294,10 @@ function createChatContextStore({
     setRevisionComposerNote: (note) =>
       set((current) =>
         current.revisionComposer
-          ? { ...current, revisionComposer: { ...current.revisionComposer, note } }
+          ? {
+              ...current,
+              revisionComposer: { ...current.revisionComposer, note },
+            }
           : current,
       ),
     closeRevisionComposer: () =>
@@ -293,7 +312,10 @@ function createChatContextStore({
 
       // `regenerateMessage` clears the composer once the generation starts, so
       // the note survives if it bails.
-      const revision: ChatRevisionRequest = { sourceMessageId, note: trimmedNote };
+      const revision: ChatRevisionRequest = {
+        sourceMessageId,
+        note: trimmedNote,
+      };
       await get().regenerateMessage({ messageId, body: { revision } });
     },
     regenerateWithWorkflow: async (messageId, workflowId) => {
@@ -675,6 +697,31 @@ function InitializedChatContextProvider({
     }
   }, [enabledModelIds, initialModelId, store]);
 
+  // The queue drains even after this view unmounts, so it keeps the model and the send path of
+  // the last mounted view, and waits whenever this view is mid-edit or mid-continuation.
+  React.useEffect(() => {
+    const sync = (state: ChatContextState) => {
+      setChatQueueModelId(chatId, state.modelId);
+      setChatQueueHold(chatId, "editing-message", state.editingMessageId !== null);
+      setChatQueueHold(chatId, "continuing-message", state.continuingMessageId !== null);
+    };
+    sync(store.getState());
+    const unsubscribe = store.subscribe(sync);
+    const unregister = registerChatQueueSender(chatId, ({ document }) => {
+      void store.getState().sendMessage({
+        parts: createTiptapMessageParts(document),
+        metadata: { parentId: chat.messages.at(-1)?.id ?? null },
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      unregister();
+      setChatQueueHold(chatId, "editing-message", false);
+      setChatQueueHold(chatId, "continuing-message", false);
+    };
+  }, [chat, chatId, store]);
+
   React.useEffect(() => {
     let isDisposed = false;
     let prevStatus = chat.status;
@@ -687,7 +734,10 @@ function InitializedChatContextProvider({
       prevStatus = nextStatus;
 
       if (didLeaveSubmitted) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.models.recent(), exact: true });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.models.recent(),
+          exact: true,
+        });
       }
 
       if (!didFinishStreaming) {
@@ -701,18 +751,25 @@ function InitializedChatContextProvider({
         return;
       }
 
-      void messagesApi.listMessages(chatId).then((persistedMessages) => {
-        if (isDisposed) {
-          return;
-        }
+      // A queued message waits for the saved history, so it chains onto the persisted reply.
+      setChatQueueHold(chatId, "history-reload", true);
+      void messagesApi
+        .listMessages(chatId)
+        .then((persistedMessages) => {
+          // A newer request already took over; its messages are ahead of what was read.
+          if (isDisposed || chat.status !== "ready") {
+            return;
+          }
 
-        transportRefs.current.setMessages?.(persistedMessages);
-      });
+          transportRefs.current.setMessages?.(persistedMessages);
+        })
+        .finally(() => setChatQueueHold(chatId, "history-reload", false));
     });
 
     return () => {
       isDisposed = true;
       unsubscribe();
+      setChatQueueHold(chatId, "history-reload", false);
     };
   }, [chat, chatId, wasStoppedRef]);
 
@@ -839,9 +896,15 @@ export function useChatMessages() {
  * Snapshot of the trailing message that only changes identity when the message
  * itself changes — so consumers do not re-render on every streamed chunk.
  */
-export function useChatLastMessage(): { id: string; role: HanokiUiMessage["role"] } | null {
+export function useChatLastMessage(): {
+  id: string;
+  role: HanokiUiMessage["role"];
+} | null {
   const chat = useChatSession();
-  const cacheRef = React.useRef<{ id: string; role: HanokiUiMessage["role"] } | null>(null);
+  const cacheRef = React.useRef<{
+    id: string;
+    role: HanokiUiMessage["role"];
+  } | null>(null);
   const subscribe = React.useCallback(
     (onStoreChange: () => void) =>
       chat["~registerMessagesCallback"](onStoreChange, CHAT_STREAM_THROTTLE_MS),
@@ -878,7 +941,10 @@ interface ChatContextUsage {
  */
 export function useChatContextUsage(): ChatContextUsage {
   const chat = useChatSession();
-  const cacheRef = React.useRef<{ key: string; value: ChatContextUsage } | null>(null);
+  const cacheRef = React.useRef<{
+    key: string;
+    value: ChatContextUsage;
+  } | null>(null);
   const subscribe = React.useCallback(
     (onStoreChange: () => void) =>
       chat["~registerMessagesCallback"](onStoreChange, CHAT_STREAM_THROTTLE_MS),
